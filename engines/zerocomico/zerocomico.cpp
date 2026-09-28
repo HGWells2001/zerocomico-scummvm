@@ -820,7 +820,6 @@ bool ZeroComicoEngine::renderGameplayFrame(const RenderCamera &camera,
 		                                _sceneLoopSources[loopIndex], loopFrame);
 	}
 
-	SoftwareRenderer renderer;
 	Common::Array<Common::String> visibleMeshes;
 	bool rendered = false;
 
@@ -846,11 +845,11 @@ bool ZeroComicoEngine::renderGameplayFrame(const RenderCamera &camera,
 			warning("Zero Comico: Giovanni %s root transform missing; using identity root pose",
 			        animationSource.c_str());
 
-		rendered = renderer.renderWithActor(_activeScene, camera, sceneDirectory, visibleMeshes,
+		rendered = _gameplayRenderer.renderWithActor(_activeScene, camera, sceneDirectory, visibleMeshes,
 		                                    _playerScene, playerDirectory, playerVisible,
 		                                    playerTransform, frame, 800, 600);
 	} else {
-		rendered = renderer.render(_activeScene, camera, sceneDirectory, visibleMeshes,
+		rendered = _gameplayRenderer.render(_activeScene, camera, sceneDirectory, visibleMeshes,
 		                           frame, 800, 600);
 	}
 
