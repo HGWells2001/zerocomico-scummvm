@@ -19,7 +19,7 @@ static bool isConditionalOpcode(const Common::String &op) {
 
 } // namespace
 
-ScriptVM::ScriptVM(ScriptVMHost *host) : _host(host) {
+ScriptVM::ScriptVM(ScriptVMHost *host) : _host(host), _random("zerocomico-script-vm") {
 }
 
 void ScriptVM::reset() {
@@ -168,6 +168,22 @@ bool ScriptVM::executeArithmetic(const ScriptInstruction &instruction) {
 	return false;
 }
 
+
+bool ScriptVM::executeRandom(const ScriptInstruction &instruction) {
+	if (instruction.args.size() < 2)
+		return false;
+
+	int32 upperBound = 0;
+	if (!resolveValue(instruction.args[1], upperBound) || upperBound <= 0)
+		return false;
+
+	// Retail scripts use Rnd x 2 followed by tests for 0/1, so the second
+	// operand is an exclusive upper bound rather than Common::RandomSource's
+	// inclusive max.
+	const int32 value = (int32)_random.getRandomNumber((uint)upperBound - 1U);
+	return setVariable(instruction.args[0], value);
+}
+
 bool ScriptVM::evaluateComparison(const ScriptInstruction &instruction, bool &result) const {
 	if (instruction.args.size() < 2)
 		return false;
@@ -276,6 +292,13 @@ bool ScriptVM::run(const ScriptProgram &program, uint32 startIndex, uint32 endIn
 		    op.equalsIgnoreCase("add") || op.equalsIgnoreCase("sub") ||
 		    op.equalsIgnoreCase("mul")) {
 			if (!executeArithmetic(instruction))
+				return false;
+			++pc;
+			continue;
+		}
+
+		if (op.equalsIgnoreCase("Rnd")) {
+			if (!executeRandom(instruction))
 				return false;
 			++pc;
 			continue;
