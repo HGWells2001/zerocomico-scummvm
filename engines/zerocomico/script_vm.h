@@ -8,6 +8,7 @@
 #include "common/array.h"
 #include "common/hash-str.h"
 #include "common/hashmap.h"
+#include "common/random.h"
 #include "common/scummsys.h"
 #include "common/str.h"
 
@@ -47,6 +48,7 @@ private:
 	bool declareArray(const ScriptInstruction &instruction);
 	bool executeMove(const ScriptInstruction &instruction);
 	bool executeArithmetic(const ScriptInstruction &instruction);
+	bool executeRandom(const ScriptInstruction &instruction);
 	bool evaluateComparison(const ScriptInstruction &instruction, bool &result) const;
 
 	uint32 skipFalseBranch(const ScriptProgram &program, uint32 pc, uint32 endIndex) const;
@@ -57,6 +59,7 @@ private:
 	bool parseInteger(const Common::String &token, int32 &value) const;
 
 	ScriptVMHost *_host;
+	Common::RandomSource _random;
 	VariableMap _variables;
 	ArrayMap _arrays;
 };
