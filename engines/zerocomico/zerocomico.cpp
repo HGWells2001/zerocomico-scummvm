@@ -743,6 +743,23 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 	return false;
 }
 
+bool ZeroComicoEngine::evaluateScriptCondition(const ScriptInstruction &instruction,
+                                                    bool &result) const {
+	if (instruction.opcode.equalsIgnoreCase("ifallobjnoselected")) {
+		result = _selectedInventoryObject.empty();
+		return true;
+	}
+
+	if (instruction.opcode.equalsIgnoreCase("ifobjselected")) {
+		if (instruction.args.size() < 2)
+			return false;
+		result = _selectedInventoryObject.equalsIgnoreCase(instruction.args[1]);
+		return true;
+	}
+
+	return false;
+}
+
 void ZeroComicoEngine::playFilmIfPresent(const Common::Path &path) {
 	if (!Common::File::exists(path))
 		return;
@@ -911,6 +928,7 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 	_pendingSayText.clear();
 	_pendingRoomName.clear();
 	_pendingRoomCutscene.clear();
+	_selectedInventoryObject.clear();
 	_sceneLoopTargets.clear();
 	_sceneLoopSources.clear();
 	_sceneLoopStartMillis.clear();
