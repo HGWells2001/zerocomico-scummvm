@@ -25,6 +25,13 @@ public:
 	// can safely be ignored by a caller that is only executing a bootstrap
 	// fragment, but the full runtime will eventually implement them here.
 	virtual bool executeScriptOpcode(const ScriptInstruction &instruction) = 0;
+
+	// Game-specific conditionals still use the VM's branch machinery, but
+	// their truth value comes from runtime state such as inventory selection.
+	virtual bool evaluateScriptCondition(const ScriptInstruction &instruction,
+	                                   bool &result) const {
+		return false;
+	}
 };
 
 class ScriptVM {
