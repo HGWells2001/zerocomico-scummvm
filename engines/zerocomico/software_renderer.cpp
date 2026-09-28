@@ -98,12 +98,53 @@ static Vec3f applyInstanceTransform(const Vec3f &world, const RenderTransform *t
 	if (!transform)
 		return world;
 
+	Vec3f local = {
+		world.x * transform->localScale.x,
+		world.y * transform->localScale.y,
+		world.z * transform->localScale.z
+	};
+
+	// JACS transform channels store quaternion components as x, y, z, w.
+	const float qx = transform->localRotation[0];
+	const float qy = transform->localRotation[1];
+	const float qz = transform->localRotation[2];
+	const float qw = transform->localRotation[3];
+	const float qLength2 = qx * qx + qy * qy + qz * qz + qw * qw;
+	if (qLength2 > 1.0e-12f) {
+		const float invLength = 1.0f / std::sqrt(qLength2);
+		const float x = qx * invLength;
+		const float y = qy * invLength;
+		const float z = qz * invLength;
+		const float w = qw * invLength;
+
+		const float xx = x * x;
+		const float yy = y * y;
+		const float zz = z * z;
+		const float xy = x * y;
+		const float xz = x * z;
+		const float yz = y * z;
+		const float wx = w * x;
+		const float wy = w * y;
+		const float wz = w * z;
+
+		Vec3f rotated = {
+			(1.0f - 2.0f * (yy + zz)) * local.x + 2.0f * (xy - wz) * local.y + 2.0f * (xz + wy) * local.z,
+			2.0f * (xy + wz) * local.x + (1.0f - 2.0f * (xx + zz)) * local.y + 2.0f * (yz - wx) * local.z,
+			2.0f * (xz - wy) * local.x + 2.0f * (yz + wx) * local.y + (1.0f - 2.0f * (xx + yy)) * local.z
+		};
+		local = rotated;
+	}
+
+	local.x += transform->localTranslation.x;
+	local.y += transform->localTranslation.y;
+	local.z += transform->localTranslation.z;
+
 	const float c = std::cos(transform->yawRadians);
 	const float s = std::sin(transform->yawRadians);
 	Vec3f out = {
-		world.x * c - world.z * s + transform->translation.x,
-		world.y + transform->translation.y,
-		world.x * s + world.z * c + transform->translation.z
+		local.x * c - local.z * s + transform->translation.x,
+		local.y + transform->translation.y,
+		local.x * s + local.z * c + transform->translation.z
 	};
 	return out;
 }
