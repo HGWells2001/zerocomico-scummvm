@@ -187,8 +187,8 @@ static float animationHorizontalSpeed(const SceneModel &scene, const Common::Str
 } // namespace
 
 ZeroComicoEngine::ZeroComicoEngine(OSystem *syst, const ADGameDescription *desc)
-	: Engine(syst), _gameDescription(desc), _havePlayerStart(false), _playerNavNode(-1), _scriptVM(this),
-	  _interfaceDisabled(false), _3dEnabled(true) {
+	: Engine(syst), _gameDescription(desc), _havePlayerStart(false), _playerHatVisible(true),
+	  _playerNavNode(-1), _scriptVM(this), _interfaceDisabled(false), _3dEnabled(true) {
 	_playerPosition.x = _playerPosition.y = _playerPosition.z = 0.0f;
 	_playerFacingTarget.x = _playerFacingTarget.y = _playerFacingTarget.z = 0.0f;
 }
@@ -280,6 +280,191 @@ bool ZeroComicoEngine::runStartupScript(const Common::String &mainPlace) {
 	return true;
 }
 
+bool ZeroComicoEngine::runMainPlaceRuntime(const ScriptProgram &program) {
+	const Common::Array<ScriptInstruction> &instructions = program.instructions();
+	uint32 runtimeStart = instructions.size();
+	uint32 runtimeEnd = instructions.size();
+
+	for (uint32 i = 0; i < instructions.size(); ++i) {
+		if (instructions[i].opcode.equalsIgnoreCase("runtime")) {
+			runtimeStart = i + 1;
+			break;
+		}
+	}
+	if (runtimeStart >= instructions.size())
+		return false;
+
+	for (uint32 i = runtimeStart; i < instructions.size(); ++i) {
+		if (instructions[i].opcode.equalsIgnoreCase("end")) {
+			runtimeEnd = i;
+			break;
+		}
+	}
+
+	return _scriptVM.run(program, runtimeStart, runtimeEnd, 8192);
+}
+
+bool ZeroComicoEngine::playCutscene(const Common::String &name) {
+	if (_currentMainPlace.empty() || name.empty())
+		return false;
+
+	Common::String assetStem = name;
+	if (assetStem[0] == 'c')
+		assetStem = Common::String("C") + assetStem.substr(1);
+
+	const Common::Path videoDirectory(_currentMainPlace + "/videos");
+	SceneModel scene;
+	if (!scene.loadPair(videoDirectory.appendComponent(assetStem + ".p3d"),
+	                    videoDirectory.appendComponent(assetStem + ".anj"))) {
+		warning("Zero Comico: cannot load cutscene %s", name.c_str());
+		return false;
+	}
+
+	CutsceneScript timelineScript;
+	const CutsceneTimeline *timeline = nullptr;
+	if (timelineScript.load(videoDirectory.appendComponent("Videos.isc")))
+		timeline = timelineScript.findTimeline(name);
+
+	const NamedAnimationClip *cameraClip = nullptr;
+	const NamedAnimationClip *targetClip = nullptr;
+	Common::String cameraName;
+	float startFrame = 0.0f;
+	float endFrame = 0.0f;
+	bool haveRange = false;
+
+	for (uint32 clipIndex = 0; clipIndex < scene.clips.size(); ++clipIndex) {
+		const NamedAnimationClip &clip = scene.clips[clipIndex];
+		if (!clip.data.sourceName.equalsIgnoreCase(assetStem))
+			continue;
+
+		if (!haveRange) {
+			startFrame = (float)clip.data.startFrame;
+			endFrame = (float)clip.data.endFrame;
+			haveRange = true;
+		} else {
+			if ((float)clip.data.startFrame < startFrame)
+				startFrame = (float)clip.data.startFrame;
+			if ((float)clip.data.endFrame > endFrame)
+				endFrame = (float)clip.data.endFrame;
+		}
+
+		for (uint32 trackIndex = 0; trackIndex < clip.data.tracks.size(); ++trackIndex) {
+			if (clip.data.tracks[trackIndex].kind == kAnimCamera && !cameraClip) {
+				cameraClip = &clip;
+				cameraName = clip.data.tracks[trackIndex].targetName;
+			}
+		}
+	}
+
+	if (!haveRange)
+		return false;
+
+	if (!cameraName.empty())
+		targetClip = scene.findClipBySource(cameraName + ".target", assetStem);
+
+	const NamedCamera *embeddedCamera = cameraName.empty() ? nullptr : scene.findCamera(cameraName);
+	if (!embeddedCamera && !scene.cameras.empty())
+		embeddedCamera = &scene.cameras[0];
+
+	SoftwareRenderer renderer;
+	Graphics::ManagedSurface frameSurface;
+	Common::Array<Common::String> visibleMeshes;
+	uint32 nextEvent = 0;
+	bool skip = false;
+
+	for (float frame = startFrame; frame <= endFrame && !shouldQuit() && !skip; frame += 1.0f) {
+		if (!scene.poseCutsceneGeometry(assetStem, frame))
+			warning("Zero Comico: cutscene %s pose failed at frame %.0f", name.c_str(), frame);
+
+		RenderCamera renderCamera;
+		bool haveCamera = false;
+		if (cameraClip && targetClip && !cameraName.empty()) {
+			float position[3];
+			float target[3];
+			float focalLength = 0.0f;
+			float roll = 0.0f;
+			if (AnimationSampler::sampleCamera(cameraClip->data, cameraName, frame,
+			                                  position, focalLength, roll) &&
+			    AnimationSampler::sampleTarget(targetClip->data, cameraName + ".target", frame, target) &&
+			    focalLength > 0.0f) {
+				renderCamera.position = { position[0], position[1], position[2] };
+				renderCamera.target = { target[0], target[1], target[2] };
+				// The animated camera channel uses the same focal-length convention
+				// as the P3D camera record. Roll is parsed but the software camera
+				// basis does not apply it yet.
+				renderCamera.focalPixels = focalLength * 800.0f / 36.0f;
+				haveCamera = true;
+			}
+		}
+
+		if (!haveCamera && embeddedCamera && embeddedCamera->data.fov > 0.0f) {
+			renderCamera.position = embeddedCamera->data.position;
+			renderCamera.target = embeddedCamera->data.target;
+			renderCamera.focalPixels = embeddedCamera->data.fov * 800.0f / 36.0f;
+			haveCamera = true;
+		}
+
+		if (!haveCamera ||
+		    !renderer.render(scene, renderCamera, videoDirectory, visibleMeshes,
+		                     frameSurface, 800, 600)) {
+			warning("Zero Comico: cannot render cutscene %s frame %.0f", name.c_str(), frame);
+			return false;
+		}
+
+		if (timeline) {
+			while (nextEvent < timeline->events.size() &&
+			       timeline->events[nextEvent].frame <= (uint32)frame) {
+				const CutsceneEvent &event = timeline->events[nextEvent++];
+				switch (event.type) {
+				case kCutsceneSample:
+					if (!event.args.empty())
+						debug(1, "Zero Comico: cutscene %s sample %s at frame %u",
+						      name.c_str(), event.args[0].c_str(), event.frame);
+					break;
+				case kCutsceneText:
+					if (event.args.size() >= 2)
+						debug(1, "Zero Comico: cutscene %s subtitle %s: %s",
+						      name.c_str(), event.args[0].c_str(), event.args[1].c_str());
+					break;
+				case kCutsceneStopText:
+					debug(1, "Zero Comico: cutscene %s subtitle stop at frame %u",
+					      name.c_str(), event.frame);
+					break;
+				case kCutsceneFadeOut:
+					debug(1, "Zero Comico: cutscene %s fade event at frame %u",
+					      name.c_str(), event.frame);
+					break;
+				case kCutsceneSetEnvSound:
+					debug(1, "Zero Comico: cutscene %s environment-sound event at frame %u",
+					      name.c_str(), event.frame);
+					break;
+				}
+			}
+		}
+
+		_system->copyRectToScreen(frameSurface.getPixels(), frameSurface.pitch,
+		                          0, 0, frameSurface.w, frameSurface.h);
+		_system->updateScreen();
+
+		Common::Event input;
+		while (_system->getEventManager()->pollEvent(input)) {
+			if (input.type == Common::EVENT_QUIT || input.type == Common::EVENT_RETURN_TO_LAUNCHER) {
+				quitGame();
+				break;
+			}
+			if (input.type == Common::EVENT_KEYDOWN && input.kbd.keycode == Common::KEYCODE_ESCAPE) {
+				skip = true;
+				break;
+			}
+		}
+
+		// Retail cutscene timelines are frame-indexed at 25 fps.
+		_system->delayMillis(40);
+	}
+
+	return !shouldQuit();
+}
+
 bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction) {
 	const Common::String &op = instruction.opcode;
 
@@ -293,6 +478,40 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 	// Film playback is synchronous for now, so this wait is already fulfilled.
 	if (op.equalsIgnoreCase("wait_last_film"))
 		return true;
+
+	if (op.equalsIgnoreCase("play_cut") || op.equalsIgnoreCase("play_open_cut")) {
+		if (instruction.args.empty())
+			return false;
+		return playCutscene(instruction.args[0]);
+	}
+
+	// Cutscene playback is synchronous in this first runtime.
+	if (op.equalsIgnoreCase("wait_cut"))
+		return true;
+
+	if (op.equalsIgnoreCase("playl")) {
+		// Persistent background JACS loops are parsed but not yet advanced by
+		// the room runtime. Keep the opcode boundary so the retail script can run.
+		return true;
+	}
+
+	if (op.equalsIgnoreCase("hide_subobj") || op.equalsIgnoreCase("unhide_subobj")) {
+		if (instruction.args.size() >= 2 &&
+		    instruction.args[0].equalsIgnoreCase("gio_giovanni") &&
+		    instruction.args[1].equalsIgnoreCase("gio_cappello"))
+			_playerHatVisible = op.equalsIgnoreCase("unhide_subobj");
+		return true;
+	}
+
+	if (op.equalsIgnoreCase("e3d_Parse") || op.equalsIgnoreCase("setcameramode"))
+		return true;
+
+	if (op.equalsIgnoreCase("csay")) {
+		if (instruction.args.size() >= 2)
+			debug(1, "Zero Comico: %s says: %s",
+			      instruction.args[0].c_str(), instruction.args[1].c_str());
+		return true;
+	}
 
 	if (op.equalsIgnoreCase("disable3d")) {
 		_3dEnabled = false;
@@ -429,7 +648,8 @@ bool ZeroComicoEngine::renderGameplayFrame(const RenderCamera &camera,
 		playerVisible.push_back("gio_giob");
 		playerVisible.push_back("gio_gioa");
 		playerVisible.push_back("gio_giotesta");
-		playerVisible.push_back("gio_CAPPELLO");
+		if (_playerHatVisible)
+			playerVisible.push_back("gio_CAPPELLO");
 
 		RenderTransform playerTransform;
 		playerTransform.translation = _playerPosition;
@@ -465,6 +685,9 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 	    (level[0] == 'm' || level[0] == 'M') &&
 	    (level[1] == 'p' || level[1] == 'P'))
 		level = Common::String("Mp") + level.substr(2);
+
+	_currentMainPlace = level;
+	_playerHatVisible = true;
 
 	const Common::Path roomScript(level + "/gameplay/room.isc");
 	ScriptProgram roomProgram;
@@ -628,6 +851,9 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 		renderCamera.target = embedded->data.target;
 		renderCamera.focalPixels = embedded->data.fov * 800.0f / 36.0f;
 	}
+
+	if (!runMainPlaceRuntime(roomProgram))
+		warning("Zero Comico: main-place runtime block did not complete cleanly");
 
 	Graphics::ManagedSurface frame;
 	if (!renderGameplayFrame(renderCamera, sceneDirectory, playerDirectory, "Stay", 0.0f, frame)) {
