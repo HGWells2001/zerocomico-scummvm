@@ -29,6 +29,7 @@
 #include "video/avi_decoder.h"
 
 #include <cmath>
+#include <cstdlib>
 
 namespace ZeroComico {
 
