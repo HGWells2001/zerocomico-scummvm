@@ -110,9 +110,23 @@ bool PuzzleScript::parse() {
 	return !objects.empty();
 }
 
+PuzzleObject *PuzzleScript::findObject(const Common::String &name) {
+	for (uint32 i = 0; i < objects.size(); ++i)
+		if (objects[i].name.equalsIgnoreCase(name))
+			return &objects[i];
+	return nullptr;
+}
+
 const PuzzleObject *PuzzleScript::findObject(const Common::String &name) const {
 	for (uint32 i = 0; i < objects.size(); ++i)
 		if (objects[i].name.equalsIgnoreCase(name))
+			return &objects[i];
+	return nullptr;
+}
+
+PuzzleObject *PuzzleScript::findByEntity(const Common::String &entity) {
+	for (uint32 i = 0; i < objects.size(); ++i)
+		if (objects[i].entity.equalsIgnoreCase(entity))
 			return &objects[i];
 	return nullptr;
 }
