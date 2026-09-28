@@ -6,6 +6,7 @@
 #define ZEROCOMICO_SCRIPT_PROGRAM_H
 
 #include "common/array.h"
+#include "common/hash-str.h"
 #include "common/hashmap.h"
 #include "common/path.h"
 #include "common/str.h"
@@ -33,12 +34,14 @@ public:
 	int labelIndex(const Common::String &name) const;
 
 private:
+	typedef Common::HashMap<Common::String, uint32, Common::IgnoreCase_Hash, Common::IgnoreCase_EqualTo> LabelMap;
+
 	static bool tokenize(const Common::String &line, Common::Array<Common::String> &tokens);
 	static Common::String stripComment(const Common::String &line);
 	void indexLabels();
 
 	Common::Array<ScriptInstruction> _instructions;
-	Common::HashMap<Common::String, uint32, Common::IgnoreCase_Hash, Common::IgnoreCase_EqualTo> _labels;
+	LabelMap _labels;
 };
 
 } // namespace ZeroComico
