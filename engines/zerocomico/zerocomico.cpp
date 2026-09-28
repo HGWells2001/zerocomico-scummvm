@@ -37,6 +37,46 @@ static const char *const kMenuButtons[] = {
 
 static const int kMenuButtonCount = 5;
 
+static bool sampleRootTransform(const SceneModel &scene, const Common::String &targetName,
+                                const Common::String &sourceName, RenderTransform &transform) {
+	transform.localTranslation.x = transform.localTranslation.y = transform.localTranslation.z = 0.0f;
+	transform.localScale.x = transform.localScale.y = transform.localScale.z = 1.0f;
+	transform.localRotation[0] = transform.localRotation[1] = transform.localRotation[2] = 0.0f;
+	transform.localRotation[3] = 1.0f;
+
+	const NamedAnimationClip *clip = scene.findClipBySource(targetName, sourceName);
+	if (!clip)
+		return false;
+
+	for (uint32 i = 0; i < clip->data.tracks.size(); ++i) {
+		const AnimationTrack &track = clip->data.tracks[i];
+		if (track.kind != kAnimTransform || !track.targetName.equalsIgnoreCase(targetName) ||
+		    track.channels.size() < 3)
+			continue;
+
+		if (!track.channels[0].keys.empty()) {
+			const AnimationKey &key = track.channels[0].keys[0];
+			transform.localTranslation.x = key.value[0];
+			transform.localTranslation.y = key.value[1];
+			transform.localTranslation.z = key.value[2];
+		}
+		if (!track.channels[1].keys.empty()) {
+			const AnimationKey &key = track.channels[1].keys[0];
+			transform.localScale.x = key.value[0];
+			transform.localScale.y = key.value[1];
+			transform.localScale.z = key.value[2];
+		}
+		if (!track.channels[2].keys.empty()) {
+			const AnimationKey &key = track.channels[2].keys[0];
+			for (int component = 0; component < 4; ++component)
+				transform.localRotation[component] = key.value[component];
+		}
+		return true;
+	}
+
+	return false;
+}
+
 } // namespace
 
 ZeroComicoEngine::ZeroComicoEngine(OSystem *syst, const ADGameDescription *desc)
@@ -352,6 +392,18 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 		return false;
 	}
 
+	const Common::Path playerDirectory("Mpx/bodies/Giovanni");
+	_playerScene.clear();
+	const bool havePlayerScene = _playerScene.loadPair(
+		playerDirectory.appendComponent("Giovanni.p3d"),
+		playerDirectory.appendComponent("Giovanni.anj"));
+	if (!havePlayerScene)
+		warning("Zero Comico: cannot decode Giovanni P3D/ANJ scene");
+	else
+		debug(1, "Zero Comico: Giovanni decoded: %u materials, %u meshes, %u clips",
+		      (uint)_playerScene.materials.size(), (uint)_playerScene.meshes.size(),
+		      (uint)_playerScene.clips.size());
+
 	// Load both navigation layers declared by room.isc. The ordinary map
 	// carries the walkable floor/path graph; cameramap is the camera-control
 	// partition used by the original runtime.
@@ -416,8 +468,33 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 	SoftwareRenderer renderer;
 	Graphics::ManagedSurface frame;
 	Common::Array<Common::String> visibleMeshes;
-	if (!renderer.render(_activeScene, renderCamera, sceneDirectory, visibleMeshes,
-	                     frame, 800, 600)) {
+	bool rendered = false;
+
+	if (havePlayerScene && _havePlayerStart) {
+		Common::Array<Common::String> playerVisible;
+		playerVisible.push_back("gio_gioc");
+		playerVisible.push_back("gio_giob");
+		playerVisible.push_back("gio_gioa");
+		playerVisible.push_back("gio_giotesta");
+		playerVisible.push_back("gio_CAPPELLO");
+
+		RenderTransform playerTransform;
+		playerTransform.translation = _playerPosition;
+		const float faceX = _playerFacingTarget.x - _playerPosition.x;
+		const float faceZ = _playerFacingTarget.z - _playerPosition.z;
+		playerTransform.yawRadians = std::atan2(faceX, faceZ);
+		if (!sampleRootTransform(_playerScene, "gio_giovanni", "Stay", playerTransform))
+			warning("Zero Comico: Giovanni Stay root transform missing; using identity root pose");
+
+		rendered = renderer.renderWithActor(_activeScene, renderCamera, sceneDirectory, visibleMeshes,
+		                                    _playerScene, playerDirectory, playerVisible,
+		                                    playerTransform, frame, 800, 600);
+	} else {
+		rendered = renderer.render(_activeScene, renderCamera, sceneDirectory, visibleMeshes,
+		                           frame, 800, 600);
+	}
+
+	if (!rendered) {
 		warning("Zero Comico: could not render start room %s", room->name.c_str());
 		return false;
 	}
@@ -432,9 +509,9 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 	if (_playerNavNode >= 0)
 		debug(1, "Zero Comico: navigation runtime ready at node %d", _playerNavNode);
 
-	// This is deliberately a room-preview boundary, not fake gameplay. The
-	// next runtime milestone is to execute the room's startup/cutscene state,
-	// apply JACS visibility and spawn the playable character.
+	// The player is now spawned from the retail Giovanni P3D/ANJ pair in the
+	// resolved start marker. The next runtime milestone is continuous JACS
+	// animation plus click-to-walk movement along the BSP graph.
 	bool done = false;
 	while (!shouldQuit() && !done) {
 		Common::Event event;
