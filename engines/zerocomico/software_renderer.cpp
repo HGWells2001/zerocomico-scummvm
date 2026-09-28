@@ -284,6 +284,7 @@ static void drawTriangle(Graphics::ManagedSurface &target, Common::Array<float> 
 }
 
 static void renderFaceRange(const SceneModel &scene, const MeshData &mesh,
+                            const Common::Array<Vec3f> *posedVertices,
                             const MeshMaterialRange *range, const Common::Path &textureDirectory,
                             const RenderCamera &camera, const Vec3f &right, const Vec3f &up,
                             const Vec3f &forward, float focalPixels,
@@ -316,16 +317,21 @@ static void renderFaceRange(const SceneModel &scene, const MeshData &mesh,
 		bool valid = true;
 		for (uint32 i = 0; i < 3; ++i) {
 			const uint32 vertexIndex = mesh.indices[corner + i];
-			if (vertexIndex >= mesh.vertices.size()) {
+			const uint32 availableVertices = posedVertices ? posedVertices->size() : mesh.vertices.size();
+			if (vertexIndex >= availableVertices) {
 				valid = false;
 				break;
 			}
-			// Flesh records are blended directly into the skinned parent's model-space
-			// bind pose. Applying the parent's exporter transform a second time would
-			// rotate/translate those reconstructed vertices twice.
-			const Vec3f meshWorld = mesh.isSkinnedParent()
-				? mesh.vertices[vertexIndex]
-				: transformVertex(mesh.vertices[vertexIndex], mesh.transform);
+
+			Vec3f meshWorld;
+			if (posedVertices) {
+				meshWorld = (*posedVertices)[vertexIndex];
+			} else if (mesh.isSkinnedParent()) {
+				// The reconstructed bind pose is already actor-local.
+				meshWorld = mesh.vertices[vertexIndex];
+			} else {
+				meshWorld = transformVertex(mesh.vertices[vertexIndex], mesh.transform);
+			}
 			const Vec3f world = applyInstanceTransform(meshWorld, instanceTransform);
 			if (!projectVertex(world, camera, right, up, forward, focalPixels,
 			                   target.w, target.h, projected[i])) {
@@ -365,15 +371,18 @@ static bool renderScene(const SceneModel &scene, const Common::Path &textureDire
 		if (!isVisible(namedMesh.name, visibleMeshes) || mesh.isFlesh() || mesh.vertices.empty())
 			continue;
 
+		const Common::Array<Vec3f> *posedVertices =
+			namedMesh.posedVertices.empty() ? nullptr : &namedMesh.posedVertices;
+
 		if (mesh.materials.empty()) {
-			renderFaceRange(scene, mesh, nullptr, textureDirectory, camera, right, up, forward,
+			renderFaceRange(scene, mesh, posedVertices, nullptr, textureDirectory, camera, right, up, forward,
 			                focalPixels, instanceTransform, target, zBuffer);
 			renderedAny = true;
 			continue;
 		}
 
 		for (uint32 materialIndex = 0; materialIndex < mesh.materials.size(); ++materialIndex) {
-			renderFaceRange(scene, mesh, &mesh.materials[materialIndex], textureDirectory,
+			renderFaceRange(scene, mesh, posedVertices, &mesh.materials[materialIndex], textureDirectory,
 			                camera, right, up, forward, focalPixels, instanceTransform,
 			                target, zBuffer);
 			renderedAny = true;
