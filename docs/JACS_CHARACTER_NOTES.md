@@ -56,11 +56,10 @@ BSP graph.
 
 ## Current runtime approximation
 
-Transform key values are currently interpolated linearly. Tension,
-continuity and bias are retained by the decoder but exact
-Kochanek-Bartels/TCB interpolation is not yet evaluated. This is sufficient
-to exercise the decoded hierarchy and skinning pipeline, but it is not yet a
-claim of pixel-identical animation.
+Transform keys are evaluated with Kochanek-Bartels interpolation using the
+stored tension, continuity and bias values. Endpoint tangents fall back to the
+adjacent segment slope. Axis-angle rotation components are sampled through the
+same TCB path before the axis is normalized by the pose matrix builder.
 
 Rigid child meshes are posed with the same hierarchy delta so the head and
 hat follow the animated body.
@@ -70,7 +69,8 @@ hat follow the animated body.
 The Mp1 start marker `r11_Start` resolves to the retail world position and
 is mapped to BSP navigation node 24 in the examined data. Mouse clicks are
 projected to the Y=0 floor plane, snapped to the nearest graph node, routed
-with Dijkstra, and traversed continuously. The current walk speed is a
-runtime approximation informed by the root displacement of the retail
-`Camm1` clip; exact movement timing remains to be tied to the original
-character/controller rules.
+with Dijkstra, and traversed continuously. The current walk speed is derived at runtime from horizontal root displacement
+across the decoded `1>1` walk clips and their frame range, with a conservative
+fallback only when a clip carries no usable displacement. The animation state
+machine now follows the retail `0>1`, `1>1` and `1>0` transition groups from
+`Giovanni.seq`.
