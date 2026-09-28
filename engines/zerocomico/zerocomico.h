@@ -39,6 +39,7 @@ private:
 	const ADGameDescription *_gameDescription;
 	SceneModel _menuScene;
 	SceneModel _activeScene;
+	SceneModel _playerScene;
 	BspMap _activeWalkMap;
 	BspMap _activeCameraMap;
 	Vec3f _playerPosition;
