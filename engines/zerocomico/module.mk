@@ -11,6 +11,7 @@ MODULE_OBJS := \
 	model_data.o \
 	resource.o \
 	scene_model.o \
+	sequence_script.o \
 	script.o \
 	script_program.o \
 	script_vm.o \
