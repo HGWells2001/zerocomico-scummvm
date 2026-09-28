@@ -327,7 +327,10 @@ bool ModelDataDecoder::decodeMesh(const ModelArchive &archive, const ModelRecord
 }
 
 bool ModelDataDecoder::decodeHierarchy(const ModelArchive &archive, const ModelRecord &record, HierarchyData &out) {
-	if (record.group || (record.type != 0xf004 && record.type != 0xf032))
+	if (record.group || (record.type != 0x0e3d && record.type != 0xf001 &&
+	                     record.type != 0xf002 && record.type != 0xf003 &&
+	                     record.type != 0xf004 && record.type != 0xf011 &&
+	                     record.type != 0xf022 && record.type != 0xf032))
 		return false;
 
 	BodyReader r(archive, record);
