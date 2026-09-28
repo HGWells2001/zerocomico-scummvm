@@ -66,6 +66,13 @@ public:
 	// static character mesh before animation transforms are applied.
 	bool resolveSkinnedGeometry();
 
+	// Rebuilds skinned-parent vertices for one JACS frame by applying bone
+	// deltas from a bind clip (normally Stay) to the flesh-weighted vertices.
+	bool poseSkinnedGeometry(const Common::String &rootName,
+	                         const Common::String &bindSource,
+	                         const Common::String &sourceName,
+	                         float frame);
+
 	Common::Array<NamedMaterial> materials;
 	Common::Array<NamedCamera> cameras;
 	Common::Array<NamedLight> lights;
