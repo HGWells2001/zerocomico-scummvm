@@ -87,6 +87,12 @@ public:
 	void visibleMeshesForSource(const Common::String &sourceName, float frame,
 	                           Common::Array<Common::String> &visible) const;
 
+	// Poses one non-skinned room mesh from a named F007 source without
+	// disturbing other independently looping objects in the scene.
+	bool poseRigidAnimation(const Common::String &targetName,
+	                       const Common::String &sourceName,
+	                       float frame);
+
 	Common::Array<NamedMaterial> materials;
 	Common::Array<NamedCamera> cameras;
 	Common::Array<NamedLight> lights;
