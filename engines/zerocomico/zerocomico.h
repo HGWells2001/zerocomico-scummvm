@@ -10,6 +10,8 @@
 #include "zerocomico/bsp.h"
 #include "zerocomico/scene_model.h"
 #include "zerocomico/script_vm.h"
+#include "zerocomico/software_renderer.h"
+#include "graphics/managed_surface.h"
 
 struct ADGameDescription;
 
@@ -31,6 +33,10 @@ private:
 	bool loadMenuScene();
 	bool renderMenuFrame(int selection);
 	bool runMainPlacePreview(const Common::String &mainPlace);
+	bool renderGameplayFrame(const RenderCamera &camera,
+	                         const Common::Path &sceneDirectory,
+	                         const Common::Path &playerDirectory,
+	                         Graphics::ManagedSurface &frame);
 	void runMenu();
 	void showImageModal(const Common::Path &path);
 	void showBootstrapScreen();
