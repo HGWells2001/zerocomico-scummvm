@@ -155,6 +155,34 @@ static bool animationClipRange(const SceneModel &scene, const Common::String &ta
 	return true;
 }
 
+static float animationHorizontalSpeed(const SceneModel &scene, const Common::String &targetName,
+                                      const Common::String &sourceName, float frameRate) {
+	const NamedAnimationClip *clip = scene.findClipBySource(targetName, sourceName);
+	if (!clip || clip->data.endFrame <= clip->data.startFrame || frameRate <= 0.0f)
+		return 0.0f;
+
+	float startTranslation[3];
+	float startScale[3];
+	float startRotation[4];
+	float endTranslation[3];
+	float endScale[3];
+	float endRotation[4];
+	if (!AnimationSampler::sampleTransform(clip->data, targetName, (float)clip->data.startFrame,
+	                                      startTranslation, startScale, startRotation) ||
+	    !AnimationSampler::sampleTransform(clip->data, targetName, (float)clip->data.endFrame,
+	                                      endTranslation, endScale, endRotation))
+		return 0.0f;
+
+	const float dx = endTranslation[0] - startTranslation[0];
+	const float dz = endTranslation[2] - startTranslation[2];
+	const float distance = std::sqrt(dx * dx + dz * dz);
+	const float durationSeconds =
+		((float)clip->data.endFrame - (float)clip->data.startFrame) / frameRate;
+	if (durationSeconds <= 0.0f)
+		return 0.0f;
+	return distance / durationSeconds;
+}
+
 
 } // namespace
 
@@ -669,8 +697,23 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 
 			const float frameRate = 25.0f;
 			const float tickSeconds = 0.02f;
-			const float walkSpeed = 45.0f;
+			float walkSpeed = 0.0f;
+			uint32 measuredWalkClips = 0;
+			for (uint32 speedIndex = 0; speedIndex < loopClips.size(); ++speedIndex) {
+				const float clipSpeed = animationHorizontalSpeed(
+					_playerScene, "gio_giovanni", loopClips[speedIndex], frameRate);
+				if (clipSpeed > 0.01f) {
+					walkSpeed += clipSpeed;
+					++measuredWalkClips;
+				}
+			}
+			if (measuredWalkClips > 0)
+				walkSpeed /= measuredWalkClips;
+			else
+				walkSpeed = 45.0f;
 			const float stepDistance = walkSpeed * tickSeconds;
+			debug(1, "Zero Comico: Giovanni walk speed %.3f units/s from %u JACS loop clips",
+			      walkSpeed, (uint)measuredWalkClips);
 
 			bool starting = true;
 			uint32 animationClipIndex = 0;
