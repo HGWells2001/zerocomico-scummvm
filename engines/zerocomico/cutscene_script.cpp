@@ -5,7 +5,7 @@
 #include "zerocomico/cutscene_script.h"
 #include "zerocomico/script_program.h"
 
-#include "common/util.h"
+#include <cstdlib>
 
 namespace ZeroComico {
 
