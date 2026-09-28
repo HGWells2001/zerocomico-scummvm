@@ -77,6 +77,10 @@ public:
 	                         const Common::String &sourceName,
 	                         float frame);
 
+	// Applies all skeletal and rigid-object tracks for one cutscene source.
+	// Unlike gameplay posing, root motion remains inside the animated scene.
+	bool poseCutsceneGeometry(const Common::String &sourceName, float frame);
+
 	Common::Array<NamedMaterial> materials;
 	Common::Array<NamedCamera> cameras;
 	Common::Array<NamedLight> lights;
