@@ -32,7 +32,9 @@ public:
 	bool load(const Common::Path &path);
 	bool parse();
 
+	PuzzleObject *findObject(const Common::String &name);
 	const PuzzleObject *findObject(const Common::String &name) const;
+	PuzzleObject *findByEntity(const Common::String &entity);
 	const PuzzleObject *findByEntity(const Common::String &entity) const;
 	const ScriptProgram &program() const { return _program; }
 
