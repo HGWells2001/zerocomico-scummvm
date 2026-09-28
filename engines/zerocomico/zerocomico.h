@@ -28,6 +28,9 @@ private:
 	bool runStartupScript(const Common::String &mainPlace);
 	void playFilmIfPresent(const Common::Path &path);
 	bool loadMenuScene();
+	bool renderMenuFrame(int selection);
+	void runMenu();
+	void showImageModal(const Common::Path &path);
 	void showBootstrapScreen();
 	void waitForExit();
 
