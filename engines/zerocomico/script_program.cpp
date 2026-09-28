@@ -148,12 +148,10 @@ bool ScriptProgram::hasLabel(const Common::String &name) const {
 }
 
 int ScriptProgram::labelIndex(const Common::String &name) const {
-	Common::HashMap<Common::String, uint32, Common::IgnoreCase_Hash, Common::IgnoreCase_EqualTo>::const_iterator it = _labels.find(name);
+	LabelMap::const_iterator it = _labels.find(name);
 	if (it == _labels.end())
 		return -1;
 	return it->_value;
 }
 
 } // namespace ZeroComico
-
-#endif
