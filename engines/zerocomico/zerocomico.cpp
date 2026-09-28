@@ -40,7 +40,7 @@ static const int kMenuButtonCount = 5;
 } // namespace
 
 ZeroComicoEngine::ZeroComicoEngine(OSystem *syst, const ADGameDescription *desc)
-	: Engine(syst), _gameDescription(desc), _havePlayerStart(false), _scriptVM(this),
+	: Engine(syst), _gameDescription(desc), _havePlayerStart(false), _playerNavNode(-1), _scriptVM(this),
 	  _interfaceDisabled(false), _3dEnabled(true) {
 	_playerPosition.x = _playerPosition.y = _playerPosition.z = 0.0f;
 	_playerFacingTarget.x = _playerFacingTarget.y = _playerFacingTarget.z = 0.0f;
@@ -368,6 +368,13 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 			warning("Zero Comico: cannot load camera map %s", cameraMapPath.toString().c_str());
 	}
 
+	_playerNavNode = -1;
+	if (_havePlayerStart && !_activeWalkMap.graph.empty()) {
+		_playerNavNode = _activeWalkMap.nearestGraphNode(_playerPosition.x, _playerPosition.z);
+		if (_playerNavNode >= 0)
+			debug(1, "Zero Comico: player start mapped to navigation node %d", _playerNavNode);
+	}
+
 	Common::String cameraName = room->camera;
 	RenderCamera renderCamera;
 	bool haveRenderCamera = false;
@@ -422,6 +429,8 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 	      level.c_str(), room->name.c_str(), chapter.startMarker.c_str(),
 	      cameraName.c_str(), (uint)_activeScene.meshes.size(), (uint)_activeWalkMap.graph.size(),
 	      _havePlayerStart ? ", player start resolved" : ", player start unresolved");
+	if (_playerNavNode >= 0)
+		debug(1, "Zero Comico: navigation runtime ready at node %d", _playerNavNode);
 
 	// This is deliberately a room-preview boundary, not fake gameplay. The
 	// next runtime milestone is to execute the room's startup/cutscene state,
