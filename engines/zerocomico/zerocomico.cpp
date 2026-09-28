@@ -378,6 +378,10 @@ bool ZeroComicoEngine::renderGameplayFrame(const RenderCamera &camera,
 	bool rendered = false;
 
 	if (!_playerScene.meshes.empty() && _havePlayerStart) {
+		if (!_playerScene.poseSkinnedGeometry("gio_giovanni", "Stay", animationSource, animationFrame))
+			warning("Zero Comico: could not evaluate Giovanni skeletal pose %s at %.2f",
+			        animationSource.c_str(), animationFrame);
+
 		Common::Array<Common::String> playerVisible;
 		playerVisible.push_back("gio_gioc");
 		playerVisible.push_back("gio_giob");
