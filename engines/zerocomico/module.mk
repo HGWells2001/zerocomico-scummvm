@@ -11,6 +11,7 @@ MODULE_OBJS := \
 	scene_model.o \
 	script.o \
 	script_program.o \
+	script_vm.o \
 	wrapped_flic.o \
 	zerocomico.o
 
