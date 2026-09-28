@@ -596,6 +596,50 @@ bool SceneModel::poseCutsceneGeometry(const Common::String &sourceName, float fr
 	return true;
 }
 
+
+void SceneModel::visibleMeshesForSource(const Common::String &sourceName, float frame,
+                                        Common::Array<Common::String> &visible) const {
+	visible.clear();
+
+	for (uint32 meshIndex = 0; meshIndex < meshes.size(); ++meshIndex) {
+		const NamedMesh &mesh = meshes[meshIndex];
+		if (mesh.data.isFlesh())
+			continue;
+
+		const AnimationTrack *visibilityTrack = nullptr;
+		for (uint32 clipIndex = 0; clipIndex < clips.size() && !visibilityTrack; ++clipIndex) {
+			const NamedAnimationClip &clip = clips[clipIndex];
+			if (!clip.data.sourceName.equalsIgnoreCase(sourceName))
+				continue;
+
+			for (uint32 trackIndex = 0; trackIndex < clip.data.tracks.size(); ++trackIndex) {
+				const AnimationTrack &track = clip.data.tracks[trackIndex];
+				if (track.kind == kAnimTransform &&
+				    track.targetName.equalsIgnoreCase(mesh.name) &&
+				    track.visibilityEnabled) {
+					visibilityTrack = &track;
+					break;
+				}
+			}
+		}
+
+		if (!visibilityTrack) {
+			visible.push_back(mesh.name);
+			continue;
+		}
+
+		uint32 toggles = 0;
+		for (uint32 eventIndex = 0; eventIndex < visibilityTrack->visibilityFrames.size(); ++eventIndex) {
+			if ((float)visibilityTrack->visibilityFrames[eventIndex] <= frame)
+				++toggles;
+			else
+				break;
+		}
+		if ((toggles & 1U) != 0)
+			visible.push_back(mesh.name);
+	}
+}
+
 const NamedMaterial *SceneModel::findMaterial(const Common::String &name) const {
 	for (uint32 i = 0; i < materials.size(); ++i)
 		if (materials[i].name.equalsIgnoreCase(name))
