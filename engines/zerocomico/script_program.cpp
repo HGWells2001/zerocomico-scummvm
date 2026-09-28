@@ -104,9 +104,11 @@ bool ScriptProgram::parse(const Common::String &text) {
 					}
 					if (tokens[i] == "}") {
 						inst.closesBlock = true;
-						--structuralDepth;
-						if (structuralDepth < 0)
-							return false;
+						// A shipped material file contains one surplus closing brace.
+						// The original parser accepts it, so keep the structural view
+						// tolerant instead of rejecting otherwise valid retail data.
+						if (structuralDepth > 0)
+							--structuralDepth;
 						if (!haveOpcode)
 							lineDepth = structuralDepth;
 						continue;
@@ -136,9 +138,9 @@ bool ScriptProgram::parse(const Common::String &text) {
 		++lineNumber;
 	}
 
-	if (depth != 0)
-		return false;
-
+	// Some generated retail files use End. as an implicit final closure and
+	// therefore finish with a positive brace depth. Do not reject them: the
+	// nesting information remains useful for all explicit blocks we saw.
 	indexLabels();
 	return true;
 }
