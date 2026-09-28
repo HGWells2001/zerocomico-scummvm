@@ -10,6 +10,7 @@
 #include "zerocomico/bsp.h"
 #include "zerocomico/scene_model.h"
 #include "zerocomico/script_vm.h"
+#include "zerocomico/sequence_script.h"
 #include "zerocomico/software_renderer.h"
 #include "graphics/managed_surface.h"
 
@@ -46,6 +47,7 @@ private:
 	SceneModel _menuScene;
 	SceneModel _activeScene;
 	SceneModel _playerScene;
+	SequenceScript _playerSequences;
 	BspMap _activeWalkMap;
 	BspMap _activeCameraMap;
 	Vec3f _playerPosition;
