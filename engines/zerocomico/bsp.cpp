@@ -256,4 +256,93 @@ bool BspMap::load(Common::SeekableReadStream &stream) {
 	return ok && r.expect("pathfinding_end");
 }
 
+int BspMap::nearestGraphNode(float x, float y) const {
+	if (graph.empty())
+		return -1;
+
+	int best = -1;
+	float bestDistance2 = 0.0f;
+	for (uint32 i = 0; i < graph.size(); ++i) {
+		const float dx = graph[i].pos.x - x;
+		const float dy = graph[i].pos.y - y;
+		const float distance2 = dx * dx + dy * dy;
+		if (best < 0 || distance2 < bestDistance2) {
+			best = (int)i;
+			bestDistance2 = distance2;
+		}
+	}
+	return best;
+}
+
+bool BspMap::shortestPath(int startNode, int endNode, Common::Array<int> &path) const {
+	path.clear();
+	if (startNode < 0 || endNode < 0 ||
+	    (uint32)startNode >= graph.size() || (uint32)endNode >= graph.size())
+		return false;
+
+	if (startNode == endNode) {
+		path.push_back(startNode);
+		return true;
+	}
+
+	Common::Array<float> distance;
+	Common::Array<int> previous;
+	Common::Array<byte> visited;
+	distance.resize(graph.size());
+	previous.resize(graph.size());
+	visited.resize(graph.size());
+
+	for (uint32 i = 0; i < graph.size(); ++i) {
+		distance[i] = 1.0e30f;
+		previous[i] = -1;
+		visited[i] = 0;
+	}
+	distance[(uint32)startNode] = 0.0f;
+
+	for (uint32 step = 0; step < graph.size(); ++step) {
+		int current = -1;
+		float currentDistance = 1.0e30f;
+		for (uint32 i = 0; i < graph.size(); ++i) {
+			if (!visited[i] && distance[i] < currentDistance) {
+				current = (int)i;
+				currentDistance = distance[i];
+			}
+		}
+
+		if (current < 0)
+			break;
+		if (current == endNode)
+			break;
+		visited[(uint32)current] = 1;
+
+		const NavNode &node = graph[(uint32)current];
+		for (uint32 i = 0; i < node.arcs.size(); ++i) {
+			const NavArc &arc = node.arcs[i];
+			if (arc.target < 0 || (uint32)arc.target >= graph.size() || arc.weight < 0.0f)
+				continue;
+			const float candidate = currentDistance + arc.weight;
+			if (candidate < distance[(uint32)arc.target]) {
+				distance[(uint32)arc.target] = candidate;
+				previous[(uint32)arc.target] = current;
+			}
+		}
+	}
+
+	if (previous[(uint32)endNode] < 0)
+		return false;
+
+	Common::Array<int> reverse;
+	for (int node = endNode; node >= 0; node = previous[(uint32)node]) {
+		reverse.push_back(node);
+		if (node == startNode)
+			break;
+	}
+	if (reverse.empty() || reverse.back() != startNode)
+		return false;
+
+	for (int i = (int)reverse.size() - 1; i >= 0; --i)
+		path.push_back(reverse[(uint32)i]);
+	return true;
+}
+
 } // namespace ZeroComico
