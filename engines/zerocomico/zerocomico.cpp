@@ -643,8 +643,20 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 		return true;
 
 	if (op.equalsIgnoreCase("playl")) {
-		// Persistent background JACS loops are parsed but not yet advanced by
-		// the room runtime. Keep the opcode boundary so the retail script can run.
+		if (instruction.args.size() < 2)
+			return false;
+
+		for (uint32 i = 0; i < _sceneLoopTargets.size(); ++i) {
+			if (_sceneLoopTargets[i].equalsIgnoreCase(instruction.args[0])) {
+				_sceneLoopSources[i] = instruction.args[1];
+				_sceneLoopStartMillis[i] = _system->getMillis();
+				return true;
+			}
+		}
+
+		_sceneLoopTargets.push_back(instruction.args[0]);
+		_sceneLoopSources.push_back(instruction.args[1]);
+		_sceneLoopStartMillis.push_back(_system->getMillis());
 		return true;
 	}
 
@@ -790,6 +802,24 @@ bool ZeroComicoEngine::renderGameplayFrame(const RenderCamera &camera,
                                                 const Common::String &animationSource,
                                                 float animationFrame,
                                                 Graphics::ManagedSurface &frame) {
+	const uint32 now = _system->getMillis();
+	for (uint32 loopIndex = 0; loopIndex < _sceneLoopTargets.size(); ++loopIndex) {
+		const NamedAnimationClip *clip = _activeScene.findClipBySource(
+			_sceneLoopTargets[loopIndex], _sceneLoopSources[loopIndex]);
+		if (!clip)
+			continue;
+
+		const float firstFrame = (float)clip->data.startFrame;
+		const float lastFrame = (float)clip->data.endFrame;
+		const float frameCount = lastFrame >= firstFrame
+			? lastFrame - firstFrame + 1.0f : 1.0f;
+		const float elapsedFrames =
+			(float)(now - _sceneLoopStartMillis[loopIndex]) * 25.0f / 1000.0f;
+		const float loopFrame = firstFrame + std::fmod(elapsedFrames, frameCount);
+		_activeScene.poseRigidAnimation(_sceneLoopTargets[loopIndex],
+		                                _sceneLoopSources[loopIndex], loopFrame);
+	}
+
 	SoftwareRenderer renderer;
 	Common::Array<Common::String> visibleMeshes;
 	bool rendered = false;
@@ -846,6 +876,9 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 	_playerHatVisible = true;
 	_pendingSaySpeaker.clear();
 	_pendingSayText.clear();
+	_sceneLoopTargets.clear();
+	_sceneLoopSources.clear();
+	_sceneLoopStartMillis.clear();
 
 	const Common::Path roomScript(level + "/gameplay/room.isc");
 	ScriptProgram roomProgram;
@@ -1070,8 +1103,11 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 	// Gameplay prototype: clicks are projected onto the floor plane, snapped to
 	// the retail BSP graph and routed with Dijkstra. The character traverses
 	// that route continuously while the 0>1, 1>1 and 1>0 JACS sequence states
-	// drive start, looping walk and stop animation clips.
+	// drive start, looping walk and stop animation clips. Idle rendering keeps
+	// the Stay pose and playl room-object loops alive at 25 fps.
 	bool done = false;
+	uint32 lastIdleRender = _system->getMillis();
+	const uint32 idleAnimationStart = lastIdleRender;
 	while (!shouldQuit() && !done) {
 		Common::Event event;
 		while (_system->getEventManager()->pollEvent(event)) {
@@ -1243,6 +1279,23 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 					                    "Stay", stayFrame, frame);
 				}
 			}
+		}
+
+		const uint32 idleNow = _system->getMillis();
+		if (!done && !shouldQuit() && idleNow - lastIdleRender >= 40U) {
+			float stayStart = 0.0f;
+			float stayEnd = 0.0f;
+			float stayFrame = 0.0f;
+			if (animationClipRange(_playerScene, "gio_giovanni", "Stay", stayStart, stayEnd)) {
+				const float stayCount = stayEnd >= stayStart
+					? stayEnd - stayStart + 1.0f : 1.0f;
+				const float elapsedFrames =
+					(float)(idleNow - idleAnimationStart) * 25.0f / 1000.0f;
+				stayFrame = stayStart + std::fmod(elapsedFrames, stayCount);
+			}
+			renderGameplayFrame(renderCamera, sceneDirectory, playerDirectory,
+			                    "Stay", stayFrame, frame);
+			lastIdleRender = idleNow;
 		}
 		_system->delayMillis(10);
 	}
