@@ -158,14 +158,12 @@ static bool sampleLocalMatrix(const AnimationClip &clip, const Common::String &n
 
 static bool buildGlobalMatrix(const AnimationClip &clip, const HierarchyData &hierarchy,
                               const Common::String &rootName, const Common::String &name,
-                              float frame, PoseMatrix &matrix, uint32 depth = 0) {
+                              float frame, bool ignoreRootMotion,
+                              PoseMatrix &matrix, uint32 depth = 0) {
 	if (depth > hierarchy.entries.size())
 		return false;
 
-	// Root motion is applied by the gameplay actor transform, outside the
-	// skeleton. Treating the JACS root as identity keeps bone matrices in the
-	// actor-local coordinate system used by the P3D flesh vertices.
-	if (name.equalsIgnoreCase(rootName)) {
+	if (name.equalsIgnoreCase(rootName) && ignoreRootMotion) {
 		matrix = identityMatrix();
 		return true;
 	}
@@ -175,13 +173,15 @@ static bool buildGlobalMatrix(const AnimationClip &clip, const HierarchyData &hi
 		return false;
 
 	const Common::String *parentName = findParentName(hierarchy, name);
-	if (!parentName || parentName->empty() || parentName->equalsIgnoreCase("NULL")) {
+	if (name.equalsIgnoreCase(rootName) ||
+	    !parentName || parentName->empty() || parentName->equalsIgnoreCase("NULL")) {
 		matrix = local;
 		return true;
 	}
 
 	PoseMatrix parent;
-	if (!buildGlobalMatrix(clip, hierarchy, rootName, *parentName, frame, parent, depth + 1))
+	if (!buildGlobalMatrix(clip, hierarchy, rootName, *parentName, frame,
+	                       ignoreRootMotion, parent, depth + 1))
 		return false;
 	matrix = multiplyMatrix(parent, local);
 	return true;
@@ -396,9 +396,9 @@ bool SceneModel::poseSkinnedGeometry(const Common::String &rootName,
 			PoseMatrix poseGlobal;
 			PoseMatrix inverseBind;
 			if (!buildGlobalMatrix(bindClip->data, *hierarchy, rootName, namedFlesh.name,
-			                       (float)bindClip->data.startFrame, bindGlobal) ||
+			                       (float)bindClip->data.startFrame, true, bindGlobal) ||
 			    !buildGlobalMatrix(poseClip->data, *hierarchy, rootName, namedFlesh.name,
-			                       frame, poseGlobal) ||
+			                       frame, true, poseGlobal) ||
 			    !invertAffine(bindGlobal, inverseBind))
 				return false;
 
@@ -442,13 +442,150 @@ bool SceneModel::poseSkinnedGeometry(const Common::String &rootName,
 		PoseMatrix poseGlobal;
 		PoseMatrix inverseBind;
 		if (!buildGlobalMatrix(bindClip->data, *hierarchy, rootName, namedMesh.name,
-		                       (float)bindClip->data.startFrame, bindGlobal) ||
+		                       (float)bindClip->data.startFrame, true, bindGlobal) ||
 		    !buildGlobalMatrix(poseClip->data, *hierarchy, rootName, namedMesh.name,
-		                       frame, poseGlobal) ||
+		                       frame, true, poseGlobal) ||
 		    !invertAffine(bindGlobal, inverseBind))
 			continue;
 
 		const PoseMatrix delta = multiplyMatrix(poseGlobal, inverseBind);
+		namedMesh.posedVertices.resize(mesh.vertices.size());
+		for (uint32 i = 0; i < mesh.vertices.size(); ++i) {
+			const Vec3f bindPoint = transformBindVertex(mesh.vertices[i], mesh.transform);
+			namedMesh.posedVertices[i] = transformPoint(delta, bindPoint);
+		}
+	}
+
+	return true;
+}
+
+
+bool SceneModel::poseCutsceneGeometry(const Common::String &sourceName, float frame) {
+	for (uint32 meshIndex = 0; meshIndex < meshes.size(); ++meshIndex)
+		meshes[meshIndex].posedVertices.clear();
+
+	// Character hierarchies carry their own animated root in cutscenes. Build
+	// each hierarchy from frame zero/source start to the requested frame, so
+	// both bone deformation and root translation/rotation are preserved.
+	for (uint32 hierarchyIndex = 0; hierarchyIndex < hierarchies.size(); ++hierarchyIndex) {
+		const NamedHierarchy &namedHierarchy = hierarchies[hierarchyIndex];
+		const NamedAnimationClip *clip = findClipBySource(namedHierarchy.name, sourceName);
+		if (!clip)
+			continue;
+
+		const HierarchyData &hierarchy = namedHierarchy.data;
+		for (uint32 parentIndex = 0; parentIndex < meshes.size(); ++parentIndex) {
+			MeshData &parent = meshes[parentIndex].data;
+			if (!parent.isSkinnedParent())
+				continue;
+
+			Common::Array<Vec3f> posed;
+			Common::Array<float> weights;
+			posed.resize(parent.vertexCount);
+			weights.resize(parent.vertexCount);
+			for (uint32 i = 0; i < parent.vertexCount; ++i) {
+				posed[i].x = posed[i].y = posed[i].z = 0.0f;
+				weights[i] = 0.0f;
+			}
+
+			bool contributed = false;
+			for (uint32 fleshIndex = 0; fleshIndex < meshes.size(); ++fleshIndex) {
+				const NamedMesh &namedFlesh = meshes[fleshIndex];
+				const MeshData &flesh = namedFlesh.data;
+				if (!flesh.isFlesh() ||
+				    !flesh.parentMesh.equalsIgnoreCase(meshes[parentIndex].name) ||
+				    flesh.vertices.size() != flesh.influences.size() ||
+				    !findParentName(hierarchy, namedFlesh.name))
+					continue;
+
+				PoseMatrix bindGlobal;
+				PoseMatrix poseGlobal;
+				PoseMatrix inverseBind;
+				if (!buildGlobalMatrix(clip->data, hierarchy, namedHierarchy.name, namedFlesh.name,
+				                       (float)clip->data.startFrame, false, bindGlobal) ||
+				    !buildGlobalMatrix(clip->data, hierarchy, namedHierarchy.name, namedFlesh.name,
+				                       frame, false, poseGlobal) ||
+				    !invertAffine(bindGlobal, inverseBind))
+					return false;
+
+				const PoseMatrix delta = multiplyMatrix(poseGlobal, inverseBind);
+				for (uint32 i = 0; i < flesh.vertices.size(); ++i) {
+					const SkinInfluence &influence = flesh.influences[i];
+					if (influence.parentVertexIndex >= parent.vertexCount ||
+					    influence.weight <= 0.0f)
+						continue;
+					const Vec3f transformed = transformPoint(delta, flesh.vertices[i]);
+					Vec3f &dst = posed[influence.parentVertexIndex];
+					dst.x += transformed.x * influence.weight;
+					dst.y += transformed.y * influence.weight;
+					dst.z += transformed.z * influence.weight;
+					weights[influence.parentVertexIndex] += influence.weight;
+					contributed = true;
+				}
+			}
+
+			if (!contributed)
+				continue;
+
+			meshes[parentIndex].posedVertices.resize(parent.vertexCount);
+			for (uint32 i = 0; i < parent.vertexCount; ++i) {
+				if (weights[i] <= 0.000001f)
+					return false;
+				const float invWeight = 1.0f / weights[i];
+				meshes[parentIndex].posedVertices[i].x = posed[i].x * invWeight;
+				meshes[parentIndex].posedVertices[i].y = posed[i].y * invWeight;
+				meshes[parentIndex].posedVertices[i].z = posed[i].z * invWeight;
+			}
+		}
+
+		for (uint32 meshIndex = 0; meshIndex < meshes.size(); ++meshIndex) {
+			NamedMesh &namedMesh = meshes[meshIndex];
+			MeshData &mesh = namedMesh.data;
+			if (mesh.isFlesh() || mesh.isSkinnedParent() || mesh.vertices.empty() ||
+			    !findParentName(hierarchy, namedMesh.name))
+				continue;
+
+			PoseMatrix bindGlobal;
+			PoseMatrix poseGlobal;
+			PoseMatrix inverseBind;
+			if (!buildGlobalMatrix(clip->data, hierarchy, namedHierarchy.name, namedMesh.name,
+			                       (float)clip->data.startFrame, false, bindGlobal) ||
+			    !buildGlobalMatrix(clip->data, hierarchy, namedHierarchy.name, namedMesh.name,
+			                       frame, false, poseGlobal) ||
+			    !invertAffine(bindGlobal, inverseBind))
+				continue;
+
+			const PoseMatrix delta = multiplyMatrix(poseGlobal, inverseBind);
+			namedMesh.posedVertices.resize(mesh.vertices.size());
+			for (uint32 i = 0; i < mesh.vertices.size(); ++i) {
+				const Vec3f bindPoint = transformBindVertex(mesh.vertices[i], mesh.transform);
+				namedMesh.posedVertices[i] = transformPoint(delta, bindPoint);
+			}
+		}
+	}
+
+	// Rigid cutscene objects that are not members of a character hierarchy
+	// have a direct F007 track named after the mesh itself.
+	for (uint32 meshIndex = 0; meshIndex < meshes.size(); ++meshIndex) {
+		NamedMesh &namedMesh = meshes[meshIndex];
+		MeshData &mesh = namedMesh.data;
+		if (mesh.isFlesh() || mesh.isSkinnedParent() || mesh.vertices.empty() ||
+		    !namedMesh.posedVertices.empty())
+			continue;
+
+		const NamedAnimationClip *clip = findClipBySource(namedMesh.name, sourceName);
+		if (!clip)
+			continue;
+
+		PoseMatrix bindMatrix;
+		PoseMatrix poseMatrix;
+		PoseMatrix inverseBind;
+		if (!sampleLocalMatrix(clip->data, namedMesh.name, (float)clip->data.startFrame, bindMatrix) ||
+		    !sampleLocalMatrix(clip->data, namedMesh.name, frame, poseMatrix) ||
+		    !invertAffine(bindMatrix, inverseBind))
+			continue;
+
+		const PoseMatrix delta = multiplyMatrix(poseMatrix, inverseBind);
 		namedMesh.posedVertices.resize(mesh.vertices.size());
 		for (uint32 i = 0; i < mesh.vertices.size(); ++i) {
 			const Vec3f bindPoint = transformBindVertex(mesh.vertices[i], mesh.transform);
