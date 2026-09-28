@@ -1353,6 +1353,39 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 						_system->copyRectToScreen(frame.getPixels(), frame.pitch,
 						                          0, 0, frame.w, frame.h);
 						_system->updateScreen();
+
+						uint32 sayDuration = (uint32)_pendingSayText.size() * 70U;
+						if (sayDuration < 1200U)
+							sayDuration = 1200U;
+						if (sayDuration > 5000U)
+							sayDuration = 5000U;
+						const uint32 sayStart = _system->getMillis();
+						bool dismissSay = false;
+						while (!shouldQuit() && !dismissSay &&
+						       _system->getMillis() - sayStart < sayDuration) {
+							Common::Event sayEvent;
+							while (_system->getEventManager()->pollEvent(sayEvent)) {
+								if (sayEvent.type == Common::EVENT_QUIT ||
+								    sayEvent.type == Common::EVENT_RETURN_TO_LAUNCHER) {
+									quitGame();
+									dismissSay = true;
+									break;
+								}
+								if (sayEvent.type == Common::EVENT_KEYDOWN ||
+								    sayEvent.type == Common::EVENT_LBUTTONDOWN ||
+								    sayEvent.type == Common::EVENT_RBUTTONDOWN) {
+									dismissSay = true;
+									break;
+								}
+							}
+							_system->delayMillis(10);
+						}
+
+						_pendingSaySpeaker.clear();
+						_pendingSayText.clear();
+						if (!shouldQuit())
+							renderGameplayFrame(renderCamera, sceneDirectory, playerDirectory,
+							                    "Stay", 0.0f, frame);
 					}
 				}
 				continue;
