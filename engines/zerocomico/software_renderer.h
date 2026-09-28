@@ -28,7 +28,7 @@ struct RenderTransform {
 	// Local JACS root transform sampled from the active animation.
 	Vec3f localTranslation;
 	Vec3f localScale;
-	float localRotation[4]; // quaternion x, y, z, w
+	float localRotation[4]; // quaternion w, x, y, z
 };
 
 class SoftwareRenderer {
