@@ -58,6 +58,8 @@ public:
 	const NamedLight *findLight(const Common::String &name) const;
 	const NamedMesh *findMesh(const Common::String &name) const;
 	const NamedAnimationClip *findClip(const Common::String &name) const;
+	const NamedAnimationClip *findClipBySource(const Common::String &targetName,
+	                                           const Common::String &sourceName) const;
 
 	// Reconstructs the bind-pose vertices of JapoTek skinned-parent meshes
 	// from their flesh records. This gives the software renderer a complete
