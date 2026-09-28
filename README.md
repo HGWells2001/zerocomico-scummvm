@@ -12,7 +12,7 @@ The engine now has a substantial native data/runtime foundation:
 * native C++ decoder for the `JFX1` container and its LZHUF bitstream;
 * native C++ decoder for `JGF5` images with the retail BGRA pixel layout;
 * parser for all seven compressed text-script families (`.gsc`, `.isc`, `.mat`, `.par`, `.shp`, `.scr`, `.seq`), including the inline and slightly malformed brace patterns present in shipped data;
-* script VM foundation with scalar variables, arrays, indexed references, `mov`, arithmetic (`inc`, `dec`, `add`, `sub`, `mul`), numeric comparisons (`if_e`, `if_ne`, `if_g`, `if_ge`, `if_l`, `if_le`), `else` / `endif`, labels and `jmp`;
+* script VM foundation with scalar variables, arrays, indexed references, `mov`, arithmetic (`inc`, `dec`, `add`, `sub`, `mul`), `Rnd`, numeric comparisons (`if_e`, `if_ne`, `if_g`, `if_ge`, `if_l`, `if_le`), `else` / `endif`, labels and `jmp`;
 * parser for the text `.bsp` walkable-floor BSP and pathfinding graph;
 * lossless `.p3d` / `.anj` record parser with nested `0xF044` groups and ambiguous-end-marker backtracking;
 * semantic decoding for P3D materials, cameras, lights, meshes, UVs, normals, material ranges, skin/flesh data and transforms;
@@ -28,11 +28,17 @@ The engine now has a substantial native data/runtime foundation:
 * native parsing of `Shape.shp` position/range markers and BSP graph shortest-path helpers;
 * parsing of `Giovanni.seq`, including walk/run transition clips and commented-out retail sequence blocks;
 * skeletal bind-pose reconstruction from P3D flesh weights plus runtime JACS bone-pose evaluation;
-* New Game now follows `ChangeMainPlace mp1`, executes Mp1's scalar startup block, resolves `r11_Start` to Giovanni's retail position/facing vector, binds that point to the nearest BSP navigation node, loads the declared `room1_1` P3D/ANJ scene and gameplay camera, spawns Giovanni from the retail P3D/ANJ pair, and accepts mouse clicks for BSP-routed movement.
+* native `Videos.isc` cutscene timelines with frame-indexed sound, speech/subtitle, fade and environment-event parsing;
+* native JACS cutscene playback from the shipped P3D/ANJ data, including animated camera/target tracks, character skeletons, rigid-object animation and visibility toggles;
+* retail speech enumeration for cutscene lines (`Aldo0000.mp3`, `giovanni0000.mp3`, etc.) and timeline sound-effect playback;
+* persistent `playl` room-object animations and continuously sampled Giovanni idle animation during gameplay;
+* New Game now follows `ChangeMainPlace mp1`, executes Mp1's startup and runtime blocks, plays the native `c111` opening cutscene, displays the following `csay Giovanni "Mo' vado!"`, resolves `r11_Start`, loads the declared `room1_1` P3D/ANJ scene and gameplay camera, spawns Giovanni, and accepts mouse clicks for BSP-routed movement.
 
-The project is **not yet a completable port**, but the first live gameplay-shaped 3D runtime is now present. A CPU software renderer applies decoded object transforms, z buffering, perspective-correct UVs and JGF5 textures. The original `interfaccia.p3d` menu is rendered and can be navigated with the keyboard. Help opens the shipped help image, Credits plays `crediti.avi`, and Exit quits. New Game crosses into Mp1, executes its initial variable state, resolves `r11_Start`, loads `room1_1.p3d/.anj`, uses the scripted camera, loads both BSP maps, reconstructs Giovanni's skinned body from flesh influences, and renders him at the retail starting marker. Mouse clicks are projected onto the ground plane, snapped to the retail navigation graph and routed with Dijkstra; Giovanni then moves continuously along the selected node path while the engine advances the `cammina` JACS clip cycle.
+The project is **not yet a completable port**, but the first live gameplay-shaped 3D runtime is now present. A CPU software renderer applies decoded object transforms, z buffering, perspective-correct UVs and JGF5 textures, with a persistent decoded-texture cache for animated scenes. The original `interfaccia.p3d` menu is rendered and can be navigated with the keyboard. Help opens the shipped help image, Credits plays `crediti.avi`, and Exit quits.
 
-Skeletal deformation is wired to the decoded JACS hierarchy and per-bone transform tracks. Animation keys now use their stored Kochanek-Bartels tension/continuity/bias values. The `cammina` sequence follows the retail `0>1` start, `1>1` loop and `1>0` stop transitions, and movement speed is derived from the horizontal root displacement of the decoded walk clips when available. Camera-map transitions, room cutscene state, interactions, dialogue/audio routing, inventory and Load/Save remain pending.
+New Game now executes the real Mp1 runtime rather than jumping directly to a static room. The shipped `C111.p3d/.anj` cutscene is posed frame by frame at 25 fps using its animated camera and target, JACS character hierarchies, visibility streams and the `Videos.isc` timeline. The teleport sound, Aldo's enumerated `Aldo0000.mp3` speech and subtitle are routed during the sequence, after which the room runtime reaches Giovanni's `"Mo' vado!"` line and hands control to `room1_1`. The same timeline player is generic for the other Mp1 cutscene asset pairs and handles their mixed filename case.
+
+Gameplay keeps the declared `playl` background animations alive, including `r11_Terra Gira` in the start room. Giovanni's idle pose is sampled continuously. Mouse clicks are projected onto the ground plane, snapped to the retail BSP graph and routed with Dijkstra; the `cammina` sequence follows the retail `0>1` start, `1>1` loop and `1>0` stop transitions, with TCB interpolation and movement speed derived from JACS root motion. Camera-map switching, full puzzle/object interaction, normal dialogue routing, inventory, room changes and Load/Save remain pending.
 
 ## Game data layout
 
