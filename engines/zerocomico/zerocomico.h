@@ -41,6 +41,9 @@ private:
 	SceneModel _activeScene;
 	BspMap _activeWalkMap;
 	BspMap _activeCameraMap;
+	Vec3f _playerPosition;
+	Vec3f _playerFacingTarget;
+	bool _havePlayerStart;
 	ScriptVM _scriptVM;
 	bool _interfaceDisabled;
 	bool _3dEnabled;
