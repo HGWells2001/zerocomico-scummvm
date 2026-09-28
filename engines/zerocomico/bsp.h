@@ -62,6 +62,9 @@ public:
 	Common::Array<BspTreeNode> tree;
 	Common::Array<NavNode> graph;
 
+	int nearestGraphNode(float x, float y) const;
+	bool shortestPath(int startNode, int endNode, Common::Array<int> &path) const;
+
 private:
 	int parseTree(class LineReader &reader, bool &ok);
 };
