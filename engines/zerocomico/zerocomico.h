@@ -9,6 +9,7 @@
 
 #include "zerocomico/bsp.h"
 #include "zerocomico/cutscene_script.h"
+#include "zerocomico/dialog_script.h"
 #include "zerocomico/puzzle_script.h"
 #include "zerocomico/scene_model.h"
 #include "zerocomico/script_vm.h"
@@ -47,6 +48,12 @@ private:
 	                         const Common::String &animationSource,
 	                         float animationFrame,
 	                         Graphics::ManagedSurface &frame);
+	bool playDialogue(const Common::String &name,
+	                  const RenderCamera &camera,
+	                  const Common::Path &sceneDirectory,
+	                  const Common::Path &playerDirectory,
+	                  Graphics::ManagedSurface &frame,
+	                  uint32 depth = 0);
 	void runMenu();
 	void showImageModal(const Common::Path &path);
 	void showBootstrapScreen();
@@ -58,6 +65,7 @@ private:
 	SceneModel _playerScene;
 	SequenceScript _playerSequences;
 	PuzzleScript _activePuzzle;
+	DialogScript _activeDialog;
 	ShapeScript _activeShapes;
 	SoftwareRenderer _gameplayRenderer;
 	BspMap _activeWalkMap;
@@ -70,6 +78,7 @@ private:
 	Common::String _currentMainPlace;
 	Common::String _pendingSaySpeaker;
 	Common::String _pendingSayText;
+	Common::String _pendingDialogName;
 	Common::String _pendingRoomName;
 	Common::String _pendingRoomCutscene;
 	Common::String _selectedInventoryObject;
