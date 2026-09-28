@@ -4,6 +4,7 @@
 
 #include "zerocomico/zerocomico.h"
 #include "zerocomico/chapter.h"
+#include "zerocomico/camera_script.h"
 #include "zerocomico/resource.h"
 #include "zerocomico/script.h"
 #include "zerocomico/script_program.h"
@@ -18,6 +19,8 @@
 #include "graphics/pixelformat.h"
 #include "graphics/surface.h"
 #include "video/avi_decoder.h"
+
+#include <cmath>
 
 namespace ZeroComico {
 
@@ -296,21 +299,47 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 	}
 
 	Common::String cameraName = room->camera;
-	if (!_activeScene.findCamera(cameraName)) {
-		if (_activeScene.cameras.empty()) {
-			warning("Zero Comico: start-room scene has no camera");
+	RenderCamera renderCamera;
+	bool haveRenderCamera = false;
+
+	// Gameplay rooms do not use the editor camera embedded in room*.p3d.
+	// room.isc points at an alias whose source/target/FOV live in Camera.scr.
+	// Using that script camera fixes the start-room viewpoint instead of
+	// falling back to the unrelated exported editor camera.
+	CameraScript cameraScript;
+	const Common::Path cameraScriptPath(level + "/gameplay/Camera.scr");
+	if (cameraScript.load(cameraScriptPath)) {
+		const ScriptCamera *scriptCamera = cameraScript.findCamera(cameraName);
+		if (scriptCamera) {
+			const float radians = scriptCamera->horizontalFovDegrees * 3.14159265358979323846f / 180.0f;
+			const float halfTan = std::tan(radians * 0.5f);
+			if (halfTan > 0.0001f) {
+				renderCamera.position = scriptCamera->source;
+				renderCamera.target = scriptCamera->target;
+				renderCamera.focalPixels = 400.0f / halfTan;
+				haveRenderCamera = true;
+			}
+		}
+	}
+
+	if (!haveRenderCamera) {
+		const NamedCamera *embedded = _activeScene.findCamera(cameraName);
+		if (!embedded && !_activeScene.cameras.empty())
+			embedded = &_activeScene.cameras[0];
+		if (!embedded || embedded->data.fov <= 0.0f) {
+			warning("Zero Comico: start-room scene has no usable camera");
 			return false;
 		}
-		// The room script uses a gameplay camera alias (for example
-		// r11_ge_camfix_01), while the P3D carries the underlying camera
-		// object name. With one exported camera the mapping is unambiguous.
-		cameraName = _activeScene.cameras[0].name;
+		cameraName = embedded->name;
+		renderCamera.position = embedded->data.position;
+		renderCamera.target = embedded->data.target;
+		renderCamera.focalPixels = embedded->data.fov * 800.0f / 36.0f;
 	}
 
 	SoftwareRenderer renderer;
 	Graphics::ManagedSurface frame;
 	Common::Array<Common::String> visibleMeshes;
-	if (!renderer.render(_activeScene, cameraName, sceneDirectory, visibleMeshes,
+	if (!renderer.render(_activeScene, renderCamera, sceneDirectory, visibleMeshes,
 	                     frame, 800, 600)) {
 		warning("Zero Comico: could not render start room %s", room->name.c_str());
 		return false;
