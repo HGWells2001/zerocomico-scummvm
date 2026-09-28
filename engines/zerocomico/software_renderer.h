@@ -64,6 +64,13 @@ public:
 	                     const RenderTransform &actorTransform,
 	                     Graphics::ManagedSurface &target, int width = 800, int height = 600) const;
 
+	// Projects candidate room meshes through the same camera convention as the
+	// renderer and returns the nearest screen-space hit.
+	bool pickMesh(const SceneModel &scene, const RenderCamera &camera,
+	              int screenX, int screenY,
+	              const Common::Array<Common::String> &candidates,
+	              Common::String &pickedName, int width = 800, int height = 600) const;
+
 private:
 	// JGF decoding is expensive and cutscenes redraw the same materials every
 	// frame. Keep decoded texture surfaces for the lifetime of this renderer.
