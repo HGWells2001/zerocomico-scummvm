@@ -6,17 +6,33 @@
 #include "zerocomico/resource.h"
 #include "zerocomico/script.h"
 #include "zerocomico/script_program.h"
+#include "zerocomico/software_renderer.h"
 
 #include "common/events.h"
 #include "common/file.h"
 #include "common/system.h"
 #include "engines/advancedDetector.h"
 #include "engines/util.h"
+#include "graphics/managed_surface.h"
 #include "graphics/pixelformat.h"
 #include "graphics/surface.h"
 #include "video/avi_decoder.h"
 
 namespace ZeroComico {
+
+namespace {
+
+static const char *const kMenuButtons[] = {
+	"nuova",
+	"help",
+	"crediti",
+	"abbandon",
+	"carica"
+};
+
+static const int kMenuButtonCount = 5;
+
+} // namespace
 
 ZeroComicoEngine::ZeroComicoEngine(OSystem *syst, const ADGameDescription *desc)
 	: Engine(syst), _gameDescription(desc), _scriptVM(this),
@@ -49,13 +65,16 @@ Common::Error ZeroComicoEngine::run() {
 		playFilmIfPresent(Common::Path("Data/Intro.avi"));
 	}
 
-	// Decode the real menu P3D/ANJ pair now, even though the renderer is not
-	// wired yet. This makes bootstrap exercise geometry, hierarchy and JACS
-	// animation decoding on the retail asset set.
-	loadMenuScene();
+	// The retail startup leaves if_MenuIface at 1. Decode and render the real
+	// P3D menu scene with that initial visibility state. If any part of the 3D
+	// path fails, retain the old decoded-texture bootstrap as a safe fallback.
+	if (loadMenuScene() && renderMenuFrame(0))
+		runMenu();
+	else {
+		showBootstrapScreen();
+		waitForExit();
+	}
 
-	showBootstrapScreen();
-	waitForExit();
 	return Common::kNoError;
 }
 
@@ -205,11 +224,130 @@ bool ZeroComicoEngine::loadMenuScene() {
 	return true;
 }
 
+bool ZeroComicoEngine::renderMenuFrame(int selection) {
+	if (selection < 0 || selection >= kMenuButtonCount)
+		return false;
+
+	Common::Array<Common::String> visible;
+	visible.push_back("int_iface");
+	visible.push_back("int_vetro");
+	visible.push_back("int_main");
+	visible.push_back("int_sarac_des");
+	visible.push_back("int_sarac_sin");
+
+	for (int i = 0; i < kMenuButtonCount; ++i) {
+		Common::String meshName("int_");
+		meshName += (i == selection) ? "a_" : "s_";
+		meshName += kMenuButtons[i];
+		visible.push_back(meshName);
+	}
+
+	SoftwareRenderer renderer;
+	Graphics::ManagedSurface frame;
+	if (!renderer.render(_menuScene, "int_Camera01",
+	                     Common::Path("Mpx/bodies/interfaccia"), visible, frame, 800, 600)) {
+		warning("Zero Comico: could not render the decoded 3D menu scene");
+		return false;
+	}
+
+	_system->copyRectToScreen(frame.getPixels(), frame.pitch, 0, 0, frame.w, frame.h);
+	_system->updateScreen();
+	return true;
+}
+
+void ZeroComicoEngine::showImageModal(const Common::Path &path) {
+	Graphics::ManagedSurface image;
+	if (!ResourceReader::decodeJgfFile(path, image)) {
+		warning("Zero Comico: cannot decode image %s", path.toString().c_str());
+		return;
+	}
+
+	const int x = (800 - image.w) / 2;
+	const int y = (600 - image.h) / 2;
+	_system->copyRectToScreen(image.getPixels(), image.pitch, x, y, image.w, image.h);
+	_system->updateScreen();
+
+	bool dismiss = false;
+	while (!shouldQuit() && !dismiss) {
+		Common::Event event;
+		while (_system->getEventManager()->pollEvent(event)) {
+			if (event.type == Common::EVENT_QUIT || event.type == Common::EVENT_RETURN_TO_LAUNCHER) {
+				quitGame();
+				break;
+			}
+			if (event.type == Common::EVENT_KEYDOWN || event.type == Common::EVENT_LBUTTONDOWN) {
+				dismiss = true;
+				break;
+			}
+		}
+		_system->delayMillis(10);
+	}
+}
+
+void ZeroComicoEngine::runMenu() {
+	int selection = 0;
+
+	while (!shouldQuit()) {
+		Common::Event event;
+		while (_system->getEventManager()->pollEvent(event)) {
+			if (event.type == Common::EVENT_QUIT || event.type == Common::EVENT_RETURN_TO_LAUNCHER) {
+				quitGame();
+				break;
+			}
+			if (event.type != Common::EVENT_KEYDOWN)
+				continue;
+
+			const Common::KeyCode key = event.kbd.keycode;
+			if (key == Common::KEYCODE_ESCAPE) {
+				quitGame();
+				break;
+			}
+
+			if (key == Common::KEYCODE_LEFT || key == Common::KEYCODE_UP) {
+				selection = (selection + kMenuButtonCount - 1) % kMenuButtonCount;
+				renderMenuFrame(selection);
+				continue;
+			}
+			if (key == Common::KEYCODE_RIGHT || key == Common::KEYCODE_DOWN) {
+				selection = (selection + 1) % kMenuButtonCount;
+				renderMenuFrame(selection);
+				continue;
+			}
+
+			if (key != Common::KEYCODE_RETURN && key != Common::KEYCODE_KP_ENTER && key != Common::KEYCODE_SPACE)
+				continue;
+
+			switch (selection) {
+			case 0: // NUOVO -> ChangeMainPlace mp1 in Interface.isc
+				debug(1, "Zero Comico: NUOVO selected; Mp1 scene runtime is the next gameplay milestone");
+				break;
+			case 1: // AIUTI
+				showImageModal(Common::Path("images/help.tga"));
+				if (!shouldQuit())
+					renderMenuFrame(selection);
+				break;
+			case 2: // CREDITS
+				playFilmIfPresent(Common::Path("Data/crediti.avi"));
+				if (!shouldQuit())
+					renderMenuFrame(selection);
+				break;
+			case 3: // ESCI
+				quitGame();
+				break;
+			case 4: // CARICA
+				debug(1, "Zero Comico: CARICA selected; save/load UI is not implemented yet");
+				break;
+			default:
+				break;
+			}
+		}
+		_system->delayMillis(10);
+	}
+}
+
 void ZeroComicoEngine::showBootstrapScreen() {
 	Graphics::ManagedSurface image;
 
-	// Until the decoded menu scene is rendered, use its original 512x512
-	// interface texture as a visible bootstrap surface.
 	if (!ResourceReader::decodeJgfFile(Common::Path("Mpx/bodies/interfaccia/interf.tga"), image)) {
 		if (!ResourceReader::decodeJgfFile(Common::Path("images/CD.tga"), image))
 			return;
