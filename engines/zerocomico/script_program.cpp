@@ -7,6 +7,53 @@
 
 namespace ZeroComico {
 
+namespace {
+
+static Common::String stripBlockComments(const Common::String &text) {
+	Common::String out;
+	bool blockComment = false;
+	bool quoted = false;
+
+	for (uint32 i = 0; i < text.size(); ++i) {
+		const char ch = text[i];
+		const char next = i + 1 < text.size() ? text[i + 1] : 0;
+
+		if (blockComment) {
+			if (ch == '*' && next == '/') {
+				out += ' ';
+				out += ' ';
+				++i;
+				blockComment = false;
+			} else if (ch == '\n' || ch == '\r') {
+				out += ch;
+			} else {
+				out += ' ';
+			}
+			continue;
+		}
+
+		if (ch == '"' && (i == 0 || text[i - 1] != '\\')) {
+			quoted = !quoted;
+			out += ch;
+			continue;
+		}
+
+		if (!quoted && ch == '/' && next == '*') {
+			out += ' ';
+			out += ' ';
+			++i;
+			blockComment = true;
+			continue;
+		}
+
+		out += ch;
+	}
+
+	return out;
+}
+
+} // namespace
+
 Common::String ScriptProgram::stripComment(const Common::String &line) {
 	bool quoted = false;
 	for (uint32 i = 0; i + 1 < line.size(); ++i) {
@@ -61,16 +108,17 @@ bool ScriptProgram::parse(const Common::String &text) {
 	_instructions.clear();
 	_labels.clear();
 
+	const Common::String cleanText = stripBlockComments(text);
 	int depth = 0;
 	uint32 lineNumber = 1;
 	uint32 start = 0;
 
-	while (start <= text.size()) {
+	while (start <= cleanText.size()) {
 		uint32 end = start;
-		while (end < text.size() && text[end] != '\n' && text[end] != '\r')
+		while (end < cleanText.size() && cleanText[end] != '\n' && cleanText[end] != '\r')
 			++end;
 
-		Common::String raw = stripComment(text.substr(start, end - start));
+		Common::String raw = stripComment(cleanText.substr(start, end - start));
 		raw.trim();
 
 		if (!raw.empty()) {
@@ -130,9 +178,9 @@ bool ScriptProgram::parse(const Common::String &text) {
 			}
 		}
 
-		if (end >= text.size())
+		if (end >= cleanText.size())
 			break;
-		if (text[end] == '\r' && end + 1 < text.size() && text[end + 1] == '\n')
+		if (cleanText[end] == '\r' && end + 1 < cleanText.size() && cleanText[end + 1] == '\n')
 			++end;
 		start = end + 1;
 		++lineNumber;
