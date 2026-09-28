@@ -7,6 +7,8 @@
 
 #include "engines/engine.h"
 
+struct ADGameDescription;
+
 namespace ZeroComico {
 
 class ZeroComicoEngine : public Engine {
