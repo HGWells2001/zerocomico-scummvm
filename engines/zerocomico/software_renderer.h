@@ -33,6 +33,9 @@ struct RenderTransform {
 
 class SoftwareRenderer {
 public:
+	SoftwareRenderer();
+	~SoftwareRenderer();
+
 	// Renders a static SceneModel with the retail camera convention. The
 	// optional mesh list is useful for JACS scenes where visibility is normally
 	// driven by animation/script state; an empty list means render every mesh.
@@ -60,6 +63,12 @@ public:
 	                     const Common::Array<Common::String> &actorVisibleMeshes,
 	                     const RenderTransform &actorTransform,
 	                     Graphics::ManagedSurface &target, int width = 800, int height = 600) const;
+
+private:
+	// JGF decoding is expensive and cutscenes redraw the same materials every
+	// frame. Keep decoded texture surfaces for the lifetime of this renderer.
+	mutable Common::Array<Common::String> _textureCacheKeys;
+	mutable Common::Array<Graphics::ManagedSurface *> _textureCache;
 };
 
 } // namespace ZeroComico
