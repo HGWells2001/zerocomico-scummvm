@@ -42,7 +42,8 @@ static bool sampleRootTransform(const SceneModel &scene, const Common::String &t
 	transform.localTranslation.x = transform.localTranslation.y = transform.localTranslation.z = 0.0f;
 	transform.localScale.x = transform.localScale.y = transform.localScale.z = 1.0f;
 	transform.localRotation[0] = 1.0f;
-	transform.localRotation[1] = transform.localRotation[2] = transform.localRotation[3] = 0.0f;
+	transform.localRotation[1] = transform.localRotation[2] = 0.0f;
+	transform.localRotation[3] = 0.0f;
 
 	const NamedAnimationClip *clip = scene.findClipBySource(targetName, sourceName);
 	if (!clip)
