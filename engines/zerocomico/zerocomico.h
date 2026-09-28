@@ -13,6 +13,7 @@
 #include "zerocomico/scene_model.h"
 #include "zerocomico/script_vm.h"
 #include "zerocomico/sequence_script.h"
+#include "zerocomico/shape_script.h"
 #include "zerocomico/software_renderer.h"
 #include "graphics/managed_surface.h"
 
@@ -55,6 +56,7 @@ private:
 	SceneModel _playerScene;
 	SequenceScript _playerSequences;
 	PuzzleScript _activePuzzle;
+	ShapeScript _activeShapes;
 	SoftwareRenderer _gameplayRenderer;
 	BspMap _activeWalkMap;
 	BspMap _activeCameraMap;
@@ -66,6 +68,8 @@ private:
 	Common::String _currentMainPlace;
 	Common::String _pendingSaySpeaker;
 	Common::String _pendingSayText;
+	Common::String _pendingRoomName;
+	Common::String _pendingRoomCutscene;
 	Common::Array<Common::String> _sceneLoopTargets;
 	Common::Array<Common::String> _sceneLoopSources;
 	Common::Array<uint32> _sceneLoopStartMillis;
