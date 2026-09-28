@@ -81,6 +81,12 @@ public:
 	// Unlike gameplay posing, root motion remains inside the animated scene.
 	bool poseCutsceneGeometry(const Common::String &sourceName, float frame);
 
+	// Evaluates transform visibility event streams. Objects with a visibility
+	// stream start hidden and toggle at every listed frame; other meshes remain
+	// visible by default.
+	void visibleMeshesForSource(const Common::String &sourceName, float frame,
+	                           Common::Array<Common::String> &visible) const;
+
 	Common::Array<NamedMaterial> materials;
 	Common::Array<NamedCamera> cameras;
 	Common::Array<NamedLight> lights;
