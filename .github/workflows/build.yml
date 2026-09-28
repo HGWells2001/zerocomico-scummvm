@@ -1,0 +1,32 @@
+name: Build against ScummVM master
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Zero Comico engine
+        uses: actions/checkout@v4
+
+      - name: Install build dependency
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsdl2-dev
+
+      - name: Checkout ScummVM
+        run: git clone --depth 1 https://github.com/scummvm/scummvm.git scummvm
+
+      - name: Overlay Zero Comico engine
+        run: cp -a engines/zerocomico scummvm/engines/
+
+      - name: Configure
+        working-directory: scummvm
+        run: ./configure --disable-all-engines --enable-engine=zerocomico
+
+      - name: Build
+        working-directory: scummvm
+        run: make -j2
