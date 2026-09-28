@@ -61,6 +61,8 @@ private:
 	bool _playerHatVisible;
 	int _playerNavNode;
 	Common::String _currentMainPlace;
+	Common::String _pendingSaySpeaker;
+	Common::String _pendingSayText;
 	ScriptVM _scriptVM;
 	bool _interfaceDisabled;
 	bool _3dEnabled;
