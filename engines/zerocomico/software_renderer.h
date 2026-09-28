@@ -14,12 +14,26 @@
 
 namespace ZeroComico {
 
+struct RenderCamera {
+	Vec3f position;
+	Vec3f target;
+	float focalPixels;
+};
+
 class SoftwareRenderer {
 public:
 	// Renders a static SceneModel with the retail camera convention. The
 	// optional mesh list is useful for JACS scenes where visibility is normally
 	// driven by animation/script state; an empty list means render every mesh.
 	bool render(const SceneModel &scene, const Common::String &cameraName,
+	            const Common::Path &textureDirectory,
+	            const Common::Array<Common::String> &visibleMeshes,
+	            Graphics::ManagedSurface &target, int width = 800, int height = 600) const;
+
+	// Gameplay cameras defined by Camera.scr already carry their source/target
+	// and use an angular FOV. The caller converts that FOV to focal pixels and
+	// feeds the same rasterizer through this overload.
+	bool render(const SceneModel &scene, const RenderCamera &camera,
 	            const Common::Path &textureDirectory,
 	            const Common::Array<Common::String> &visibleMeshes,
 	            Graphics::ManagedSurface &target, int width = 800, int height = 600) const;
