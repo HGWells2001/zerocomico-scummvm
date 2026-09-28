@@ -74,10 +74,27 @@ bool CutsceneScript::parse(const ScriptProgram &program) {
 
 			CutsceneEvent event;
 			event.type = type;
+			event.speechIndex = 0;
 			if (!parseFrame(inst.args[0], event.frame))
 				continue;
 			for (uint32 arg = 1; arg < inst.args.size(); ++arg)
 				event.args.push_back(inst.args[arg]);
+
+			// SpeechEnumeration in the retail runtime numbers each speaker's
+			// lines in Videos.isc globally and resolves files such as
+			// Aldo0000.mp3 and giovanni0003.mp3 by convention.
+			if (type == kCutsceneText && !event.args.empty()) {
+				for (uint32 timelineIndex = 0; timelineIndex < timelines.size(); ++timelineIndex) {
+					const CutsceneTimeline &previousTimeline = timelines[timelineIndex];
+					for (uint32 eventIndex = 0; eventIndex < previousTimeline.events.size(); ++eventIndex) {
+						const CutsceneEvent &previous = previousTimeline.events[eventIndex];
+						if (previous.type == kCutsceneText && !previous.args.empty() &&
+						    previous.args[0].equalsIgnoreCase(event.args[0]))
+							++event.speechIndex;
+					}
+				}
+			}
+
 			current->events.push_back(event);
 			continue;
 		}
