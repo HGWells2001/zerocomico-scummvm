@@ -226,6 +226,24 @@ static void drawCutsceneSubtitle(Graphics::ManagedSurface &surface,
 	}
 }
 
+static void applyFadeToBlack(Graphics::ManagedSurface &surface, float amount) {
+	if (amount <= 0.0f)
+		return;
+	if (amount > 1.0f)
+		amount = 1.0f;
+
+	const float keep = 1.0f - amount;
+	for (int y = 0; y < surface.h; ++y) {
+		byte *row = static_cast<byte *>(surface.getBasePtr(0, y));
+		for (int x = 0; x < surface.w; ++x) {
+			row[x * 4 + 0] = (byte)(row[x * 4 + 0] * keep);
+			row[x * 4 + 1] = (byte)(row[x * 4 + 1] * keep);
+			row[x * 4 + 2] = (byte)(row[x * 4 + 2] * keep);
+		}
+	}
+}
+
+
 
 } // namespace
 
@@ -417,6 +435,8 @@ bool ZeroComicoEngine::playCutscene(const Common::String &name) {
 	Common::String subtitleText;
 	Audio::SoundHandle cutsceneSfxHandle;
 	Audio::SoundHandle cutsceneSpeechHandle;
+	int32 fadeStartFrame = -1;
+	uint32 fadeDurationFrames = 0;
 	bool skip = false;
 
 	for (float frame = startFrame; frame <= endFrame && !shouldQuit() && !skip; frame += 1.0f) {
@@ -537,8 +557,15 @@ bool ZeroComicoEngine::playCutscene(const Common::String &name) {
 					      name.c_str(), event.frame);
 					break;
 				case kCutsceneFadeOut:
-					debug(1, "Zero Comico: cutscene %s fade event at frame %u",
-					      name.c_str(), event.frame);
+					fadeStartFrame = (int32)event.frame;
+					fadeDurationFrames = 1;
+					if (!event.args.empty()) {
+						const long duration = strtol(event.args[0].c_str(), nullptr, 10);
+						if (duration > 0)
+							fadeDurationFrames = (uint32)duration;
+					}
+					debug(1, "Zero Comico: cutscene %s fade-out at frame %u over %u frames",
+					      name.c_str(), event.frame, fadeDurationFrames);
 					break;
 				case kCutsceneSetEnvSound:
 					debug(1, "Zero Comico: cutscene %s environment-sound event at frame %u",
@@ -549,6 +576,11 @@ bool ZeroComicoEngine::playCutscene(const Common::String &name) {
 		}
 
 		drawCutsceneSubtitle(frameSurface, subtitleSpeaker, subtitleText);
+		if (fadeStartFrame >= 0 && frame >= (float)fadeStartFrame) {
+			const float fadeProgress =
+				(frame - (float)fadeStartFrame) / (float)fadeDurationFrames;
+			applyFadeToBlack(frameSurface, fadeProgress);
+		}
 
 		_system->copyRectToScreen(frameSurface.getPixels(), frameSurface.pitch,
 		                          0, 0, frameSurface.w, frameSurface.h);
