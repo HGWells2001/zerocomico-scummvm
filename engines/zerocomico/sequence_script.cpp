@@ -92,4 +92,15 @@ const AnimationSequence *SequenceScript::findSequence(const Common::String &name
 	return nullptr;
 }
 
+const SequenceTransition *SequenceScript::findTransition(const Common::String &sequenceName,
+                                                         const Common::String &state) const {
+	const AnimationSequence *sequence = findSequence(sequenceName);
+	if (!sequence)
+		return nullptr;
+	for (uint32 i = 0; i < sequence->transitions.size(); ++i)
+		if (sequence->transitions[i].state.equalsIgnoreCase(state))
+			return &sequence->transitions[i];
+	return nullptr;
+}
+
 } // namespace ZeroComico
