@@ -5,6 +5,7 @@ MODULE_OBJS := \
 	lzhuf.o \
 	metaengine.o \
 	model.o \
+	model_animation.o \
 	model_data.o \
 	resource.o \
 	script.o \
