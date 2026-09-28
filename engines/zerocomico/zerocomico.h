@@ -9,6 +9,7 @@
 
 #include "zerocomico/bsp.h"
 #include "zerocomico/cutscene_script.h"
+#include "zerocomico/puzzle_script.h"
 #include "zerocomico/scene_model.h"
 #include "zerocomico/script_vm.h"
 #include "zerocomico/sequence_script.h"
@@ -53,6 +54,7 @@ private:
 	SceneModel _activeScene;
 	SceneModel _playerScene;
 	SequenceScript _playerSequences;
+	PuzzleScript _activePuzzle;
 	SoftwareRenderer _gameplayRenderer;
 	BspMap _activeWalkMap;
 	BspMap _activeCameraMap;
