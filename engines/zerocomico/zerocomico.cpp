@@ -619,9 +619,12 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 		return true;
 
 	if (op.equalsIgnoreCase("csay")) {
-		if (instruction.args.size() >= 2)
+		if (instruction.args.size() >= 2) {
+			_pendingSaySpeaker = instruction.args[0];
+			_pendingSayText = instruction.args[1];
 			debug(1, "Zero Comico: %s says: %s",
-			      instruction.args[0].c_str(), instruction.args[1].c_str());
+			      _pendingSaySpeaker.c_str(), _pendingSayText.c_str());
+		}
 		return true;
 	}
 
@@ -800,6 +803,8 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 
 	_currentMainPlace = level;
 	_playerHatVisible = true;
+	_pendingSaySpeaker.clear();
+	_pendingSayText.clear();
 
 	const Common::Path roomScript(level + "/gameplay/room.isc");
 	ScriptProgram roomProgram;
@@ -971,6 +976,47 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 	if (!renderGameplayFrame(renderCamera, sceneDirectory, playerDirectory, "Stay", 0.0f, frame)) {
 		warning("Zero Comico: could not render start room %s", room->name.c_str());
 		return false;
+	}
+
+	// csay is synchronous in the retail room runtime. The runtime stores the
+	// line while the cutscene owns the screen; once C111 returns, show it over
+	// the first gameplay frame before handing control to the player.
+	if (!_pendingSayText.empty()) {
+		drawCutsceneSubtitle(frame, _pendingSaySpeaker, _pendingSayText);
+		_system->copyRectToScreen(frame.getPixels(), frame.pitch, 0, 0, frame.w, frame.h);
+		_system->updateScreen();
+
+		uint32 sayDuration = (uint32)_pendingSayText.size() * 70U;
+		if (sayDuration < 1200U)
+			sayDuration = 1200U;
+		if (sayDuration > 5000U)
+			sayDuration = 5000U;
+
+		const uint32 sayStart = _system->getMillis();
+		bool dismissSay = false;
+		while (!shouldQuit() && !dismissSay &&
+		       _system->getMillis() - sayStart < sayDuration) {
+			Common::Event sayEvent;
+			while (_system->getEventManager()->pollEvent(sayEvent)) {
+				if (sayEvent.type == Common::EVENT_QUIT ||
+				    sayEvent.type == Common::EVENT_RETURN_TO_LAUNCHER) {
+					quitGame();
+					dismissSay = true;
+					break;
+				}
+				if (sayEvent.type == Common::EVENT_KEYDOWN ||
+				    sayEvent.type == Common::EVENT_LBUTTONDOWN) {
+					dismissSay = true;
+					break;
+				}
+			}
+			_system->delayMillis(10);
+		}
+
+		_pendingSaySpeaker.clear();
+		_pendingSayText.clear();
+		if (!shouldQuit())
+			renderGameplayFrame(renderCamera, sceneDirectory, playerDirectory, "Stay", 0.0f, frame);
 	}
 
 	debug(1, "Zero Comico: main place %s start room %s marker %s, camera %s, %u meshes, %u nav nodes%s",
