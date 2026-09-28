@@ -37,6 +37,8 @@ private:
 	bool renderGameplayFrame(const RenderCamera &camera,
 	                         const Common::Path &sceneDirectory,
 	                         const Common::Path &playerDirectory,
+	                         const Common::String &animationSource,
+	                         float animationFrame,
 	                         Graphics::ManagedSurface &frame);
 	void runMenu();
 	void showImageModal(const Common::Path &path);
