@@ -20,6 +20,11 @@ struct RenderCamera {
 	float focalPixels;
 };
 
+struct RenderTransform {
+	Vec3f translation;
+	float yawRadians;
+};
+
 class SoftwareRenderer {
 public:
 	// Renders a static SceneModel with the retail camera convention. The
@@ -37,6 +42,18 @@ public:
 	            const Common::Path &textureDirectory,
 	            const Common::Array<Common::String> &visibleMeshes,
 	            Graphics::ManagedSurface &target, int width = 800, int height = 600) const;
+
+	// Draws a gameplay room and one independently transformed actor into the
+	// same target/z buffer. This is the first runtime bridge between the room
+	// scene and character P3D data.
+	bool renderWithActor(const SceneModel &scene, const RenderCamera &camera,
+	                     const Common::Path &textureDirectory,
+	                     const Common::Array<Common::String> &visibleMeshes,
+	                     const SceneModel &actor,
+	                     const Common::Path &actorTextureDirectory,
+	                     const Common::Array<Common::String> &actorVisibleMeshes,
+	                     const RenderTransform &actorTransform,
+	                     Graphics::ManagedSurface &target, int width = 800, int height = 600) const;
 };
 
 } // namespace ZeroComico
