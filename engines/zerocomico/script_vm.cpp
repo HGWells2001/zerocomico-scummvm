@@ -14,7 +14,8 @@ namespace {
 static bool isConditionalOpcode(const Common::String &op) {
 	return op.equalsIgnoreCase("if_e") || op.equalsIgnoreCase("if_ne") ||
 	       op.equalsIgnoreCase("if_g") || op.equalsIgnoreCase("if_ge") ||
-	       op.equalsIgnoreCase("if_l") || op.equalsIgnoreCase("if_le");
+	       op.equalsIgnoreCase("if_l") || op.equalsIgnoreCase("if_le") ||
+	       op.equalsIgnoreCase("if_z") || op.equalsIgnoreCase("if_nz");
 }
 
 } // namespace
@@ -185,12 +186,26 @@ bool ScriptVM::executeRandom(const ScriptInstruction &instruction) {
 }
 
 bool ScriptVM::evaluateComparison(const ScriptInstruction &instruction, bool &result) const {
-	if (instruction.args.size() < 2)
+	if (instruction.args.empty())
 		return false;
 
 	int32 left = 0;
+	if (!resolveValue(instruction.args[0], left))
+		return false;
+
+	if (instruction.opcode.equalsIgnoreCase("if_z")) {
+		result = left == 0;
+		return true;
+	}
+	if (instruction.opcode.equalsIgnoreCase("if_nz")) {
+		result = left != 0;
+		return true;
+	}
+
+	if (instruction.args.size() < 2)
+		return false;
 	int32 right = 0;
-	if (!resolveValue(instruction.args[0], left) || !resolveValue(instruction.args[1], right))
+	if (!resolveValue(instruction.args[1], right))
 		return false;
 
 	if (instruction.opcode.equalsIgnoreCase("if_e"))
