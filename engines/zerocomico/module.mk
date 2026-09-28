@@ -2,6 +2,7 @@ MODULE := engines/zerocomico
 
 MODULE_OBJS := \
 	bsp.o \
+	chapter.o \
 	lzhuf.o \
 	metaengine.o \
 	model.o \
