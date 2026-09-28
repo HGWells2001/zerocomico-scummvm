@@ -3,6 +3,7 @@
  */
 
 #include "zerocomico/zerocomico.h"
+#include "zerocomico/chapter.h"
 #include "zerocomico/resource.h"
 #include "zerocomico/script.h"
 #include "zerocomico/script_program.h"
@@ -255,6 +256,96 @@ bool ZeroComicoEngine::renderMenuFrame(int selection) {
 	return true;
 }
 
+bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
+	if (mainPlace.empty())
+		return false;
+
+	Common::String level = mainPlace;
+	if (level.size() >= 2 &&
+	    (level[0] == 'm' || level[0] == 'M') &&
+	    (level[1] == 'p' || level[1] == 'P'))
+		level = Common::String("Mp") + level.substr(2);
+
+	ChapterDefinition chapter;
+	const Common::Path roomScript(level + "/gameplay/room.isc");
+	if (!chapter.load(roomScript)) {
+		warning("Zero Comico: cannot parse main-place room script %s", roomScript.toString().c_str());
+		return false;
+	}
+
+	const RoomDefinition *room = chapter.findRoom(chapter.startRoom);
+	if (!room) {
+		warning("Zero Comico: start room %s is not declared", chapter.startRoom.c_str());
+		return false;
+	}
+
+	// Retail filenames use lower-case room stems even though room declarations
+	// are often capitalized. Keep the logical room name untouched and only
+	// normalize the filesystem stem.
+	Common::String roomStem = room->name;
+	roomStem.toLowercase();
+
+	const Common::Path sceneDirectory(level + "/backgrd");
+	const Common::Path p3dPath = sceneDirectory.appendComponent(roomStem + ".p3d");
+	const Common::Path anjPath = sceneDirectory.appendComponent(roomStem + ".anj");
+
+	_activeScene.clear();
+	if (!_activeScene.loadPair(p3dPath, anjPath)) {
+		warning("Zero Comico: cannot decode start-room scene %s", roomStem.c_str());
+		return false;
+	}
+
+	Common::String cameraName = room->camera;
+	if (!_activeScene.findCamera(cameraName)) {
+		if (_activeScene.cameras.empty()) {
+			warning("Zero Comico: start-room scene has no camera");
+			return false;
+		}
+		// The room script uses a gameplay camera alias (for example
+		// r11_ge_camfix_01), while the P3D carries the underlying camera
+		// object name. With one exported camera the mapping is unambiguous.
+		cameraName = _activeScene.cameras[0].name;
+	}
+
+	SoftwareRenderer renderer;
+	Graphics::ManagedSurface frame;
+	Common::Array<Common::String> visibleMeshes;
+	if (!renderer.render(_activeScene, cameraName, sceneDirectory, visibleMeshes,
+	                     frame, 800, 600)) {
+		warning("Zero Comico: could not render start room %s", room->name.c_str());
+		return false;
+	}
+
+	_system->copyRectToScreen(frame.getPixels(), frame.pitch, 0, 0, frame.w, frame.h);
+	_system->updateScreen();
+
+	debug(1, "Zero Comico: main place %s start room %s marker %s, camera %s, %u meshes",
+	      level.c_str(), room->name.c_str(), chapter.startMarker.c_str(),
+	      cameraName.c_str(), (uint)_activeScene.meshes.size());
+
+	// This is deliberately a room-preview boundary, not fake gameplay. The
+	// next runtime milestone is to execute the room's startup/cutscene state,
+	// apply JACS visibility and spawn the playable character.
+	bool done = false;
+	while (!shouldQuit() && !done) {
+		Common::Event event;
+		while (_system->getEventManager()->pollEvent(event)) {
+			if (event.type == Common::EVENT_QUIT || event.type == Common::EVENT_RETURN_TO_LAUNCHER) {
+				quitGame();
+				break;
+			}
+			if (event.type == Common::EVENT_KEYDOWN ||
+			    event.type == Common::EVENT_LBUTTONDOWN) {
+				done = true;
+				break;
+			}
+		}
+		_system->delayMillis(10);
+	}
+
+	return !shouldQuit();
+}
+
 void ZeroComicoEngine::showImageModal(const Common::Path &path) {
 	Graphics::ManagedSurface image;
 	if (!ResourceReader::decodeJgfFile(path, image)) {
@@ -319,7 +410,8 @@ void ZeroComicoEngine::runMenu() {
 
 			switch (selection) {
 			case 0: // NUOVO -> ChangeMainPlace mp1 in Interface.isc
-				debug(1, "Zero Comico: NUOVO selected; Mp1 scene runtime is the next gameplay milestone");
+				if (runMainPlacePreview("Mp1") && !shouldQuit())
+					renderMenuFrame(selection);
 				break;
 			case 1: // AIUTI
 				showImageModal(Common::Path("images/help.tga"));
