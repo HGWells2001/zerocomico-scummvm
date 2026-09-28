@@ -5,6 +5,7 @@
 #include "zerocomico/zerocomico.h"
 #include "zerocomico/resource.h"
 #include "zerocomico/script.h"
+#include "zerocomico/script_program.h"
 
 #include "common/events.h"
 #include "common/file.h"
@@ -34,27 +35,115 @@ Common::Error ZeroComicoEngine::run() {
 		return Common::kReadingFailed;
 
 	const Common::String mainPlace = config.valueAfter("StartMainplace");
-	if (mainPlace.empty())
+	if (mainPlace.empty()) {
 		warning("Zero Comico: Config.gsc has no StartMainplace");
-	else
+	} else {
 		debug(1, "Zero Comico: StartMainplace = %s", mainPlace.c_str());
+	}
 
-	// The retail room script requests Data/Intro.avi. ScummVM's AVI decoder
-	// already supports Indeo 5 when built with USE_INDEO45.
-	playIntroIfPresent();
+	// Execute the actual Mp0 room startup sequence rather than hard-coding the
+	// intro. The interpreter is intentionally small at this stage, but the
+	// source of truth is already the shipped room.isc program.
+	if (!runStartupScript(mainPlace)) {
+		warning("Zero Comico: could not execute room startup script, using intro fallback");
+		playFilmIfPresent(Common::Path("Data/Intro.avi"));
+	}
+
+	// Decode the real menu P3D/ANJ pair now, even though the renderer is not
+	// wired yet. This makes bootstrap exercise geometry, hierarchy and JACS
+	// animation decoding on the retail asset set.
+	loadMenuScene();
+
 	showBootstrapScreen();
 	waitForExit();
 	return Common::kNoError;
 }
 
-void ZeroComicoEngine::playIntroIfPresent() {
-	const Common::Path intro("Data/Intro.avi");
-	if (!Common::File::exists(intro))
+bool ZeroComicoEngine::runStartupScript(const Common::String &mainPlace) {
+	if (mainPlace.empty())
+		return false;
+
+	Common::String level = mainPlace;
+	if (level.size() >= 2 &&
+	    (level[0] == 'm' || level[0] == 'M') &&
+	    (level[1] == 'p' || level[1] == 'P'))
+		level = Common::String("Mp") + level.substr(2);
+
+	const Common::Path roomPath(level + "/gameplay/room.isc");
+	ScriptProgram program;
+	if (!program.load(roomPath)) {
+		warning("Zero Comico: cannot parse %s", roomPath.toString().c_str());
+		return false;
+	}
+
+	const Common::Array<ScriptInstruction> &instructions = program.instructions();
+	bool inRuntime = false;
+	bool inThread = false;
+	bool sawRuntime = false;
+
+	for (uint32 i = 0; i < instructions.size() && !shouldQuit(); ++i) {
+		const ScriptInstruction &inst = instructions[i];
+
+		if (inst.opcode.equalsIgnoreCase("runtime")) {
+			inRuntime = true;
+			sawRuntime = true;
+			continue;
+		}
+		if (!inRuntime)
+			continue;
+
+		if (inst.opcode.equalsIgnoreCase("begin_thread")) {
+			inThread = true;
+			continue;
+		}
+		if (inst.opcode.equalsIgnoreCase("end_thread")) {
+			if (inThread)
+				return true;
+			continue;
+		}
+		if (!inThread)
+			continue;
+
+		if (inst.opcode.equalsIgnoreCase("play_CD_film")) {
+			if (!inst.args.empty())
+				playFilmIfPresent(Common::Path(inst.args[0]));
+			continue;
+		}
+
+		// Film playback above is synchronous in this implementation, so the
+		// retail wait instruction has already been satisfied.
+		if (inst.opcode.equalsIgnoreCase("wait_last_film"))
+			continue;
+
+		// These startup opcodes describe state that will become observable
+		// once the 3D/menu runtime is active. Keep them in the execution path
+		// now so room.isc, rather than C++, remains authoritative.
+		if (inst.opcode.equalsIgnoreCase("disable3d") ||
+		    inst.opcode.equalsIgnoreCase("enable3d") ||
+		    inst.opcode.equalsIgnoreCase("DisableInterface") ||
+		    inst.opcode.equalsIgnoreCase("mch_push_master_volume") ||
+		    inst.opcode.equalsIgnoreCase("mch_pop_master_volume")) {
+			debug(2, "Zero Comico: startup opcode %s", inst.opcode.c_str());
+			continue;
+		}
+
+		if (inst.opcode.equalsIgnoreCase("mov") && inst.args.size() >= 2) {
+			debug(2, "Zero Comico: startup mov %s = %s",
+			      inst.args[0].c_str(), inst.args[1].c_str());
+			continue;
+		}
+	}
+
+	return sawRuntime;
+}
+
+void ZeroComicoEngine::playFilmIfPresent(const Common::Path &path) {
+	if (!Common::File::exists(path))
 		return;
 
 	Video::AVIDecoder decoder;
-	if (!decoder.loadFile(intro)) {
-		warning("Zero Comico: cannot decode Data/Intro.avi");
+	if (!decoder.loadFile(path)) {
+		warning("Zero Comico: cannot decode %s", path.toString().c_str());
 		return;
 	}
 
@@ -67,7 +156,8 @@ void ZeroComicoEngine::playIntroIfPresent() {
 				Graphics::Surface *converted = frame->convertTo(_system->getScreenFormat());
 				const int x = (800 - converted->w) / 2;
 				const int y = (600 - converted->h) / 2;
-				_system->copyRectToScreen(converted->getPixels(), converted->pitch, x, y, converted->w, converted->h);
+				_system->copyRectToScreen(converted->getPixels(), converted->pitch,
+				                          x, y, converted->w, converted->h);
 				converted->free();
 				delete converted;
 				_system->updateScreen();
@@ -87,15 +177,28 @@ void ZeroComicoEngine::playIntroIfPresent() {
 	}
 }
 
+bool ZeroComicoEngine::loadMenuScene() {
+	const Common::Path p3d("Mpx/bodies/interfaccia/interfaccia.p3d");
+	const Common::Path anj("Mpx/bodies/interfaccia/interfaccia.anj");
+
+	if (!_menuScene.loadPair(p3d, anj)) {
+		warning("Zero Comico: failed to decode menu P3D/ANJ asset pair");
+		return false;
+	}
+
+	debug(1, "Zero Comico: menu scene decoded: %u materials, %u cameras, %u lights, %u meshes, %u hierarchies, %u clips",
+	      (uint)_menuScene.materials.size(), (uint)_menuScene.cameras.size(),
+	      (uint)_menuScene.lights.size(), (uint)_menuScene.meshes.size(),
+	      (uint)_menuScene.hierarchies.size(), (uint)_menuScene.clips.size());
+	return true;
+}
+
 void ZeroComicoEngine::showBootstrapScreen() {
 	Graphics::ManagedSurface image;
 
-	// This is the original 512x512 menu/interface texture. Rendering the full
-	// animated 3D menu requires the P3D/ANJ model layer, which is the next
-	// implementation milestone. Showing it here exercises the real JGF5 path.
+	// Until the decoded menu scene is rendered, use its original 512x512
+	// interface texture as a visible bootstrap surface.
 	if (!ResourceReader::decodeJgfFile(Common::Path("Mpx/bodies/interfaccia/interf.tga"), image)) {
-		// If the install is incomplete, the retail game displays this 800x600
-		// resource when it cannot see its CD data.
 		if (!ResourceReader::decodeJgfFile(Common::Path("images/CD.tga"), image))
 			return;
 	}
