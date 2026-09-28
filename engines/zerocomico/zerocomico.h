@@ -7,6 +7,8 @@
 
 #include "engines/engine.h"
 
+#include "zerocomico/scene_model.h"
+
 struct ADGameDescription;
 
 namespace ZeroComico {
@@ -20,11 +22,14 @@ public:
 	bool hasFeature(EngineFeature f) const override;
 
 private:
-	void playIntroIfPresent();
+	bool runStartupScript(const Common::String &mainPlace);
+	void playFilmIfPresent(const Common::Path &path);
+	bool loadMenuScene();
 	void showBootstrapScreen();
 	void waitForExit();
 
 	const ADGameDescription *_gameDescription;
+	SceneModel _menuScene;
 };
 
 } // namespace ZeroComico
