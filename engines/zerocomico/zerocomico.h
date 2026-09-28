@@ -30,6 +30,8 @@ public:
 	bool hasFeature(EngineFeature f) const override;
 
 	bool executeScriptOpcode(const ScriptInstruction &instruction) override;
+	bool evaluateScriptCondition(const ScriptInstruction &instruction,
+	                           bool &result) const override;
 
 private:
 	bool runStartupScript(const Common::String &mainPlace);
@@ -70,6 +72,7 @@ private:
 	Common::String _pendingSayText;
 	Common::String _pendingRoomName;
 	Common::String _pendingRoomCutscene;
+	Common::String _selectedInventoryObject;
 	Common::Array<Common::String> _sceneLoopTargets;
 	Common::Array<Common::String> _sceneLoopSources;
 	Common::Array<uint32> _sceneLoopStartMillis;
