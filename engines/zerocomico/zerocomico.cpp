@@ -37,6 +37,72 @@ static const char *const kMenuButtons[] = {
 
 static const int kMenuButtonCount = 5;
 
+static float dotVec3(const Vec3f &a, const Vec3f &b) {
+	return a.x * b.x + a.y * b.y + a.z * b.z;
+}
+
+static Vec3f subtractVec3(const Vec3f &a, const Vec3f &b) {
+	Vec3f out = { a.x - b.x, a.y - b.y, a.z - b.z };
+	return out;
+}
+
+static Vec3f crossVec3(const Vec3f &a, const Vec3f &b) {
+	Vec3f out = {
+		a.y * b.z - a.z * b.y,
+		a.z * b.x - a.x * b.z,
+		a.x * b.y - a.y * b.x
+	};
+	return out;
+}
+
+static bool normalizeVec3(Vec3f &v) {
+	const float length2 = dotVec3(v, v);
+	if (length2 <= 1.0e-12f)
+		return false;
+	const float invLength = 1.0f / std::sqrt(length2);
+	v.x *= invLength;
+	v.y *= invLength;
+	v.z *= invLength;
+	return true;
+}
+
+static bool screenPointToGround(const RenderCamera &camera, int screenX, int screenY,
+                                int width, int height, Vec3f &ground) {
+	if (camera.focalPixels <= 0.0f)
+		return false;
+
+	Vec3f forward = subtractVec3(camera.target, camera.position);
+	if (!normalizeVec3(forward))
+		return false;
+
+	const Vec3f worldUp = { 0.0f, 1.0f, 0.0f };
+	Vec3f right = crossVec3(forward, worldUp);
+	if (!normalizeVec3(right))
+		return false;
+	Vec3f up = crossVec3(right, forward);
+	if (!normalizeVec3(up))
+		return false;
+
+	const float cameraX = (screenX - width * 0.5f) / camera.focalPixels;
+	const float cameraY = -(screenY - height * 0.5f) / camera.focalPixels;
+	Vec3f ray = {
+		forward.x + right.x * cameraX + up.x * cameraY,
+		forward.y + right.y * cameraX + up.y * cameraY,
+		forward.z + right.z * cameraX + up.z * cameraY
+	};
+	if (!normalizeVec3(ray) || std::fabs(ray.y) <= 1.0e-6f)
+		return false;
+
+	const float distance = -camera.position.y / ray.y;
+	if (distance <= 0.0f)
+		return false;
+
+	ground.x = camera.position.x + ray.x * distance;
+	ground.y = 0.0f;
+	ground.z = camera.position.z + ray.z * distance;
+	return true;
+}
+
 static bool sampleRootTransform(const SceneModel &scene, const Common::String &targetName,
                                 const Common::String &sourceName, RenderTransform &transform) {
 	transform.localTranslation.x = transform.localTranslation.y = transform.localTranslation.z = 0.0f;
@@ -303,6 +369,46 @@ bool ZeroComicoEngine::renderMenuFrame(int selection) {
 	return true;
 }
 
+bool ZeroComicoEngine::renderGameplayFrame(const RenderCamera &camera,
+                                                const Common::Path &sceneDirectory,
+                                                const Common::Path &playerDirectory,
+                                                Graphics::ManagedSurface &frame) {
+	SoftwareRenderer renderer;
+	Common::Array<Common::String> visibleMeshes;
+	bool rendered = false;
+
+	if (!_playerScene.meshes.empty() && _havePlayerStart) {
+		Common::Array<Common::String> playerVisible;
+		playerVisible.push_back("gio_gioc");
+		playerVisible.push_back("gio_giob");
+		playerVisible.push_back("gio_gioa");
+		playerVisible.push_back("gio_giotesta");
+		playerVisible.push_back("gio_CAPPELLO");
+
+		RenderTransform playerTransform;
+		playerTransform.translation = _playerPosition;
+		const float faceX = _playerFacingTarget.x - _playerPosition.x;
+		const float faceZ = _playerFacingTarget.z - _playerPosition.z;
+		playerTransform.yawRadians = std::atan2(faceX, faceZ);
+		if (!sampleRootTransform(_playerScene, "gio_giovanni", "Stay", playerTransform))
+			warning("Zero Comico: Giovanni Stay root transform missing; using identity root pose");
+
+		rendered = renderer.renderWithActor(_activeScene, camera, sceneDirectory, visibleMeshes,
+		                                    _playerScene, playerDirectory, playerVisible,
+		                                    playerTransform, frame, 800, 600);
+	} else {
+		rendered = renderer.render(_activeScene, camera, sceneDirectory, visibleMeshes,
+		                           frame, 800, 600);
+	}
+
+	if (!rendered)
+		return false;
+
+	_system->copyRectToScreen(frame.getPixels(), frame.pitch, 0, 0, frame.w, frame.h);
+	_system->updateScreen();
+	return true;
+}
+
 bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 	if (mainPlace.empty())
 		return false;
@@ -466,42 +572,11 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 		renderCamera.focalPixels = embedded->data.fov * 800.0f / 36.0f;
 	}
 
-	SoftwareRenderer renderer;
 	Graphics::ManagedSurface frame;
-	Common::Array<Common::String> visibleMeshes;
-	bool rendered = false;
-
-	if (havePlayerScene && _havePlayerStart) {
-		Common::Array<Common::String> playerVisible;
-		playerVisible.push_back("gio_gioc");
-		playerVisible.push_back("gio_giob");
-		playerVisible.push_back("gio_gioa");
-		playerVisible.push_back("gio_giotesta");
-		playerVisible.push_back("gio_CAPPELLO");
-
-		RenderTransform playerTransform;
-		playerTransform.translation = _playerPosition;
-		const float faceX = _playerFacingTarget.x - _playerPosition.x;
-		const float faceZ = _playerFacingTarget.z - _playerPosition.z;
-		playerTransform.yawRadians = std::atan2(faceX, faceZ);
-		if (!sampleRootTransform(_playerScene, "gio_giovanni", "Stay", playerTransform))
-			warning("Zero Comico: Giovanni Stay root transform missing; using identity root pose");
-
-		rendered = renderer.renderWithActor(_activeScene, renderCamera, sceneDirectory, visibleMeshes,
-		                                    _playerScene, playerDirectory, playerVisible,
-		                                    playerTransform, frame, 800, 600);
-	} else {
-		rendered = renderer.render(_activeScene, renderCamera, sceneDirectory, visibleMeshes,
-		                           frame, 800, 600);
-	}
-
-	if (!rendered) {
+	if (!renderGameplayFrame(renderCamera, sceneDirectory, playerDirectory, frame)) {
 		warning("Zero Comico: could not render start room %s", room->name.c_str());
 		return false;
 	}
-
-	_system->copyRectToScreen(frame.getPixels(), frame.pitch, 0, 0, frame.w, frame.h);
-	_system->updateScreen();
 
 	debug(1, "Zero Comico: main place %s start room %s marker %s, camera %s, %u meshes, %u nav nodes%s",
 	      level.c_str(), room->name.c_str(), chapter.startMarker.c_str(),
@@ -510,9 +585,10 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 	if (_playerNavNode >= 0)
 		debug(1, "Zero Comico: navigation runtime ready at node %d", _playerNavNode);
 
-	// The player is now spawned from the retail Giovanni P3D/ANJ pair in the
-	// resolved start marker. The next runtime milestone is continuous JACS
-	// animation plus click-to-walk movement along the BSP graph.
+	// Prototype gameplay loop: clicks are projected onto the floor plane, then
+	// snapped to the retail BSP graph and routed with Dijkstra. Movement is
+	// currently applied at the destination node; continuous walk interpolation
+	// and JACS walk cycles are the next animation layer.
 	bool done = false;
 	while (!shouldQuit() && !done) {
 		Common::Event event;
@@ -521,8 +597,41 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 				quitGame();
 				break;
 			}
-			if (event.type == Common::EVENT_KEYDOWN ||
-			    event.type == Common::EVENT_LBUTTONDOWN) {
+			if (event.type == Common::EVENT_KEYDOWN && event.kbd.keycode == Common::KEYCODE_ESCAPE) {
+				done = true;
+				break;
+			}
+			if (event.type != Common::EVENT_LBUTTONDOWN || _playerNavNode < 0)
+				continue;
+
+			Vec3f ground;
+			if (!screenPointToGround(renderCamera, event.mouse.x, event.mouse.y, 800, 600, ground))
+				continue;
+
+			const int destinationNode = _activeWalkMap.nearestGraphNode(ground.x, ground.z);
+			Common::Array<int> route;
+			if (destinationNode < 0 ||
+			    !_activeWalkMap.shortestPath(_playerNavNode, destinationNode, route) || route.empty())
+				continue;
+
+			const Vec3f previousPosition = _playerPosition;
+			const NavNode &destination = _activeWalkMap.graph[(uint32)destinationNode];
+			_playerPosition.x = destination.pos.x;
+			_playerPosition.y = 0.0f;
+			_playerPosition.z = destination.pos.y;
+
+			const float moveX = _playerPosition.x - previousPosition.x;
+			const float moveZ = _playerPosition.z - previousPosition.z;
+			if (moveX * moveX + moveZ * moveZ > 0.0001f) {
+				_playerFacingTarget.x = _playerPosition.x + moveX;
+				_playerFacingTarget.y = _playerPosition.y;
+				_playerFacingTarget.z = _playerPosition.z + moveZ;
+			}
+			_playerNavNode = destinationNode;
+
+			debug(1, "Zero Comico: click navigation selected node %d through %u path nodes",
+			      destinationNode, (uint)route.size());
+			if (!renderGameplayFrame(renderCamera, sceneDirectory, playerDirectory, frame)) {
 				done = true;
 				break;
 			}
