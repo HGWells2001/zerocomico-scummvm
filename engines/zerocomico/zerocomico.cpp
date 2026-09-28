@@ -19,7 +19,8 @@
 namespace ZeroComico {
 
 ZeroComicoEngine::ZeroComicoEngine(OSystem *syst, const ADGameDescription *desc)
-	: Engine(syst), _gameDescription(desc) {
+	: Engine(syst), _gameDescription(desc), _scriptVM(this),
+	  _interfaceDisabled(false), _3dEnabled(true) {
 }
 
 bool ZeroComicoEngine::hasFeature(EngineFeature f) const {
@@ -42,8 +43,7 @@ Common::Error ZeroComicoEngine::run() {
 	}
 
 	// Execute the actual Mp0 room startup sequence rather than hard-coding the
-	// intro. The interpreter is intentionally small at this stage, but the
-	// source of truth is already the shipped room.isc program.
+	// intro. The source of truth is the shipped room.isc program.
 	if (!runStartupScript(mainPlace)) {
 		warning("Zero Comico: could not execute room startup script, using intro fallback");
 		playFilmIfPresent(Common::Path("Data/Intro.avi"));
@@ -77,64 +77,76 @@ bool ZeroComicoEngine::runStartupScript(const Common::String &mainPlace) {
 	}
 
 	const Common::Array<ScriptInstruction> &instructions = program.instructions();
-	bool inRuntime = false;
-	bool inThread = false;
-	bool sawRuntime = false;
+	uint32 runtimeStart = instructions.size();
+	uint32 runtimeEnd = instructions.size();
 
-	for (uint32 i = 0; i < instructions.size() && !shouldQuit(); ++i) {
-		const ScriptInstruction &inst = instructions[i];
-
-		if (inst.opcode.equalsIgnoreCase("runtime")) {
-			inRuntime = true;
-			sawRuntime = true;
-			continue;
+	for (uint32 i = 0; i < instructions.size(); ++i) {
+		if (instructions[i].opcode.equalsIgnoreCase("runtime")) {
+			runtimeStart = i + 1;
+			break;
 		}
-		if (!inRuntime)
-			continue;
+	}
+	if (runtimeStart >= instructions.size())
+		return false;
 
-		if (inst.opcode.equalsIgnoreCase("begin_thread")) {
-			inThread = true;
-			continue;
-		}
-		if (inst.opcode.equalsIgnoreCase("end_thread")) {
-			if (inThread)
-				return true;
-			continue;
-		}
-		if (!inThread)
-			continue;
-
-		if (inst.opcode.equalsIgnoreCase("play_CD_film")) {
-			if (!inst.args.empty())
-				playFilmIfPresent(Common::Path(inst.args[0]));
-			continue;
-		}
-
-		// Film playback above is synchronous in this implementation, so the
-		// retail wait instruction has already been satisfied.
-		if (inst.opcode.equalsIgnoreCase("wait_last_film"))
-			continue;
-
-		// These startup opcodes describe state that will become observable
-		// once the 3D/menu runtime is active. Keep them in the execution path
-		// now so room.isc, rather than C++, remains authoritative.
-		if (inst.opcode.equalsIgnoreCase("disable3d") ||
-		    inst.opcode.equalsIgnoreCase("enable3d") ||
-		    inst.opcode.equalsIgnoreCase("DisableInterface") ||
-		    inst.opcode.equalsIgnoreCase("mch_push_master_volume") ||
-		    inst.opcode.equalsIgnoreCase("mch_pop_master_volume")) {
-			debug(2, "Zero Comico: startup opcode %s", inst.opcode.c_str());
-			continue;
-		}
-
-		if (inst.opcode.equalsIgnoreCase("mov") && inst.args.size() >= 2) {
-			debug(2, "Zero Comico: startup mov %s = %s",
-			      inst.args[0].c_str(), inst.args[1].c_str());
-			continue;
+	for (uint32 i = runtimeStart; i < instructions.size(); ++i) {
+		if (instructions[i].opcode.equalsIgnoreCase("end_thread")) {
+			runtimeEnd = i + 1;
+			break;
 		}
 	}
 
-	return sawRuntime;
+	_scriptVM.reset();
+	if (!_scriptVM.run(program, runtimeStart, runtimeEnd, 4096))
+		return false;
+
+	int32 menuFlag = 0;
+	if (_scriptVM.getVariable("if_MenuIface", menuFlag))
+		debug(1, "Zero Comico: room startup selected menu state %d", menuFlag);
+
+	return true;
+}
+
+bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction) {
+	const Common::String &op = instruction.opcode;
+
+	if (op.equalsIgnoreCase("play_CD_film")) {
+		if (instruction.args.empty())
+			return false;
+		playFilmIfPresent(Common::Path(instruction.args[0]));
+		return true;
+	}
+
+	// Film playback is synchronous for now, so this wait is already fulfilled.
+	if (op.equalsIgnoreCase("wait_last_film"))
+		return true;
+
+	if (op.equalsIgnoreCase("disable3d")) {
+		_3dEnabled = false;
+		return true;
+	}
+	if (op.equalsIgnoreCase("enable3d")) {
+		_3dEnabled = true;
+		return true;
+	}
+
+	if (op.equalsIgnoreCase("DisableInterface")) {
+		if (instruction.args.empty())
+			return false;
+		int32 disabled = 0;
+		if (!_scriptVM.resolveValue(instruction.args[0], disabled))
+			return false;
+		_interfaceDisabled = disabled != 0;
+		return true;
+	}
+
+	// The master-volume stack is preserved as an opcode boundary. Audio class
+	// routing will be connected when the sound runtime is added.
+	if (op.equalsIgnoreCase("mch_push_master_volume") ||
+	    op.equalsIgnoreCase("mch_pop_master_volume"))
+		return true;
+
+	return false;
 }
 
 void ZeroComicoEngine::playFilmIfPresent(const Common::Path &path) {
