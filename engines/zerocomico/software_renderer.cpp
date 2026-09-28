@@ -104,34 +104,26 @@ static Vec3f applyInstanceTransform(const Vec3f &world, const RenderTransform *t
 		world.z * transform->localScale.z
 	};
 
-	// JACS transform channels use the exporter quaternion order w, x, y, z.
-	// Identity rotations in the retail files are commonly (-1, 0, 0, 0).
-	const float qw = transform->localRotation[0];
-	const float qx = transform->localRotation[1];
-	const float qy = transform->localRotation[2];
-	const float qz = transform->localRotation[3];
-	const float qLength2 = qx * qx + qy * qy + qz * qz + qw * qw;
-	if (qLength2 > 1.0e-12f) {
-		const float invLength = 1.0f / std::sqrt(qLength2);
-		const float x = qx * invLength;
-		const float y = qy * invLength;
-		const float z = qz * invLength;
-		const float w = qw * invLength;
+	// The 4-component JACS rotation channel is axis-angle: xyz is the
+	// rotation axis and the fourth value is the angle in radians. The retail
+	// Stay root, for example, is approximately (-1, 0, 0, 0), i.e. identity.
+	Vec3f axis = {
+		transform->localRotation[0],
+		transform->localRotation[1],
+		transform->localRotation[2]
+	};
+	const float angle = transform->localRotation[3];
+	if (std::fabs(angle) > 1.0e-7f && normalize3(axis)) {
+		const float c = std::cos(angle);
+		const float s = std::sin(angle);
+		const float oneMinusC = 1.0f - c;
+		const float projection = dot3(axis, local);
 
-		const float xx = x * x;
-		const float yy = y * y;
-		const float zz = z * z;
-		const float xy = x * y;
-		const float xz = x * z;
-		const float yz = y * z;
-		const float wx = w * x;
-		const float wy = w * y;
-		const float wz = w * z;
-
+		Vec3f cross = cross3(axis, local);
 		Vec3f rotated = {
-			(1.0f - 2.0f * (yy + zz)) * local.x + 2.0f * (xy - wz) * local.y + 2.0f * (xz + wy) * local.z,
-			2.0f * (xy + wz) * local.x + (1.0f - 2.0f * (xx + zz)) * local.y + 2.0f * (yz - wx) * local.z,
-			2.0f * (xz - wy) * local.x + 2.0f * (yz + wx) * local.y + (1.0f - 2.0f * (xx + yy)) * local.z
+			local.x * c + cross.x * s + axis.x * projection * oneMinusC,
+			local.y * c + cross.y * s + axis.y * projection * oneMinusC,
+			local.z * c + cross.z * s + axis.z * projection * oneMinusC
 		};
 		local = rotated;
 	}
