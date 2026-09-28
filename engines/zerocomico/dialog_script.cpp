@@ -1,0 +1,125 @@
+/* ScummVM - Graphic Adventure Engine
+ * Zero Comico engine: dialogue definitions
+ */
+
+#include "zerocomico/dialog_script.h"
+#include "zerocomico/script_program.h"
+
+#include <cstdlib>
+
+namespace ZeroComico {
+
+namespace {
+
+static uint32 parseUnsigned(const Common::String &value, uint32 fallback) {
+	char *end = nullptr;
+	const long parsed = strtol(value.c_str(), &end, 10);
+	if (!end || end == value.c_str() || *end != 0 || parsed < 0)
+		return fallback;
+	return (uint32)parsed;
+}
+
+static float parseFloat(const Common::String &value, float fallback) {
+	char *end = nullptr;
+	const double parsed = strtod(value.c_str(), &end);
+	if (!end || end == value.c_str() || *end != 0)
+		return fallback;
+	return (float)parsed;
+}
+
+} // namespace
+
+bool DialogScript::load(const Common::Path &path) {
+	ScriptProgram program;
+	if (!program.load(path))
+		return false;
+	return parse(program);
+}
+
+bool DialogScript::parse(const ScriptProgram &program) {
+	speakers.clear();
+	dialogs.clear();
+
+	const Common::Array<ScriptInstruction> &instructions = program.instructions();
+	for (uint32 i = 0; i < instructions.size(); ++i) {
+		const ScriptInstruction &inst = instructions[i];
+
+		if (inst.opcode.equalsIgnoreCase("speaker") && inst.args.size() >= 6) {
+			DialogSpeaker speaker;
+			speaker.name = inst.args[0];
+			speaker.key = inst.args[1];
+			speaker.red = parseUnsigned(inst.args[2], 255);
+			speaker.green = parseUnsigned(inst.args[3], 255);
+			speaker.blue = parseUnsigned(inst.args[4], 255);
+			speaker.speed = parseFloat(inst.args[5], 0.07f);
+			speakers.push_back(speaker);
+			continue;
+		}
+
+		if (!inst.opcode.equalsIgnoreCase("Dialog") || inst.args.empty())
+			continue;
+
+		DialogDefinition dialog;
+		dialog.name = inst.args[0];
+		const int dialogDepth = inst.depth;
+		bool inChoices = false;
+
+		for (uint32 j = i + 1; j < instructions.size(); ++j) {
+			const ScriptInstruction &child = instructions[j];
+			if (child.opcode.equalsIgnoreCase("Dialog") && child.depth <= dialogDepth)
+				break;
+			if (child.depth < dialogDepth)
+				break;
+
+			if (child.opcode.equalsIgnoreCase("BEGIN")) {
+				inChoices = true;
+				continue;
+			}
+			if (child.opcode.equalsIgnoreCase("END")) {
+				inChoices = false;
+				continue;
+			}
+
+			if (inChoices) {
+				DialogChoice choice;
+				choice.text = child.opcode;
+				for (uint32 arg = 0; arg < child.args.size(); ++arg) {
+					if (!child.args[arg].empty() && child.args[arg][0] == '@') {
+						choice.targetDialog = child.args[arg].substr(1);
+						break;
+					}
+				}
+				if (!choice.text.empty() && !choice.targetDialog.empty())
+					dialog.choices.push_back(choice);
+				continue;
+			}
+
+			if (child.opcode.size() == 1 && !child.args.empty()) {
+				DialogLine line;
+				line.speakerKey = child.opcode;
+				line.text = child.args[0];
+				dialog.lines.push_back(line);
+			}
+		}
+
+		dialogs.push_back(dialog);
+	}
+
+	return !dialogs.empty();
+}
+
+const DialogDefinition *DialogScript::findDialog(const Common::String &name) const {
+	for (uint32 i = 0; i < dialogs.size(); ++i)
+		if (dialogs[i].name.equalsIgnoreCase(name))
+			return &dialogs[i];
+	return nullptr;
+}
+
+const DialogSpeaker *DialogScript::findSpeakerByKey(const Common::String &key) const {
+	for (uint32 i = 0; i < speakers.size(); ++i)
+		if (speakers[i].key.equalsIgnoreCase(key))
+			return &speakers[i];
+	return nullptr;
+}
+
+} // namespace ZeroComico
