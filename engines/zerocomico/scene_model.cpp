@@ -67,7 +67,7 @@ bool SceneModel::loadGeometry(const Common::Path &p3dPath) {
 		}
 	}
 
-	return true;
+	return resolveSkinnedGeometry();
 }
 
 bool SceneModel::loadAnimation(const Common::Path &anjPath) {
@@ -116,6 +116,62 @@ bool SceneModel::loadPair(const Common::Path &p3dPath, const Common::Path &anjPa
 		clear();
 		return false;
 	}
+	return true;
+}
+
+
+bool SceneModel::resolveSkinnedGeometry() {
+	for (uint32 parentIndex = 0; parentIndex < meshes.size(); ++parentIndex) {
+		MeshData &parent = meshes[parentIndex].data;
+		if (!parent.isSkinnedParent())
+			continue;
+
+		parent.vertices.clear();
+		parent.vertices.resize(parent.vertexCount);
+		Common::Array<float> weights;
+		weights.resize(parent.vertexCount);
+
+		for (uint32 i = 0; i < parent.vertexCount; ++i) {
+			parent.vertices[i].x = 0.0f;
+			parent.vertices[i].y = 0.0f;
+			parent.vertices[i].z = 0.0f;
+			weights[i] = 0.0f;
+		}
+
+		for (uint32 fleshIndex = 0; fleshIndex < meshes.size(); ++fleshIndex) {
+			const MeshData &flesh = meshes[fleshIndex].data;
+			if (!flesh.isFlesh() ||
+			    !flesh.parentMesh.equalsIgnoreCase(meshes[parentIndex].name) ||
+			    flesh.vertices.size() != flesh.influences.size())
+				continue;
+
+			for (uint32 i = 0; i < flesh.vertices.size(); ++i) {
+				const SkinInfluence &influence = flesh.influences[i];
+				if (influence.parentVertexIndex >= parent.vertexCount ||
+				    influence.weight <= 0.0f)
+					continue;
+
+				Vec3f &dst = parent.vertices[influence.parentVertexIndex];
+				dst.x += flesh.vertices[i].x * influence.weight;
+				dst.y += flesh.vertices[i].y * influence.weight;
+				dst.z += flesh.vertices[i].z * influence.weight;
+				weights[influence.parentVertexIndex] += influence.weight;
+			}
+		}
+
+		for (uint32 i = 0; i < parent.vertexCount; ++i) {
+			if (weights[i] <= 0.000001f)
+				return false;
+
+			// Retail flesh weights normally sum to 1.0. Normalize anyway so tiny
+			// floating-point export differences cannot distort the bind pose.
+			const float invWeight = 1.0f / weights[i];
+			parent.vertices[i].x *= invWeight;
+			parent.vertices[i].y *= invWeight;
+			parent.vertices[i].z *= invWeight;
+		}
+	}
+
 	return true;
 }
 
