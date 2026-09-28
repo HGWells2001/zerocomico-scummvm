@@ -44,6 +44,7 @@ private:
 	Vec3f _playerPosition;
 	Vec3f _playerFacingTarget;
 	bool _havePlayerStart;
+	int _playerNavNode;
 	ScriptVM _scriptVM;
 	bool _interfaceDisabled;
 	bool _3dEnabled;
