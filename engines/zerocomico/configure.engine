@@ -1,0 +1,4 @@
+# This file is included from the main ScummVM "configure" script.
+# add_engine [name] [desc] [build-by-default] [subengines] [base games] [deps] [components]
+# The engine is intentionally disabled by default while gameplay support is incomplete.
+add_engine zerocomico "Zero Comico" no "" "" "highres 16bit" "indeo45"
