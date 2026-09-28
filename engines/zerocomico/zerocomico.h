@@ -53,6 +53,7 @@ private:
 	SceneModel _activeScene;
 	SceneModel _playerScene;
 	SequenceScript _playerSequences;
+	SoftwareRenderer _gameplayRenderer;
 	BspMap _activeWalkMap;
 	BspMap _activeCameraMap;
 	Vec3f _playerPosition;
