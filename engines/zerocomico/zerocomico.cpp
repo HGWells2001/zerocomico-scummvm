@@ -268,6 +268,31 @@ static void drawInventoryOverlay(Graphics::ManagedSurface &surface,
 	font->drawString(&surface, text, 10, 10, 778, color, Graphics::kTextAlignLeft);
 }
 
+static void drawDialogueChoices(Graphics::ManagedSurface &surface,
+                                const Common::Array<DialogChoice> &choices,
+                                uint32 selected) {
+	const Graphics::Font *font = FontMan.getFontByUsage(Graphics::FontManager::kGUIFont);
+	if (!font)
+		return;
+
+	const uint32 normal = surface.format.RGBToColor(255, 255, 255);
+	const uint32 active = surface.format.RGBToColor(255, 255, 0);
+	const uint32 shadow = surface.format.RGBToColor(0, 0, 0);
+	const int lineHeight = font->getFontHeight() + 5;
+	int y = 600 - (int)choices.size() * lineHeight - 22;
+	if (y < 330)
+		y = 330;
+
+	for (uint32 i = 0; i < choices.size(); ++i) {
+		const Common::String text = Common::String::format("%u. %s",
+			(uint)(i + 1), choices[i].text.c_str());
+		font->drawString(&surface, text, 31, y + 1, 738, shadow, Graphics::kTextAlignLeft);
+		font->drawString(&surface, text, 30, y, 738,
+		                 i == selected ? active : normal, Graphics::kTextAlignLeft);
+		y += lineHeight;
+	}
+}
+
 static void applyFadeToBlack(Graphics::ManagedSurface &surface, float amount) {
 	if (amount <= 0.0f)
 		return;
@@ -748,6 +773,16 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 		return true;
 	}
 
+	if (op.equalsIgnoreCase("start_dialog")) {
+		if (instruction.args.size() < 2)
+			return false;
+		_pendingDialogName = instruction.args[1];
+		return true;
+	}
+
+	if (op.equalsIgnoreCase("wait_last_dialog"))
+		return true;
+
 	if (op.equalsIgnoreCase("take")) {
 		if (instruction.args.size() < 2)
 			return false;
@@ -1034,6 +1069,116 @@ bool ZeroComicoEngine::renderGameplayFrame(const RenderCamera &camera,
 	return true;
 }
 
+bool ZeroComicoEngine::playDialogue(const Common::String &name,
+                                      const RenderCamera &camera,
+                                      const Common::Path &sceneDirectory,
+                                      const Common::Path &playerDirectory,
+                                      Graphics::ManagedSurface &frame,
+                                      uint32 depth) {
+	if (depth > 8)
+		return false;
+
+	const DialogDefinition *dialog = _activeDialog.findDialog(name);
+	if (!dialog) {
+		warning("Zero Comico: dialogue %s is not declared", name.c_str());
+		return false;
+	}
+
+	for (uint32 lineIndex = 0; lineIndex < dialog->lines.size() && !shouldQuit(); ++lineIndex) {
+		const DialogLine &line = dialog->lines[lineIndex];
+		const DialogSpeaker *speaker = _activeDialog.findSpeakerByKey(line.speakerKey);
+		const Common::String speakerName = speaker ? speaker->name : line.speakerKey;
+
+		if (!renderGameplayFrame(camera, sceneDirectory, playerDirectory, "Stay", 0.0f, frame))
+			return false;
+		drawCutsceneSubtitle(frame, speakerName, line.text);
+		_system->copyRectToScreen(frame.getPixels(), frame.pitch, 0, 0, frame.w, frame.h);
+		_system->updateScreen();
+
+		uint32 duration = (uint32)line.text.size() * 65U;
+		if (duration < 1200U)
+			duration = 1200U;
+		if (duration > 8000U)
+			duration = 8000U;
+
+		const uint32 started = _system->getMillis();
+		bool advance = false;
+		while (!shouldQuit() && !advance && _system->getMillis() - started < duration) {
+			Common::Event event;
+			while (_system->getEventManager()->pollEvent(event)) {
+				if (event.type == Common::EVENT_QUIT ||
+				    event.type == Common::EVENT_RETURN_TO_LAUNCHER) {
+					quitGame();
+					break;
+				}
+				if (event.type == Common::EVENT_KEYDOWN ||
+				    event.type == Common::EVENT_LBUTTONDOWN ||
+				    event.type == Common::EVENT_RBUTTONDOWN) {
+					advance = true;
+					break;
+				}
+			}
+			_system->delayMillis(10);
+		}
+	}
+
+	if (shouldQuit() || dialog->choices.empty())
+		return !shouldQuit();
+
+	uint32 selected = 0;
+	bool chosen = false;
+	while (!shouldQuit() && !chosen) {
+		if (!renderGameplayFrame(camera, sceneDirectory, playerDirectory, "Stay", 0.0f, frame))
+			return false;
+		drawDialogueChoices(frame, dialog->choices, selected);
+		_system->copyRectToScreen(frame.getPixels(), frame.pitch, 0, 0, frame.w, frame.h);
+		_system->updateScreen();
+
+		Common::Event event;
+		while (_system->getEventManager()->pollEvent(event)) {
+			if (event.type == Common::EVENT_QUIT ||
+			    event.type == Common::EVENT_RETURN_TO_LAUNCHER) {
+				quitGame();
+				break;
+			}
+			if (event.type != Common::EVENT_KEYDOWN)
+				continue;
+
+			if (event.kbd.keycode == Common::KEYCODE_UP) {
+				selected = (selected + dialog->choices.size() - 1) % dialog->choices.size();
+				break;
+			}
+			if (event.kbd.keycode == Common::KEYCODE_DOWN) {
+				selected = (selected + 1) % dialog->choices.size();
+				break;
+			}
+			if (event.kbd.keycode >= Common::KEYCODE_1 &&
+			    event.kbd.keycode <= Common::KEYCODE_9) {
+				const uint32 direct = (uint32)(event.kbd.keycode - Common::KEYCODE_1);
+				if (direct < dialog->choices.size()) {
+					selected = direct;
+					chosen = true;
+				}
+				break;
+			}
+			if (event.kbd.keycode == Common::KEYCODE_RETURN ||
+			    event.kbd.keycode == Common::KEYCODE_KP_ENTER ||
+			    event.kbd.keycode == Common::KEYCODE_SPACE) {
+				chosen = true;
+				break;
+			}
+			if (event.kbd.keycode == Common::KEYCODE_ESCAPE)
+				return true;
+		}
+		_system->delayMillis(10);
+	}
+
+	if (shouldQuit())
+		return false;
+	return playDialogue(dialog->choices[selected].targetDialog, camera,
+	                    sceneDirectory, playerDirectory, frame, depth + 1);
+}
+
 bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 	if (mainPlace.empty())
 		return false;
@@ -1048,6 +1193,7 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 	_playerHatVisible = true;
 	_pendingSaySpeaker.clear();
 	_pendingSayText.clear();
+	_pendingDialogName.clear();
 	_pendingRoomName.clear();
 	_pendingRoomCutscene.clear();
 	_selectedInventoryObject.clear();
@@ -1164,6 +1310,13 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 		warning("Zero Comico: cannot parse puzzle objects %s", puzzlePath.toString().c_str());
 	else
 		debug(1, "Zero Comico: loaded %u puzzle objects", (uint)_activePuzzle.objects.size());
+
+	const Common::Path dialogPath(level + "/gameplay/dialog.isc");
+	if (!_activeDialog.load(dialogPath))
+		warning("Zero Comico: cannot parse dialogue file %s", dialogPath.toString().c_str());
+	else
+		debug(1, "Zero Comico: loaded %u dialogues and %u speakers",
+		      (uint)_activeDialog.dialogs.size(), (uint)_activeDialog.speakers.size());
 
 	// Load both navigation layers declared by room.isc. The ordinary map
 	// carries the walkable floor/path graph; cameramap is the camera-control
@@ -1405,6 +1558,7 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 					_pendingRoomCutscene.clear();
 					_pendingSaySpeaker.clear();
 					_pendingSayText.clear();
+					_pendingDialogName.clear();
 
 					if (!_scriptVM.run(_activePuzzle.program(), object->operateStart,
 					                   object->operateEnd, 4096)) {
@@ -1426,6 +1580,12 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 						    updatedObject.operateEnd != 0xffffffffU &&
 						    updatedObject.operateStart < updatedObject.operateEnd)
 							operateMeshes.push_back(updatedObject.entity);
+					}
+
+					if (!_pendingDialogName.empty() && !done && !shouldQuit()) {
+						playDialogue(_pendingDialogName, renderCamera, sceneDirectory,
+						             playerDirectory, frame);
+						_pendingDialogName.clear();
 					}
 
 					if (!_pendingRoomName.empty()) {
