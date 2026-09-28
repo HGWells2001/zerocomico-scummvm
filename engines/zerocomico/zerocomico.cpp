@@ -511,6 +511,16 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 		      (uint)_playerScene.materials.size(), (uint)_playerScene.meshes.size(),
 		      (uint)_playerScene.clips.size());
 
+	if (!_playerSequences.load(playerDirectory.appendComponent("Giovanni.seq"))) {
+		warning("Zero Comico: cannot parse Giovanni.seq");
+	} else {
+		const AnimationSequence *walkSequence = _playerSequences.findSequence("cammina");
+		const AnimationSequence *runSequence = _playerSequences.findSequence("corsa");
+		debug(1, "Zero Comico: JACS body %s exposes %u sequences (walk=%s, run=%s)",
+		      _playerSequences.bodyName.c_str(), (uint)_playerSequences.sequences.size(),
+		      walkSequence ? "yes" : "no", runSequence ? "yes" : "no");
+	}
+
 	// Load both navigation layers declared by room.isc. The ordinary map
 	// carries the walkable floor/path graph; cameramap is the camera-control
 	// partition used by the original runtime.
