@@ -10,6 +10,7 @@ MODULE_OBJS := \
 	model.o \
 	model_animation.o \
 	model_data.o \
+	puzzle_script.o \
 	resource.o \
 	scene_model.o \
 	sequence_script.o \
