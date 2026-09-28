@@ -7,8 +7,7 @@
 #include "common/file.h"
 #include "common/stream.h"
 #include "common/str.h"
-
-#include <cstdio>
+#include "common/tokenizer.h"
 
 namespace ZeroComico {
 
@@ -19,13 +18,7 @@ public:
 	Common::String next() {
 		while (!_stream.eos()) {
 			Common::String s = _stream.readLine();
-			while (!s.empty() && (s.lastChar() == '\r' || s.lastChar() == '\n' || s.lastChar() == ' ' || s.lastChar() == '\t'))
-				s.deleteLastChar();
-			uint first = 0;
-			while (first < s.size() && (s[first] == ' ' || s[first] == '\t'))
-				++first;
-			if (first)
-				s = Common::String(s.c_str() + first);
+			s.trim();
 			if (!s.empty())
 				return s;
 		}
@@ -33,20 +26,65 @@ public:
 	}
 
 	bool expect(const char *word) { return next() == word; }
+
 	int integer(bool &ok) {
-		Common::String s = next();
-		int v = 0;
-		if (sscanf(s.c_str(), "%d", &v) != 1)
+		const Common::String s = next();
+		char *end = nullptr;
+		const long v = strtol(s.c_str(), &end, 10);
+		if (end == s.c_str() || (end && *end != '\0'))
 			ok = false;
-		return v;
+		return (int)v;
 	}
 
 private:
 	Common::SeekableReadStream &_stream;
 };
 
+static bool tokenInt(const Common::String &s, int &value) {
+	char *end = nullptr;
+	const long v = strtol(s.c_str(), &end, 10);
+	if (end == s.c_str() || (end && *end != '\0'))
+		return false;
+	value = (int)v;
+	return true;
+}
+
+static bool tokenFloat(const Common::String &s, float &value) {
+	char *end = nullptr;
+	const double v = strtod(s.c_str(), &end);
+	if (end == s.c_str() || (end && *end != '\0'))
+		return false;
+	value = (float)v;
+	return true;
+}
+
 static bool parseVec2(const Common::String &s, Vec2 &v) {
-	return sscanf(s.c_str(), "%f %f", &v.x, &v.y) == 2;
+	Common::StringTokenizer tok(s);
+	if (tok.empty() || !tokenFloat(tok.nextToken(), v.x))
+		return false;
+	if (tok.empty() || !tokenFloat(tok.nextToken(), v.y))
+		return false;
+	return tok.empty();
+}
+
+static bool parseEdge(const Common::String &s, BspEdge &e) {
+	Common::StringTokenizer tok(s);
+	int *values[4] = { &e.p0, &e.p1, &e.front, &e.back };
+	for (int i = 0; i < 4; ++i) {
+		if (tok.empty() || !tokenInt(tok.nextToken(), *values[i]))
+			return false;
+	}
+	return tok.empty();
+}
+
+static bool parseTreeNode(const Common::String &s, BspTreeNode &node) {
+	Common::StringTokenizer tok(s);
+	int *values[3] = { &node.edge, &node.leaf, &node.unused };
+	for (int i = 0; i < 3; ++i) {
+		if (tok.empty() || !tokenInt(tok.nextToken(), *values[i]))
+			return false;
+	}
+	return tok.empty();
 }
 
 bool BspMap::load(const Common::Path &path) {
@@ -67,10 +105,11 @@ int BspMap::parseTree(LineReader &reader, bool &ok) {
 
 	BspTreeNode node;
 	node.left = node.right = -1;
-	if (sscanf(line.c_str(), "%d %d %d", &node.edge, &node.leaf, &node.unused) != 3) {
+	if (!parseTreeNode(line, node)) {
 		ok = false;
 		return -1;
 	}
+
 	const int index = tree.size();
 	tree.push_back(node);
 	tree[index].left = parseTree(reader, ok);
@@ -91,6 +130,7 @@ bool BspMap::load(Common::SeekableReadStream &stream) {
 	stream.seek(0);
 	if (stream.size() == 0)
 		return false;
+
 	LineReader r(stream);
 	bool ok = true;
 	if (!r.expect("scene") || !r.expect("room") || !r.expect("poly"))
@@ -101,7 +141,8 @@ bool BspMap::load(Common::SeekableReadStream &stream) {
 	for (int i = 0; ok && i < count; ++i) {
 		Vec2 v;
 		ok = parseVec2(r.next(), v);
-		outer.push_back(v);
+		if (ok)
+			outer.push_back(v);
 	}
 	if (!ok)
 		return false;
@@ -116,18 +157,21 @@ bool BspMap::load(Common::SeekableReadStream &stream) {
 		for (int i = 0; ok && i < count; ++i) {
 			Vec2 v;
 			ok = parseVec2(r.next(), v);
-			poly.push_back(v);
+			if (ok)
+				poly.push_back(v);
 		}
 		polygons.push_back(poly);
 	}
 
 	if (!ok || !r.expect("scene_end") || !r.expect("bsp") || !r.expect("bsp_points"))
 		return false;
+
 	count = r.integer(ok);
 	for (int i = 0; ok && i < count; ++i) {
 		Vec2 v;
 		ok = parseVec2(r.next(), v);
-		points.push_back(v);
+		if (ok)
+			points.push_back(v);
 	}
 
 	if (!ok || !r.expect("bsp_edges"))
@@ -135,10 +179,9 @@ bool BspMap::load(Common::SeekableReadStream &stream) {
 	count = r.integer(ok);
 	for (int i = 0; ok && i < count; ++i) {
 		BspEdge e;
-		const Common::String s = r.next();
-		if (sscanf(s.c_str(), "%d %d %d %d", &e.p0, &e.p1, &e.front, &e.back) != 4)
-			ok = false;
-		edges.push_back(e);
+		ok = parseEdge(r.next(), e);
+		if (ok)
+			edges.push_back(e);
 	}
 
 	if (!ok || !r.expect("bsp_polygons"))
@@ -163,28 +206,24 @@ bool BspMap::load(Common::SeekableReadStream &stream) {
 	for (int i = 0; ok && i < count; ++i) {
 		NavNode node;
 		ok = parseVec2(r.next(), node.pos);
-		Common::String arcs = r.next();
-		const char *p = arcs.c_str();
-		while (ok && *p) {
+		Common::StringTokenizer tok(r.next());
+		while (ok && !tok.empty()) {
 			int target = -1;
-			float weight = 0.0f;
-			int consumed = 0;
-			if (sscanf(p, "%d%n", &target, &consumed) != 1) {
+			if (!tokenInt(tok.nextToken(), target)) {
 				ok = false;
 				break;
 			}
-			p += consumed;
-			while (*p == ' ' || *p == '\t')
-				++p;
 			if (target == -1)
 				break;
-			if (sscanf(p, "%f%n", &weight, &consumed) != 1) {
+			if (tok.empty()) {
 				ok = false;
 				break;
 			}
-			p += consumed;
-			while (*p == ' ' || *p == '\t')
-				++p;
+			float weight = 0.0f;
+			if (!tokenFloat(tok.nextToken(), weight)) {
+				ok = false;
+				break;
+			}
 			NavArc arc;
 			arc.target = target;
 			arc.weight = weight;
@@ -202,11 +241,14 @@ bool BspMap::load(Common::SeekableReadStream &stream) {
 		int n = r.integer(ok);
 		for (int j = 0; ok && j < n; ++j)
 			(void)r.integer(ok);
+
 		n = r.integer(ok);
 		for (int j = 0; ok && j < n; ++j) {
+			Common::StringTokenizer tok(r.next());
 			int index = 0;
 			float weight = 0.0f;
-			if (sscanf(r.next().c_str(), "%d %f", &index, &weight) != 2)
+			if (tok.empty() || !tokenInt(tok.nextToken(), index) ||
+			    tok.empty() || !tokenFloat(tok.nextToken(), weight) || !tok.empty())
 				ok = false;
 		}
 	}
