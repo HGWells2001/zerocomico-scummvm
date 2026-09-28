@@ -45,6 +45,25 @@ static const char *const kMenuButtons[] = {
 
 static const int kMenuButtonCount = 5;
 
+static bool containsIgnoreCase(const Common::Array<Common::String> &values,
+                               const Common::String &value) {
+	for (uint32 i = 0; i < values.size(); ++i)
+		if (values[i].equalsIgnoreCase(value))
+			return true;
+	return false;
+}
+
+static bool removeIgnoreCase(Common::Array<Common::String> &values,
+                             const Common::String &value) {
+	for (uint32 i = 0; i < values.size(); ++i) {
+		if (!values[i].equalsIgnoreCase(value))
+			continue;
+		values.remove_at(i);
+		return true;
+	}
+	return false;
+}
+
 static float dotVec3(const Vec3f &a, const Vec3f &b) {
 	return a.x * b.x + a.y * b.y + a.z * b.z;
 }
@@ -225,6 +244,28 @@ static void drawCutsceneSubtitle(Graphics::ManagedSurface &surface,
 		font->drawString(&surface, lines[i], 40, y, 720, color, Graphics::kTextAlignCenter);
 		y += lineHeight;
 	}
+}
+
+static void drawInventoryOverlay(Graphics::ManagedSurface &surface,
+                                 const Common::Array<Common::String> &inventory,
+                                 const Common::String &selected) {
+	if (inventory.empty())
+		return;
+
+	const Graphics::Font *font = FontMan.getFontByUsage(Graphics::FontManager::kGUIFont);
+	if (!font)
+		return;
+
+	Common::String text("Inventario [TAB]: ");
+	if (selected.empty())
+		text += "(nessun oggetto selezionato)";
+	else
+		text += selected;
+
+	const uint32 shadow = surface.format.RGBToColor(0, 0, 0);
+	const uint32 color = surface.format.RGBToColor(255, 255, 255);
+	font->drawString(&surface, text, 11, 11, 778, shadow, Graphics::kTextAlignLeft);
+	font->drawString(&surface, text, 10, 10, 778, color, Graphics::kTextAlignLeft);
 }
 
 static void applyFadeToBlack(Graphics::ManagedSurface &surface, float amount) {
@@ -699,6 +740,63 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 		return true;
 	}
 
+	if (op.equalsIgnoreCase("take")) {
+		if (instruction.args.size() < 2)
+			return false;
+		const Common::String &inventoryObject = instruction.args[1];
+		if (!containsIgnoreCase(_inventoryObjects, inventoryObject))
+			_inventoryObjects.push_back(inventoryObject);
+		_selectedInventoryObject = inventoryObject;
+		debug(1, "Zero Comico: inventory acquired %s", inventoryObject.c_str());
+		return true;
+	}
+
+	if (op.equalsIgnoreCase("wait_take"))
+		return true;
+
+	if (op.equalsIgnoreCase("subobjininv")) {
+		if (instruction.args.size() < 2)
+			return false;
+		const Common::String &inventoryObject = instruction.args[1];
+		removeIgnoreCase(_inventoryObjects, inventoryObject);
+		if (_selectedInventoryObject.equalsIgnoreCase(inventoryObject))
+			_selectedInventoryObject.clear();
+		debug(1, "Zero Comico: inventory removed %s", inventoryObject.c_str());
+		return true;
+	}
+
+	if (op.equalsIgnoreCase("hide") || op.equalsIgnoreCase("unhide")) {
+		if (instruction.args.empty())
+			return false;
+		if (op.equalsIgnoreCase("hide")) {
+			if (!containsIgnoreCase(_hiddenSceneMeshes, instruction.args[0]))
+				_hiddenSceneMeshes.push_back(instruction.args[0]);
+		} else {
+			removeIgnoreCase(_hiddenSceneMeshes, instruction.args[0]);
+		}
+		return true;
+	}
+
+	if (op.equalsIgnoreCase("setobj")) {
+		if (instruction.args.size() < 2)
+			return false;
+		PuzzleObject *object = _activePuzzle.findObject(instruction.args[0]);
+		if (!object)
+			return false;
+
+		Common::String state = instruction.args[1];
+		state.toLowercase();
+		if (state.find("examinable true") != Common::String::npos)
+			object->examinable = true;
+		if (state.find("examinable false") != Common::String::npos)
+			object->examinable = false;
+		if (state.find("enabled true") != Common::String::npos)
+			object->enabled = true;
+		if (state.find("enabled false") != Common::String::npos)
+			object->enabled = false;
+		return true;
+	}
+
 	if (op.equalsIgnoreCase("play"))
 		return true;
 
@@ -872,6 +970,16 @@ bool ZeroComicoEngine::renderGameplayFrame(const RenderCamera &camera,
 	}
 
 	Common::Array<Common::String> visibleMeshes;
+	if (!_hiddenSceneMeshes.empty()) {
+		for (uint32 meshIndex = 0; meshIndex < _activeScene.meshes.size(); ++meshIndex) {
+			const NamedMesh &mesh = _activeScene.meshes[meshIndex];
+			if (mesh.data.isFlesh() || containsIgnoreCase(_hiddenSceneMeshes, mesh.name))
+				continue;
+			visibleMeshes.push_back(mesh.name);
+		}
+		if (visibleMeshes.empty())
+			visibleMeshes.push_back("__zerocomico_no_visible_room_meshes__");
+	}
 	bool rendered = false;
 
 	if (!_playerScene.meshes.empty() && _havePlayerStart) {
@@ -907,6 +1015,7 @@ bool ZeroComicoEngine::renderGameplayFrame(const RenderCamera &camera,
 	if (!rendered)
 		return false;
 
+	drawInventoryOverlay(frame, _inventoryObjects, _selectedInventoryObject);
 	_system->copyRectToScreen(frame.getPixels(), frame.pitch, 0, 0, frame.w, frame.h);
 	_system->updateScreen();
 	return true;
@@ -929,6 +1038,8 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 	_pendingRoomName.clear();
 	_pendingRoomCutscene.clear();
 	_selectedInventoryObject.clear();
+	_inventoryObjects.clear();
+	_hiddenSceneMeshes.clear();
 	_sceneLoopTargets.clear();
 	_sceneLoopSources.clear();
 	_sceneLoopStartMillis.clear();
@@ -1168,7 +1279,8 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 	Common::Array<Common::String> operateMeshes;
 	for (uint32 objectIndex = 0; objectIndex < _activePuzzle.objects.size(); ++objectIndex) {
 		const PuzzleObject &object = _activePuzzle.objects[objectIndex];
-		if (!object.enabled || object.entity.empty() || !_activeScene.findMesh(object.entity))
+		if (!object.enabled || object.entity.empty() || !_activeScene.findMesh(object.entity) ||
+		    containsIgnoreCase(_hiddenSceneMeshes, object.entity))
 			continue;
 		if (object.examinable)
 			examineMeshes.push_back(object.entity);
@@ -1190,6 +1302,29 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 			if (event.type == Common::EVENT_KEYDOWN && event.kbd.keycode == Common::KEYCODE_ESCAPE) {
 				done = true;
 				break;
+			}
+			if (event.type == Common::EVENT_KEYDOWN && event.kbd.keycode == Common::KEYCODE_TAB) {
+				if (!_inventoryObjects.empty()) {
+					int selectedIndex = -1;
+					for (uint32 i = 0; i < _inventoryObjects.size(); ++i) {
+						if (_inventoryObjects[i].equalsIgnoreCase(_selectedInventoryObject)) {
+							selectedIndex = (int)i;
+							break;
+						}
+					}
+					selectedIndex = (selectedIndex + 1) % (int)_inventoryObjects.size();
+					_selectedInventoryObject = _inventoryObjects[(uint32)selectedIndex];
+					debug(1, "Zero Comico: inventory selected %s", _selectedInventoryObject.c_str());
+					renderGameplayFrame(renderCamera, sceneDirectory, playerDirectory,
+					                    "Stay", 0.0f, frame);
+				}
+				continue;
+			}
+			if (event.type == Common::EVENT_KEYDOWN && event.kbd.keycode == Common::KEYCODE_BACKSPACE) {
+				_selectedInventoryObject.clear();
+				renderGameplayFrame(renderCamera, sceneDirectory, playerDirectory,
+				                    "Stay", 0.0f, frame);
+				continue;
 			}
 			if (event.type == Common::EVENT_RBUTTONDOWN) {
 				Common::String pickedEntity;
@@ -1262,6 +1397,22 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 					                   object->operateEnd, 4096)) {
 						warning("Zero Comico: object operation %s stopped on an unsupported opcode",
 						        object->name.c_str());
+					}
+
+					examineMeshes.clear();
+					operateMeshes.clear();
+					for (uint32 objectIndex = 0; objectIndex < _activePuzzle.objects.size(); ++objectIndex) {
+						const PuzzleObject &updatedObject = _activePuzzle.objects[objectIndex];
+						if (!updatedObject.enabled || updatedObject.entity.empty() ||
+						    !_activeScene.findMesh(updatedObject.entity) ||
+						    containsIgnoreCase(_hiddenSceneMeshes, updatedObject.entity))
+							continue;
+						if (updatedObject.examinable)
+							examineMeshes.push_back(updatedObject.entity);
+						if (updatedObject.operateStart != 0xffffffffU &&
+						    updatedObject.operateEnd != 0xffffffffU &&
+						    updatedObject.operateStart < updatedObject.operateEnd)
+							operateMeshes.push_back(updatedObject.entity);
 					}
 
 					if (!_pendingRoomName.empty()) {
@@ -1344,7 +1495,8 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 							for (uint32 objectIndex = 0; objectIndex < _activePuzzle.objects.size(); ++objectIndex) {
 								const PuzzleObject &nextObject = _activePuzzle.objects[objectIndex];
 								if (!nextObject.enabled || nextObject.entity.empty() ||
-								    !_activeScene.findMesh(nextObject.entity))
+								    !_activeScene.findMesh(nextObject.entity) ||
+								    containsIgnoreCase(_hiddenSceneMeshes, nextObject.entity))
 									continue;
 								if (nextObject.examinable)
 									examineMeshes.push_back(nextObject.entity);
