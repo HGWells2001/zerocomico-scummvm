@@ -63,6 +63,9 @@ private:
 	Common::String _currentMainPlace;
 	Common::String _pendingSaySpeaker;
 	Common::String _pendingSayText;
+	Common::Array<Common::String> _sceneLoopTargets;
+	Common::Array<Common::String> _sceneLoopSources;
+	Common::Array<uint32> _sceneLoopStartMillis;
 	ScriptVM _scriptVM;
 	bool _interfaceDisabled;
 	bool _3dEnabled;
