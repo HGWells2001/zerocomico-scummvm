@@ -156,10 +156,12 @@ static bool projectVertex(const Vec3f &world, const RenderCamera &camera,
 	return true;
 }
 
-static bool loadTexture(const MaterialData &material, const Common::Path &directory,
-                        Graphics::ManagedSurface &texture) {
+static const Graphics::ManagedSurface *loadTextureCached(
+		const MaterialData &material, const Common::Path &directory,
+		Common::Array<Common::String> &cacheKeys,
+		Common::Array<Graphics::ManagedSurface *> &cache) {
 	if (!material.hasTexture || material.textureName.empty())
-		return false;
+		return nullptr;
 
 	Common::String fileName = lowerAscii(material.textureName);
 
@@ -169,12 +171,22 @@ static bool loadTexture(const MaterialData &material, const Common::Path &direct
 	if (fileName.equalsIgnoreCase("vetro.tga"))
 		fileName = "int_vetro.tga";
 
-	if (ResourceReader::decodeJgfFile(directory.appendComponent(fileName), texture))
-		return true;
+	const Common::String key = directory.toString() + "/" + fileName;
+	for (uint32 i = 0; i < cacheKeys.size(); ++i) {
+		if (cacheKeys[i].equalsIgnoreCase(key))
+			return cache[i];
+	}
 
-	// Preserve compatibility with installations whose filesystem kept the
-	// uppercase editor spelling from the model.
-	return ResourceReader::decodeJgfFile(directory.appendComponent(material.textureName), texture);
+	Graphics::ManagedSurface *texture = new Graphics::ManagedSurface();
+	if (!ResourceReader::decodeJgfFile(directory.appendComponent(fileName), *texture) &&
+	    !ResourceReader::decodeJgfFile(directory.appendComponent(material.textureName), *texture)) {
+		delete texture;
+		return nullptr;
+	}
+
+	cacheKeys.push_back(key);
+	cache.push_back(texture);
+	return texture;
 }
 
 static void clearTarget(Graphics::ManagedSurface &target) {
@@ -289,12 +301,13 @@ static void renderFaceRange(const SceneModel &scene, const MeshData &mesh,
                             const RenderCamera &camera, const Vec3f &right, const Vec3f &up,
                             const Vec3f &forward, float focalPixels,
                             const RenderTransform *instanceTransform,
+                            Common::Array<Common::String> &textureCacheKeys,
+                            Common::Array<Graphics::ManagedSurface *> &textureCache,
                             Graphics::ManagedSurface &target, Common::Array<float> &zBuffer) {
 	uint32 firstFace = 0;
 	uint32 faceCount = mesh.faceCount;
 	const MaterialData *material = nullptr;
-	Graphics::ManagedSurface texture;
-	Graphics::ManagedSurface *texturePtr = nullptr;
+	const Graphics::ManagedSurface *texturePtr = nullptr;
 
 	if (range) {
 		firstFace = range->firstFace;
@@ -302,8 +315,8 @@ static void renderFaceRange(const SceneModel &scene, const MeshData &mesh,
 		const NamedMaterial *named = scene.findMaterial(range->name);
 		if (named) {
 			material = &named->data;
-			if (loadTexture(named->data, textureDirectory, texture))
-				texturePtr = &texture;
+			texturePtr = loadTextureCached(named->data, textureDirectory,
+			                               textureCacheKeys, textureCache);
 		}
 	}
 
@@ -363,6 +376,8 @@ static bool renderScene(const SceneModel &scene, const Common::Path &textureDire
                         const RenderCamera &camera, const Vec3f &right, const Vec3f &up,
                         const Vec3f &forward, float focalPixels,
                         const RenderTransform *instanceTransform,
+                        Common::Array<Common::String> &textureCacheKeys,
+                        Common::Array<Graphics::ManagedSurface *> &textureCache,
                         Graphics::ManagedSurface &target, Common::Array<float> &zBuffer) {
 	bool renderedAny = false;
 	for (uint32 meshIndex = 0; meshIndex < scene.meshes.size(); ++meshIndex) {
@@ -376,7 +391,8 @@ static bool renderScene(const SceneModel &scene, const Common::Path &textureDire
 
 		if (mesh.materials.empty()) {
 			renderFaceRange(scene, mesh, posedVertices, nullptr, textureDirectory, camera, right, up, forward,
-			                focalPixels, instanceTransform, target, zBuffer);
+			                focalPixels, instanceTransform, textureCacheKeys, textureCache,
+			                target, zBuffer);
 			renderedAny = true;
 			continue;
 		}
@@ -384,7 +400,7 @@ static bool renderScene(const SceneModel &scene, const Common::Path &textureDire
 		for (uint32 materialIndex = 0; materialIndex < mesh.materials.size(); ++materialIndex) {
 			renderFaceRange(scene, mesh, posedVertices, &mesh.materials[materialIndex], textureDirectory,
 			                camera, right, up, forward, focalPixels, instanceTransform,
-			                target, zBuffer);
+			                textureCacheKeys, textureCache, target, zBuffer);
 			renderedAny = true;
 		}
 	}
@@ -392,6 +408,20 @@ static bool renderScene(const SceneModel &scene, const Common::Path &textureDire
 }
 
 } // namespace
+
+SoftwareRenderer::SoftwareRenderer() {
+}
+
+SoftwareRenderer::~SoftwareRenderer() {
+	for (uint32 i = 0; i < _textureCache.size(); ++i) {
+		if (_textureCache[i]) {
+			_textureCache[i]->free();
+			delete _textureCache[i];
+		}
+	}
+	_textureCache.clear();
+	_textureCacheKeys.clear();
+}
 
 bool SoftwareRenderer::render(const SceneModel &scene, const Common::String &cameraName,
                               const Common::Path &textureDirectory,
@@ -452,7 +482,8 @@ bool SoftwareRenderer::render(const SceneModel &scene, const RenderCamera &camer
 		zBuffer[i] = 1.0e30f;
 
 	return renderScene(scene, textureDirectory, visibleMeshes, camera, right, up, forward,
-	                   focalPixels, nullptr, target, zBuffer);
+	                   focalPixels, nullptr, _textureCacheKeys, _textureCache,
+	                   target, zBuffer);
 }
 
 bool SoftwareRenderer::renderWithActor(const SceneModel &scene, const RenderCamera &camera,
@@ -493,10 +524,12 @@ bool SoftwareRenderer::renderWithActor(const SceneModel &scene, const RenderCame
 
 	const bool renderedRoom = renderScene(scene, textureDirectory, visibleMeshes, camera,
 	                                      right, up, forward, camera.focalPixels,
-	                                      nullptr, target, zBuffer);
+	                                      nullptr, _textureCacheKeys, _textureCache,
+	                                      target, zBuffer);
 	const bool renderedActor = renderScene(actor, actorTextureDirectory, actorVisibleMeshes, camera,
 	                                       right, up, forward, camera.focalPixels,
-	                                       &actorTransform, target, zBuffer);
+	                                       &actorTransform, _textureCacheKeys, _textureCache,
+	                                       target, zBuffer);
 	return renderedRoom || renderedActor;
 }
 
