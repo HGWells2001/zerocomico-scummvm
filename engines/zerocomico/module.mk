@@ -10,6 +10,8 @@ MODULE_OBJS := \
 	resource.o \
 	scene_model.o \
 	script.o \
+	script_program.o \
+	wrapped_flic.o \
 	zerocomico.o
 
 MODULE_DIRS += \
