@@ -104,11 +104,12 @@ static Vec3f applyInstanceTransform(const Vec3f &world, const RenderTransform *t
 		world.z * transform->localScale.z
 	};
 
-	// JACS transform channels store quaternion components as x, y, z, w.
-	const float qx = transform->localRotation[0];
-	const float qy = transform->localRotation[1];
-	const float qz = transform->localRotation[2];
-	const float qw = transform->localRotation[3];
+	// JACS transform channels use the exporter quaternion order w, x, y, z.
+	// Identity rotations in the retail files are commonly (-1, 0, 0, 0).
+	const float qw = transform->localRotation[0];
+	const float qx = transform->localRotation[1];
+	const float qy = transform->localRotation[2];
+	const float qz = transform->localRotation[3];
 	const float qLength2 = qx * qx + qy * qy + qz * qz + qw * qw;
 	if (qLength2 > 1.0e-12f) {
 		const float invLength = 1.0f / std::sqrt(qLength2);
@@ -327,7 +328,12 @@ static void renderFaceRange(const SceneModel &scene, const MeshData &mesh,
 				valid = false;
 				break;
 			}
-			const Vec3f meshWorld = transformVertex(mesh.vertices[vertexIndex], mesh.transform);
+			// Flesh records are blended directly into the skinned parent's model-space
+			// bind pose. Applying the parent's exporter transform a second time would
+			// rotate/translate those reconstructed vertices twice.
+			const Vec3f meshWorld = mesh.isSkinnedParent()
+				? mesh.vertices[vertexIndex]
+				: transformVertex(mesh.vertices[vertexIndex], mesh.transform);
 			const Vec3f world = applyInstanceTransform(meshWorld, instanceTransform);
 			if (!projectVertex(world, camera, right, up, forward, focalPixels,
 			                   target.w, target.h, projected[i])) {
