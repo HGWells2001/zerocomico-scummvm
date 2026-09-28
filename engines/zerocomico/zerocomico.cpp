@@ -16,9 +16,16 @@
 #include "common/system.h"
 #include "engines/advancedDetector.h"
 #include "engines/util.h"
+#include "graphics/font.h"
+#include "graphics/fontman.h"
 #include "graphics/managed_surface.h"
 #include "graphics/pixelformat.h"
 #include "graphics/surface.h"
+
+#include "audio/mixer.h"
+#ifdef USE_MAD
+#include "audio/decoders/mp3.h"
+#endif
 #include "video/avi_decoder.h"
 
 #include <cmath>
@@ -181,6 +188,42 @@ static float animationHorizontalSpeed(const SceneModel &scene, const Common::Str
 	if (durationSeconds <= 0.0f)
 		return 0.0f;
 	return distance / durationSeconds;
+}
+
+static void drawCutsceneSubtitle(Graphics::ManagedSurface &surface,
+                                 const Common::String &speaker,
+                                 const Common::String &text) {
+	if (text.empty())
+		return;
+
+	const Graphics::Font *font = FontMan.getFontByUsage(Graphics::FontManager::kBigGUIFont);
+	if (!font)
+		font = FontMan.getFontByUsage(Graphics::FontManager::kGUIFont);
+	if (!font)
+		return;
+
+	uint32 color = surface.format.RGBToColor(255, 255, 255);
+	if (speaker.equalsIgnoreCase("Aldo"))
+		color = surface.format.RGBToColor(0, 255, 0);
+	else if (speaker.equalsIgnoreCase("Giovanni"))
+		color = surface.format.RGBToColor(255, 255, 0);
+	else if (speaker.equalsIgnoreCase("Giacomo"))
+		color = surface.format.RGBToColor(0, 255, 255);
+
+	const uint32 shadow = surface.format.RGBToColor(0, 0, 0);
+	Common::Array<Common::String> lines;
+	font->wordWrapText(text, 720, lines);
+	const int lineHeight = font->getFontHeight() + 2;
+	const int totalHeight = lineHeight * (int)lines.size();
+	int y = 570 - totalHeight;
+	if (y < 450)
+		y = 450;
+
+	for (uint32 i = 0; i < lines.size(); ++i) {
+		font->drawString(&surface, lines[i], 41, y + 1, 720, shadow, Graphics::kTextAlignCenter);
+		font->drawString(&surface, lines[i], 40, y, 720, color, Graphics::kTextAlignCenter);
+		y += lineHeight;
+	}
 }
 
 
@@ -370,6 +413,9 @@ bool ZeroComicoEngine::playCutscene(const Common::String &name) {
 	Graphics::ManagedSurface frameSurface;
 	Common::Array<Common::String> visibleMeshes;
 	uint32 nextEvent = 0;
+	Common::String subtitleSpeaker;
+	Common::String subtitleText;
+	Audio::SoundHandle cutsceneSfxHandle;
 	bool skip = false;
 
 	for (float frame = startFrame; frame <= endFrame && !shouldQuit() && !skip; frame += 1.0f) {
@@ -418,16 +464,38 @@ bool ZeroComicoEngine::playCutscene(const Common::String &name) {
 				const CutsceneEvent &event = timeline->events[nextEvent++];
 				switch (event.type) {
 				case kCutsceneSample:
-					if (!event.args.empty())
+					if (!event.args.empty()) {
 						debug(1, "Zero Comico: cutscene %s sample %s at frame %u",
 						      name.c_str(), event.args[0].c_str(), event.frame);
+#ifdef USE_MAD
+						Common::File *sampleFile = new Common::File();
+						const Common::Path samplePath(
+							Common::String("Sound/") + event.args[0] + ".mp3");
+						if (sampleFile->open(samplePath)) {
+							Audio::SeekableAudioStream *stream =
+								Audio::makeMP3Stream(sampleFile, DisposeAfterUse::YES);
+							if (stream)
+								_mixer->playStream(Audio::Mixer::kSFXSoundType,
+								                   &cutsceneSfxHandle, stream);
+							else
+								delete sampleFile;
+						} else {
+							delete sampleFile;
+						}
+#endif
+					}
 					break;
 				case kCutsceneText:
-					if (event.args.size() >= 2)
+					if (event.args.size() >= 2) {
+						subtitleSpeaker = event.args[0];
+						subtitleText = event.args[1];
 						debug(1, "Zero Comico: cutscene %s subtitle %s: %s",
-						      name.c_str(), event.args[0].c_str(), event.args[1].c_str());
+						      name.c_str(), subtitleSpeaker.c_str(), subtitleText.c_str());
+					}
 					break;
 				case kCutsceneStopText:
+					subtitleSpeaker.clear();
+					subtitleText.clear();
 					debug(1, "Zero Comico: cutscene %s subtitle stop at frame %u",
 					      name.c_str(), event.frame);
 					break;
@@ -442,6 +510,8 @@ bool ZeroComicoEngine::playCutscene(const Common::String &name) {
 				}
 			}
 		}
+
+		drawCutsceneSubtitle(frameSurface, subtitleSpeaker, subtitleText);
 
 		_system->copyRectToScreen(frameSurface.getPixels(), frameSurface.pitch,
 		                          0, 0, frameSurface.w, frameSurface.h);
@@ -463,6 +533,8 @@ bool ZeroComicoEngine::playCutscene(const Common::String &name) {
 		_system->delayMillis(40);
 	}
 
+	if (_mixer->isSoundHandleActive(cutsceneSfxHandle))
+		_mixer->stopHandle(cutsceneSfxHandle);
 	return !shouldQuit();
 }
 
