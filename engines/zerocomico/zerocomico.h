@@ -8,6 +8,7 @@
 #include "engines/engine.h"
 
 #include "zerocomico/bsp.h"
+#include "zerocomico/cutscene_script.h"
 #include "zerocomico/scene_model.h"
 #include "zerocomico/script_vm.h"
 #include "zerocomico/sequence_script.h"
@@ -30,6 +31,8 @@ public:
 
 private:
 	bool runStartupScript(const Common::String &mainPlace);
+	bool runMainPlaceRuntime(const ScriptProgram &program);
+	bool playCutscene(const Common::String &name);
 	void playFilmIfPresent(const Common::Path &path);
 	bool loadMenuScene();
 	bool renderMenuFrame(int selection);
@@ -55,7 +58,9 @@ private:
 	Vec3f _playerPosition;
 	Vec3f _playerFacingTarget;
 	bool _havePlayerStart;
+	bool _playerHatVisible;
 	int _playerNavNode;
+	Common::String _currentMainPlace;
 	ScriptVM _scriptVM;
 	bool _interfaceDisabled;
 	bool _3dEnabled;
