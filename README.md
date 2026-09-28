@@ -21,11 +21,13 @@ The engine now has a substantial native data/runtime foundation:
 * JFX1-wrapped FLIC playback support for animated-texture resources;
 * room bootstrap driven by the real `Mp0/gameplay/room.isc` script instead of a hard-coded intro sequence;
 * AVI/Indeo playback through ScummVM for `play_CD_film`;
-* loading of the real main-menu `interfaccia.p3d` + `interfaccia.anj` asset pair during bootstrap.
+* loading of the real main-menu `interfaccia.p3d` + `interfaccia.anj` asset pair during bootstrap;
+* textured software rendering of decoded JapoTek meshes with camera projection and z buffering;
+* live keyboard navigation of the original 3D main menu, including Help, Credits and Exit actions.
 
-The project is **not yet a completable port**. The largest missing piece is the renderer/runtime that turns those decoded 3D assets into the live menu and game world. Material state, texture animation, object visibility, camera binding, full script opcode coverage, interaction, dialogue/audio routing, save/load and gameplay systems still need to be connected.
+The project is **not yet a completable port**, but the first live 3D runtime is now present. A CPU software renderer applies decoded object transforms, the retail camera convention, z buffering, perspective-correct UVs and JGF5 textures. The original `interfaccia.p3d` menu is rendered and can be navigated with the keyboard. Help opens the shipped help image, Credits plays `crediti.avi`, and Exit quits. New Game currently reaches the documented `ChangeMainPlace mp1` boundary but does not yet enter the first playable chapter; Load/Save is also still pending.
 
-Until the menu renderer lands, the engine displays the original decoded interface texture after executing the scripted intro sequence.
+The next major layer is chapter runtime integration: loading the active Mp1 room/scene from script, applying JACS visibility/animation continuously, evaluating material effects and animated FLC textures, and expanding opcode coverage for interaction, dialogue/audio routing, pathfinding, inventory and save/load.
 
 ## Game data layout
 
