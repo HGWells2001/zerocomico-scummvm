@@ -64,6 +64,37 @@ static bool removeIgnoreCase(Common::Array<Common::String> &values,
 	return false;
 }
 
+static Common::String resolveSceneEntity(const SceneModel &scene,
+                                         const Common::String &entity,
+                                         const Common::String &roomPrefix) {
+	if (scene.findMesh(entity))
+		return entity;
+
+	const uint32 separator = entity.find('_');
+	if (!roomPrefix.empty() && entity.size() > 1 &&
+	    (entity[0] == 'c' || entity[0] == 'C') &&
+	    separator != Common::String::npos && separator + 1 < entity.size()) {
+		Common::String alias = roomPrefix;
+		alias += entity.substr(separator + 1);
+		if (scene.findMesh(alias))
+			return alias;
+	}
+
+	return entity;
+}
+
+static PuzzleObject *findPuzzleObjectForMesh(PuzzleScript &puzzle,
+                                             const SceneModel &scene,
+                                             const Common::String &roomPrefix,
+                                             const Common::String &meshName) {
+	for (uint32 i = 0; i < puzzle.objects.size(); ++i) {
+		PuzzleObject &object = puzzle.objects[i];
+		if (resolveSceneEntity(scene, object.entity, roomPrefix).equalsIgnoreCase(meshName))
+			return &object;
+	}
+	return nullptr;
+}
+
 static float dotVec3(const Vec3f &a, const Vec3f &b) {
 	return a.x * b.x + a.y * b.y + a.z * b.z;
 }
@@ -811,11 +842,13 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 	if (op.equalsIgnoreCase("hide") || op.equalsIgnoreCase("unhide")) {
 		if (instruction.args.empty())
 			return false;
+		const Common::String entity = resolveSceneEntity(
+			_activeScene, instruction.args[0], _activeRoomPrefix);
 		if (op.equalsIgnoreCase("hide")) {
-			if (!containsIgnoreCase(_hiddenSceneMeshes, instruction.args[0]))
-				_hiddenSceneMeshes.push_back(instruction.args[0]);
+			if (!containsIgnoreCase(_hiddenSceneMeshes, entity))
+				_hiddenSceneMeshes.push_back(entity);
 		} else {
-			removeIgnoreCase(_hiddenSceneMeshes, instruction.args[0]);
+			removeIgnoreCase(_hiddenSceneMeshes, entity);
 		}
 		return true;
 	}
@@ -1247,6 +1280,8 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 		return false;
 	}
 
+	_activeRoomPrefix = room->prefix;
+
 	_havePlayerStart = false;
 	_activeShapes = ShapeScript();
 	const Common::Path shapePath(level + "/gameplay/Shape.shp");
@@ -1445,14 +1480,18 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 	Common::Array<Common::String> operateMeshes;
 	for (uint32 objectIndex = 0; objectIndex < _activePuzzle.objects.size(); ++objectIndex) {
 		const PuzzleObject &object = _activePuzzle.objects[objectIndex];
-		if (!object.enabled || object.entity.empty() || !_activeScene.findMesh(object.entity) ||
-		    containsIgnoreCase(_hiddenSceneMeshes, object.entity))
+		if (!object.enabled || object.entity.empty())
+			continue;
+		const Common::String sceneEntity =
+			resolveSceneEntity(_activeScene, object.entity, _activeRoomPrefix);
+		if (!_activeScene.findMesh(sceneEntity) ||
+		    containsIgnoreCase(_hiddenSceneMeshes, sceneEntity))
 			continue;
 		if (object.examinable)
-			examineMeshes.push_back(object.entity);
+			examineMeshes.push_back(sceneEntity);
 		if (object.operateStart != 0xffffffffU && object.operateEnd != 0xffffffffU &&
 		    object.operateStart < object.operateEnd)
-			operateMeshes.push_back(object.entity);
+			operateMeshes.push_back(sceneEntity);
 	}
 
 	bool done = false;
@@ -1497,7 +1536,8 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 				if (_gameplayRenderer.pickMesh(_activeScene, renderCamera,
 				                               event.mouse.x, event.mouse.y,
 				                               examineMeshes, pickedEntity)) {
-					const PuzzleObject *object = _activePuzzle.findByEntity(pickedEntity);
+					const PuzzleObject *object = findPuzzleObjectForMesh(
+						_activePuzzle, _activeScene, _activeRoomPrefix, pickedEntity);
 					if (object && !object->examineText.empty()) {
 						drawCutsceneSubtitle(frame, "Giovanni", object->examineText);
 						_system->copyRectToScreen(frame.getPixels(), frame.pitch,
@@ -1552,7 +1592,8 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 			if (_gameplayRenderer.pickMesh(_activeScene, renderCamera,
 			                               event.mouse.x, event.mouse.y,
 			                               operateMeshes, operatedEntity)) {
-				const PuzzleObject *object = _activePuzzle.findByEntity(operatedEntity);
+				const PuzzleObject *object = findPuzzleObjectForMesh(
+					_activePuzzle, _activeScene, _activeRoomPrefix, operatedEntity);
 				if (object && object->operateStart < object->operateEnd) {
 					_pendingRoomName.clear();
 					_pendingRoomCutscene.clear();
@@ -1570,16 +1611,19 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 					operateMeshes.clear();
 					for (uint32 objectIndex = 0; objectIndex < _activePuzzle.objects.size(); ++objectIndex) {
 						const PuzzleObject &updatedObject = _activePuzzle.objects[objectIndex];
-						if (!updatedObject.enabled || updatedObject.entity.empty() ||
-						    !_activeScene.findMesh(updatedObject.entity) ||
-						    containsIgnoreCase(_hiddenSceneMeshes, updatedObject.entity))
+						if (!updatedObject.enabled || updatedObject.entity.empty())
+							continue;
+						const Common::String updatedEntity = resolveSceneEntity(
+							_activeScene, updatedObject.entity, _activeRoomPrefix);
+						if (!_activeScene.findMesh(updatedEntity) ||
+						    containsIgnoreCase(_hiddenSceneMeshes, updatedEntity))
 							continue;
 						if (updatedObject.examinable)
-							examineMeshes.push_back(updatedObject.entity);
+							examineMeshes.push_back(updatedEntity);
 						if (updatedObject.operateStart != 0xffffffffU &&
 						    updatedObject.operateEnd != 0xffffffffU &&
 						    updatedObject.operateStart < updatedObject.operateEnd)
-							operateMeshes.push_back(updatedObject.entity);
+							operateMeshes.push_back(updatedEntity);
 					}
 
 					if (!_pendingDialogName.empty() && !done && !shouldQuit()) {
@@ -1595,6 +1639,7 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 						const RoomDefinition *nextRoom = chapter.findRoom(_pendingRoomName);
 						if (nextRoom) {
 							room = nextRoom;
+							_activeRoomPrefix = room->prefix;
 							Common::String nextStem = room->name;
 							nextStem.toLowercase();
 
@@ -1667,16 +1712,19 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 							operateMeshes.clear();
 							for (uint32 objectIndex = 0; objectIndex < _activePuzzle.objects.size(); ++objectIndex) {
 								const PuzzleObject &nextObject = _activePuzzle.objects[objectIndex];
-								if (!nextObject.enabled || nextObject.entity.empty() ||
-								    !_activeScene.findMesh(nextObject.entity) ||
-								    containsIgnoreCase(_hiddenSceneMeshes, nextObject.entity))
+								if (!nextObject.enabled || nextObject.entity.empty())
+									continue;
+								const Common::String nextEntity = resolveSceneEntity(
+									_activeScene, nextObject.entity, _activeRoomPrefix);
+								if (!_activeScene.findMesh(nextEntity) ||
+								    containsIgnoreCase(_hiddenSceneMeshes, nextEntity))
 									continue;
 								if (nextObject.examinable)
-									examineMeshes.push_back(nextObject.entity);
+									examineMeshes.push_back(nextEntity);
 								if (nextObject.operateStart != 0xffffffffU &&
 								    nextObject.operateEnd != 0xffffffffU &&
 								    nextObject.operateStart < nextObject.operateEnd)
-									operateMeshes.push_back(nextObject.entity);
+									operateMeshes.push_back(nextEntity);
 							}
 
 							debug(1, "Zero Comico: changed place to %s at nav node %d",
