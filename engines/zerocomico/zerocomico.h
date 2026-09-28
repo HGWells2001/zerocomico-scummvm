@@ -73,6 +73,8 @@ private:
 	Common::String _pendingRoomName;
 	Common::String _pendingRoomCutscene;
 	Common::String _selectedInventoryObject;
+	Common::Array<Common::String> _inventoryObjects;
+	Common::Array<Common::String> _hiddenSceneMeshes;
 	Common::Array<Common::String> _sceneLoopTargets;
 	Common::Array<Common::String> _sceneLoopSources;
 	Common::Array<uint32> _sceneLoopStartMillis;
