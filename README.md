@@ -23,11 +23,13 @@ The engine now has a substantial native data/runtime foundation:
 * AVI/Indeo playback through ScummVM for `play_CD_film`;
 * loading of the real main-menu `interfaccia.p3d` + `interfaccia.anj` asset pair during bootstrap;
 * textured software rendering of decoded JapoTek meshes with camera projection and z buffering;
-* live keyboard navigation of the original 3D main menu, including Help, Credits and Exit actions.
+* live keyboard navigation of the original 3D main menu, including Help, Credits and Exit actions;
+* parsing of main-place room definitions and scripted gameplay cameras from `room.isc` / `Camera.scr`;
+* New Game now follows `ChangeMainPlace mp1`, loads the declared `room1_1` P3D/ANJ scene, the retail gameplay camera, and both BSP navigation maps, then renders the first-room preview.
 
-The project is **not yet a completable port**, but the first live 3D runtime is now present. A CPU software renderer applies decoded object transforms, the retail camera convention, z buffering, perspective-correct UVs and JGF5 textures. The original `interfaccia.p3d` menu is rendered and can be navigated with the keyboard. Help opens the shipped help image, Credits plays `crediti.avi`, and Exit quits. New Game currently reaches the documented `ChangeMainPlace mp1` boundary but does not yet enter the first playable chapter; Load/Save is also still pending.
+The project is **not yet a completable port**, but the first live 3D runtime is now present. A CPU software renderer applies decoded object transforms, z buffering, perspective-correct UVs and JGF5 textures. The original `interfaccia.p3d` menu is rendered and can be navigated with the keyboard. Help opens the shipped help image, Credits plays `crediti.avi`, and Exit quits. New Game now crosses into Mp1 far enough to parse the start-room declaration, load `room1_1.p3d/.anj`, use the camera defined in `Camera.scr`, load the walk/camera BSP maps, and render a room preview. Character spawning, room startup/cutscene execution, interaction, and Load/Save are still pending.
 
-The next major layer is chapter runtime integration: loading the active Mp1 room/scene from script, applying JACS visibility/animation continuously, evaluating material effects and animated FLC textures, and expanding opcode coverage for interaction, dialogue/audio routing, pathfinding, inventory and save/load.
+The next major layer is turning that Mp1 preview into gameplay: execute the room startup/cutscene state, apply JACS visibility/animation continuously, evaluate material effects and animated FLC textures, spawn and move Giovanni on the parsed navigation graph, and expand opcode coverage for interaction, dialogue/audio routing, inventory and save/load.
 
 ## Game data layout
 
