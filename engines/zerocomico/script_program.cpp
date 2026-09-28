@@ -79,43 +79,52 @@ bool ScriptProgram::parse(const Common::String &text) {
 				return false;
 
 			if (!tokens.empty()) {
-				bool closes = false;
-				bool opens = false;
-
-				for (uint32 i = 0; i < tokens.size(); ++i) {
-					if (tokens[i] == "}")
-						closes = true;
-					else if (tokens[i] == "{")
-						opens = true;
-				}
-
-				if (closes) {
-					if (depth <= 0)
-						return false;
-					--depth;
-				}
-
 				ScriptInstruction inst;
 				inst.lineNumber = lineNumber;
 				inst.depth = depth;
-				inst.opensBlock = opens;
-				inst.closesBlock = closes;
+				inst.opensBlock = false;
+				inst.closesBlock = false;
 				inst.raw = raw;
 
+				int lineDepth = depth;
+				int structuralDepth = depth;
+				bool haveOpcode = false;
+
+				// Braces are significant in token order. Real game data commonly
+				// uses balanced inline blocks, for example:
+				//   array if_BMap { 0 1 2 3 4 5 6 }
+				// and also "} else {"-style transitions. Counting only whether a
+				// line contains a brace loses this information and underflows at
+				// top level. Walk every token and preserve the net nesting depth.
 				for (uint32 i = 0; i < tokens.size(); ++i) {
-					if (tokens[i] == "{" || tokens[i] == "}")
+					if (tokens[i] == "{") {
+						inst.opensBlock = true;
+						++structuralDepth;
 						continue;
-					if (inst.opcode.empty())
+					}
+					if (tokens[i] == "}") {
+						inst.closesBlock = true;
+						--structuralDepth;
+						if (structuralDepth < 0)
+							return false;
+						if (!haveOpcode)
+							lineDepth = structuralDepth;
+						continue;
+					}
+
+					if (!haveOpcode) {
+						haveOpcode = true;
+						lineDepth = structuralDepth;
 						inst.opcode = tokens[i];
-					else
+					} else {
 						inst.args.push_back(tokens[i]);
+					}
 				}
 
-				if (!inst.opcode.empty())
+				inst.depth = lineDepth;
+				depth = structuralDepth;
+				if (haveOpcode)
 					_instructions.push_back(inst);
-
-				if (opens)
-					++depth;
 			}
 		}
 
