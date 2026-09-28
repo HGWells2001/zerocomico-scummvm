@@ -94,7 +94,7 @@ static Vec3f transformVertex(const Vec3f &stored, const ObjectTransform &transfo
 	return world;
 }
 
-static bool projectVertex(const Vec3f &world, const CameraData &camera,
+static bool projectVertex(const Vec3f &world, const RenderCamera &camera,
                           const Vec3f &right, const Vec3f &up, const Vec3f &forward,
                           float focalPixels, int width, int height, ProjectedVertex &out) {
 	const Vec3f relative = sub3(world, camera.position);
@@ -237,7 +237,7 @@ static void drawTriangle(Graphics::ManagedSurface &target, Common::Array<float> 
 
 static void renderFaceRange(const SceneModel &scene, const MeshData &mesh,
                             const MeshMaterialRange *range, const Common::Path &textureDirectory,
-                            const CameraData &camera, const Vec3f &right, const Vec3f &up,
+                            const RenderCamera &camera, const Vec3f &right, const Vec3f &up,
                             const Vec3f &forward, float focalPixels,
                             Graphics::ManagedSurface &target, Common::Array<float> &zBuffer) {
 	uint32 firstFace = 0;
@@ -309,7 +309,26 @@ bool SoftwareRenderer::render(const SceneModel &scene, const Common::String &cam
 	const NamedCamera *namedCamera = scene.findCamera(cameraName);
 	if (!namedCamera)
 		namedCamera = &scene.cameras[0];
-	const CameraData &camera = namedCamera->data;
+
+	// P3D camera records store a 35 mm focal length rather than an angular
+	// field of view. A 36 mm horizontal film gate reproduces the retail
+	// interface framing at 800x600.
+	if (namedCamera->data.fov <= 0.0f)
+		return false;
+
+	RenderCamera camera;
+	camera.position = namedCamera->data.position;
+	camera.target = namedCamera->data.target;
+	camera.focalPixels = namedCamera->data.fov * width / 36.0f;
+	return render(scene, camera, textureDirectory, visibleMeshes, target, width, height);
+}
+
+bool SoftwareRenderer::render(const SceneModel &scene, const RenderCamera &camera,
+                              const Common::Path &textureDirectory,
+                              const Common::Array<Common::String> &visibleMeshes,
+                              Graphics::ManagedSurface &target, int width, int height) const {
+	if (width <= 0 || height <= 0 || camera.focalPixels <= 0.0f)
+		return false;
 
 	Vec3f forward = sub3(camera.target, camera.position);
 	if (!normalize3(forward))
@@ -327,13 +346,7 @@ bool SoftwareRenderer::render(const SceneModel &scene, const Common::String &cam
 	if (!normalize3(up))
 		return false;
 
-	// The field traditionally called fov in the JapoTek loader is a 35 mm
-	// camera focal length. The interface scene uses 115 mm; interpreting it as
-	// an angle produces a tiny, inverted view. A 36 mm horizontal film gate
-	// reproduces the retail 800x600 framing.
-	if (camera.fov <= 0.0f)
-		return false;
-	const float focalPixels = camera.fov * width / 36.0f;
+	const float focalPixels = camera.focalPixels;
 
 	target.free();
 	target.create((int16)width, (int16)height, Graphics::PixelFormat::createFormatBGRA32());
