@@ -142,6 +142,20 @@ static bool sampleRootTransform(const SceneModel &scene, const Common::String &t
 	return true;
 }
 
+static bool animationClipRange(const SceneModel &scene, const Common::String &targetName,
+                               const Common::String &sourceName, float &startFrame, float &endFrame) {
+	const NamedAnimationClip *clip = scene.findClipBySource(targetName, sourceName);
+	if (!clip)
+		return false;
+
+	startFrame = (float)clip->data.startFrame;
+	endFrame = (float)clip->data.endFrame;
+	if (endFrame < startFrame)
+		endFrame = startFrame;
+	return true;
+}
+
+
 } // namespace
 
 ZeroComicoEngine::ZeroComicoEngine(OSystem *syst, const ADGameDescription *desc)
@@ -600,10 +614,10 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 	if (_playerNavNode >= 0)
 		debug(1, "Zero Comico: navigation runtime ready at node %d", _playerNavNode);
 
-	// Prototype gameplay loop: clicks are projected onto the floor plane, then
-	// snapped to the retail BSP graph and routed with Dijkstra. Movement is
-	// currently applied at the destination node; continuous walk interpolation
-	// and JACS walk cycles are the next animation layer.
+	// Gameplay prototype: clicks are projected onto the floor plane, snapped to
+	// the retail BSP graph and routed with Dijkstra. The character traverses
+	// that route continuously while the 0>1, 1>1 and 1>0 JACS sequence states
+	// drive start, looping walk and stop animation clips.
 	bool done = false;
 	while (!shouldQuit() && !done) {
 		Common::Event event;
@@ -632,25 +646,44 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 			debug(1, "Zero Comico: click navigation selected node %d through %u path nodes",
 			      destinationNode, (uint)route.size());
 
-			const AnimationSequence *walkSequence = _playerSequences.findSequence("cammina");
-			Common::Array<Common::String> walkClips;
-			if (walkSequence) {
-				for (uint32 transitionIndex = 0; transitionIndex < walkSequence->transitions.size(); ++transitionIndex) {
-					if (walkSequence->transitions[transitionIndex].state == "1>1") {
-						walkClips = walkSequence->transitions[transitionIndex].clips;
-						break;
-					}
-				}
-			}
-			if (walkClips.empty())
-				walkClips.push_back("Camm1");
+			Common::Array<Common::String> startClips;
+			Common::Array<Common::String> loopClips;
+			Common::Array<Common::String> stopClips;
 
-			uint32 walkClipIndex = 0;
-			float animationFrame = 0.0f;
+			const SequenceTransition *startTransition = _playerSequences.findTransition("cammina", "0>1");
+			const SequenceTransition *loopTransition = _playerSequences.findTransition("cammina", "1>1");
+			const SequenceTransition *stopTransition = _playerSequences.findTransition("cammina", "1>0");
+			if (startTransition)
+				startClips = startTransition->clips;
+			if (loopTransition)
+				loopClips = loopTransition->clips;
+			if (stopTransition)
+				stopClips = stopTransition->clips;
+
+			if (startClips.empty())
+				startClips.push_back("Start1");
+			if (loopClips.empty())
+				loopClips.push_back("Camm1");
+			if (stopClips.empty())
+				stopClips.push_back("Alt1");
+
 			const float frameRate = 25.0f;
 			const float tickSeconds = 0.02f;
 			const float walkSpeed = 45.0f;
 			const float stepDistance = walkSpeed * tickSeconds;
+
+			bool starting = true;
+			uint32 animationClipIndex = 0;
+			Common::String animationSource = startClips[0];
+			float animationFrame = 0.0f;
+			float animationEnd = 0.0f;
+			if (!animationClipRange(_playerScene, "gio_giovanni", animationSource,
+			                        animationFrame, animationEnd)) {
+				starting = false;
+				animationSource = loopClips[0];
+				animationClipRange(_playerScene, "gio_giovanni", animationSource,
+				                   animationFrame, animationEnd);
+			}
 
 			for (uint32 routeIndex = 1; routeIndex < route.size() && !done && !shouldQuit(); ++routeIndex) {
 				const NavNode &targetNode = _activeWalkMap.graph[(uint32)route[routeIndex]];
@@ -671,22 +704,26 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 					_playerPosition.z += dz * advance;
 					distance -= advance;
 
-					const Common::String &clipName = walkClips[walkClipIndex % walkClips.size()];
-					const NamedAnimationClip *clip = _playerScene.findClipBySource("gio_giovanni", clipName);
-					float clipEnd = clip ? (float)clip->data.endFrame : 30.0f;
-					if (clipEnd <= 0.0f)
-						clipEnd = 30.0f;
-
 					if (!renderGameplayFrame(renderCamera, sceneDirectory, playerDirectory,
-					                         clipName, animationFrame, frame)) {
+					                         animationSource, animationFrame, frame)) {
 						done = true;
 						break;
 					}
 
 					animationFrame += frameRate * tickSeconds;
-					if (animationFrame > clipEnd) {
-						animationFrame = 0.0f;
-						walkClipIndex = (walkClipIndex + 1) % walkClips.size();
+					if (animationFrame > animationEnd) {
+						if (starting) {
+							starting = false;
+							animationClipIndex = 0;
+						} else {
+							animationClipIndex = (animationClipIndex + 1) % loopClips.size();
+						}
+						animationSource = loopClips[animationClipIndex];
+						if (!animationClipRange(_playerScene, "gio_giovanni", animationSource,
+						                        animationFrame, animationEnd)) {
+							animationFrame = 0.0f;
+							animationEnd = 30.0f;
+						}
 					}
 
 					Common::Event moveEvent;
@@ -710,8 +747,34 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 				_playerNavNode = route[routeIndex];
 			}
 
-			if (!done && !shouldQuit())
-				renderGameplayFrame(renderCamera, sceneDirectory, playerDirectory, "Stay", 0.0f, frame);
+			// Complete the 1>0 transition at the destination instead of snapping
+			// straight from the looping walk cycle to the idle pose.
+			if (!done && !shouldQuit()) {
+				const Common::String &stopSource =
+					stopClips[animationClipIndex % stopClips.size()];
+				float stopFrame = 0.0f;
+				float stopEnd = 0.0f;
+				if (animationClipRange(_playerScene, "gio_giovanni", stopSource,
+				                       stopFrame, stopEnd)) {
+					while (stopFrame <= stopEnd && !done && !shouldQuit()) {
+						if (!renderGameplayFrame(renderCamera, sceneDirectory, playerDirectory,
+						                         stopSource, stopFrame, frame)) {
+							done = true;
+							break;
+						}
+						stopFrame += frameRate * tickSeconds;
+						_system->delayMillis(20);
+					}
+				}
+
+				if (!done && !shouldQuit()) {
+					float stayFrame = 0.0f;
+					float stayEnd = 0.0f;
+					animationClipRange(_playerScene, "gio_giovanni", "Stay", stayFrame, stayEnd);
+					renderGameplayFrame(renderCamera, sceneDirectory, playerDirectory,
+					                    "Stay", stayFrame, frame);
+				}
+			}
 		}
 		_system->delayMillis(10);
 	}
