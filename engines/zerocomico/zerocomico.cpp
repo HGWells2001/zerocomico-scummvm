@@ -375,6 +375,7 @@ bool ZeroComicoEngine::playCutscene(const Common::String &name) {
 	for (float frame = startFrame; frame <= endFrame && !shouldQuit() && !skip; frame += 1.0f) {
 		if (!scene.poseCutsceneGeometry(assetStem, frame))
 			warning("Zero Comico: cutscene %s pose failed at frame %.0f", name.c_str(), frame);
+		scene.visibleMeshesForSource(assetStem, frame, visibleMeshes);
 
 		RenderCamera renderCamera;
 		bool haveCamera = false;
