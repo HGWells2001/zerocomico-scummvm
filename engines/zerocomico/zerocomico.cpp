@@ -1147,12 +1147,16 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 	// drive start, looping walk and stop animation clips. Idle rendering keeps
 	// the Stay pose and playl room-object loops alive at 25 fps.
 	Common::Array<Common::String> examineMeshes;
+	Common::Array<Common::String> operateMeshes;
 	for (uint32 objectIndex = 0; objectIndex < _activePuzzle.objects.size(); ++objectIndex) {
 		const PuzzleObject &object = _activePuzzle.objects[objectIndex];
-		if (!object.enabled || !object.examinable || object.entity.empty())
+		if (!object.enabled || object.entity.empty() || !_activeScene.findMesh(object.entity))
 			continue;
-		if (_activeScene.findMesh(object.entity))
+		if (object.examinable)
 			examineMeshes.push_back(object.entity);
+		if (object.operateStart != 0xffffffffU && object.operateEnd != 0xffffffffU &&
+		    object.operateStart < object.operateEnd)
+			operateMeshes.push_back(object.entity);
 	}
 
 	bool done = false;
@@ -1224,6 +1228,135 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 
 			if (event.type != Common::EVENT_LBUTTONDOWN || _playerNavNode < 0)
 				continue;
+
+			Common::String operatedEntity;
+			if (_gameplayRenderer.pickMesh(_activeScene, renderCamera,
+			                               event.mouse.x, event.mouse.y,
+			                               operateMeshes, operatedEntity)) {
+				const PuzzleObject *object = _activePuzzle.findByEntity(operatedEntity);
+				if (object && object->operateStart < object->operateEnd) {
+					_pendingRoomName.clear();
+					_pendingRoomCutscene.clear();
+					_pendingSaySpeaker.clear();
+					_pendingSayText.clear();
+
+					if (!_scriptVM.run(_activePuzzle.program(), object->operateStart,
+					                   object->operateEnd, 4096)) {
+						warning("Zero Comico: object operation %s stopped on an unsupported opcode",
+						        object->name.c_str());
+					}
+
+					if (!_pendingRoomName.empty()) {
+						if (_pendingRoomCutscene.equalsIgnoreCase("d101"))
+							playCutscene("d101_dor");
+
+						const RoomDefinition *nextRoom = chapter.findRoom(_pendingRoomName);
+						if (nextRoom) {
+							room = nextRoom;
+							Common::String nextStem = room->name;
+							nextStem.toLowercase();
+
+							_activeScene.clear();
+							if (!_activeScene.loadPair(
+									sceneDirectory.appendComponent(nextStem + ".p3d"),
+									sceneDirectory.appendComponent(nextStem + ".anj"))) {
+								warning("Zero Comico: cannot load destination room %s",
+								        room->name.c_str());
+								done = true;
+								break;
+							}
+
+							_activeWalkMap = BspMap();
+							_activeCameraMap = BspMap();
+							if (!room->maps.empty()) {
+								const Common::Path nextMap = Common::Path(level + "/gameplay")
+									.appendComponent(room->maps[0]);
+								if (!_activeWalkMap.load(nextMap))
+									warning("Zero Comico: cannot load destination walk map %s",
+									        nextMap.toString().c_str());
+							}
+							if (!room->cameraMaps.empty()) {
+								const Common::Path nextCameraMap = Common::Path(level + "/gameplay")
+									.appendComponent(room->cameraMaps[0]);
+								if (!_activeCameraMap.load(nextCameraMap))
+									warning("Zero Comico: cannot load destination camera map %s",
+									        nextCameraMap.toString().c_str());
+							}
+
+							_playerNavNode = -1;
+							if (_havePlayerStart && !_activeWalkMap.graph.empty())
+								_playerNavNode = _activeWalkMap.nearestGraphNode(
+									_playerPosition.x, _playerPosition.z);
+
+							cameraName = room->camera;
+							bool nextCameraReady = false;
+							const ScriptCamera *nextScriptCamera = cameraScript.findCamera(cameraName);
+							if (nextScriptCamera) {
+								const float radians = nextScriptCamera->horizontalFovDegrees *
+									3.14159265358979323846f / 180.0f;
+								const float halfTan = std::tan(radians * 0.5f);
+								if (halfTan > 0.0001f) {
+									renderCamera.position = nextScriptCamera->source;
+									renderCamera.target = nextScriptCamera->target;
+									renderCamera.focalPixels = 400.0f / halfTan;
+									nextCameraReady = true;
+								}
+							}
+							if (!nextCameraReady) {
+								const NamedCamera *embedded = _activeScene.findCamera(cameraName);
+								if (!embedded && !_activeScene.cameras.empty())
+									embedded = &_activeScene.cameras[0];
+								if (embedded && embedded->data.fov > 0.0f) {
+									cameraName = embedded->name;
+									renderCamera.position = embedded->data.position;
+									renderCamera.target = embedded->data.target;
+									renderCamera.focalPixels = embedded->data.fov * 800.0f / 36.0f;
+									nextCameraReady = true;
+								}
+							}
+							if (!nextCameraReady) {
+								warning("Zero Comico: destination room %s has no usable camera",
+								        room->name.c_str());
+								done = true;
+								break;
+							}
+
+							examineMeshes.clear();
+							operateMeshes.clear();
+							for (uint32 objectIndex = 0; objectIndex < _activePuzzle.objects.size(); ++objectIndex) {
+								const PuzzleObject &nextObject = _activePuzzle.objects[objectIndex];
+								if (!nextObject.enabled || nextObject.entity.empty() ||
+								    !_activeScene.findMesh(nextObject.entity))
+									continue;
+								if (nextObject.examinable)
+									examineMeshes.push_back(nextObject.entity);
+								if (nextObject.operateStart != 0xffffffffU &&
+								    nextObject.operateEnd != 0xffffffffU &&
+								    nextObject.operateStart < nextObject.operateEnd)
+									operateMeshes.push_back(nextObject.entity);
+							}
+
+							debug(1, "Zero Comico: changed place to %s at nav node %d",
+							      room->name.c_str(), _playerNavNode);
+							renderGameplayFrame(renderCamera, sceneDirectory, playerDirectory,
+							                    "Stay", 0.0f, frame);
+						} else {
+							warning("Zero Comico: destination room %s is not declared",
+							        _pendingRoomName.c_str());
+						}
+						_pendingRoomName.clear();
+						_pendingRoomCutscene.clear();
+					}
+
+					if (!_pendingSayText.empty() && !done && !shouldQuit()) {
+						drawCutsceneSubtitle(frame, _pendingSaySpeaker, _pendingSayText);
+						_system->copyRectToScreen(frame.getPixels(), frame.pitch,
+						                          0, 0, frame.w, frame.h);
+						_system->updateScreen();
+					}
+				}
+				continue;
+			}
 
 			Vec3f ground;
 			if (!screenPointToGround(renderCamera, event.mouse.x, event.mouse.y, 800, 600, ground))
