@@ -371,13 +371,21 @@ bool ZeroComicoEngine::playCutscene(const Common::String &name) {
 		return false;
 
 	Common::String assetStem = name;
-	if (assetStem[0] == 'c')
-		assetStem = Common::String("C") + assetStem.substr(1);
-
 	const Common::Path videoDirectory(_currentMainPlace + "/videos");
 	SceneModel scene;
-	if (!scene.loadPair(videoDirectory.appendComponent(assetStem + ".p3d"),
-	                    videoDirectory.appendComponent(assetStem + ".anj"))) {
+	bool loadedScene = scene.loadPair(videoDirectory.appendComponent(assetStem + ".p3d"),
+	                                  videoDirectory.appendComponent(assetStem + ".anj"));
+
+	// Retail Mp1 mixes c121/c131 lowercase filenames with C111/C112/... uppercase
+	// filenames. Try the editor-style uppercase C form only when the literal
+	// script spelling did not resolve.
+	if (!loadedScene && !assetStem.empty() && assetStem[0] == 'c') {
+		assetStem = Common::String("C") + assetStem.substr(1);
+		loadedScene = scene.loadPair(videoDirectory.appendComponent(assetStem + ".p3d"),
+		                             videoDirectory.appendComponent(assetStem + ".anj"));
+	}
+
+	if (!loadedScene) {
 		warning("Zero Comico: cannot load cutscene %s", name.c_str());
 		return false;
 	}
