@@ -6,24 +6,32 @@ This repository is an engine overlay, not a fork of the whole ScummVM tree. Copy
 
 ## Current state
 
-The first implementation milestone is now code rather than a placeholder:
+The engine now has a substantial native data/runtime foundation:
 
 * exact detection for the Italian retail executable examined from `zero.zip`;
 * native C++ decoder for the `JFX1` container and its LZHUF bitstream;
-* native C++ decoder for `JGF5` images, including the corrected **BGRA** pixel order;
-* decoder for the text-based script resources (`.gsc`, `.isc`, `.mat`, `.par`, `.shp`, `.scr`, `.seq`);
+* native C++ decoder for `JGF5` images with the retail BGRA pixel layout;
+* parser for all seven compressed text-script families (`.gsc`, `.isc`, `.mat`, `.par`, `.shp`, `.scr`, `.seq`), including the inline and slightly malformed brace patterns present in shipped data;
+* script VM foundation with scalar variables, arrays, indexed references, `mov`, `if_e` / `else` / `endif`, labels and `jmp`;
 * parser for the text `.bsp` walkable-floor BSP and pathfinding graph;
-* lossless parser for the known `.p3d` / `.anj` record envelope, including nested `0xF044` groups and ambiguous end-marker backtracking;
-* optional playback of `Data/Intro.avi` through ScummVM's AVI/Indeo 5 decoder;
-* bootstrap runtime that displays an original decoded menu/interface texture.
+* lossless `.p3d` / `.anj` record parser with nested `0xF044` groups and ambiguous-end-marker backtracking;
+* semantic decoding for P3D materials, cameras, lights, meshes, UVs, normals, material ranges, skin/flesh data and transforms;
+* semantic decoding for JACS hierarchy records and `0xF007` animation clips, including TCB keyframes and visibility events;
+* paired scene loader that builds a native material/camera/light/mesh/hierarchy/animation asset set;
+* JFX1-wrapped FLIC playback support for animated-texture resources;
+* room bootstrap driven by the real `Mp0/gameplay/room.isc` script instead of a hard-coded intro sequence;
+* AVI/Indeo playback through ScummVM for `play_CD_film`;
+* loading of the real main-menu `interfaccia.p3d` + `interfaccia.anj` asset pair during bootstrap.
 
-This is **not yet a completable port**. The remaining critical layer is the actual 3D runtime: `.p3d` model bodies, `.anj` animation semantics, material/animated-texture behavior, camera/entity binding and the script VM/opcode implementation. The P3D/ANJ record envelope is already understood well enough to parse all known Zero Comico files, but the record bodies still need semantic mapping before faithful rendering is possible.
+The project is **not yet a completable port**. The largest missing piece is the renderer/runtime that turns those decoded 3D assets into the live menu and game world. Material state, texture animation, object visibility, camera binding, full script opcode coverage, interaction, dialogue/audio routing, save/load and gameplay systems still need to be connected.
+
+Until the menu renderer lands, the engine displays the original decoded interface texture after executing the scripted intro sequence.
 
 ## Game data layout
 
 Point ScummVM at the installed `Zero Comico` data directory, the directory containing `Zero Comico.exe`, `Config.gsc`, `Mp0` ... `Mpx`, `images`, `Music`, `Sound` and `Speech`.
 
-The original videos live on the CD under `Data/`. For intro/cutscene playback, copy that `Data` directory into the same game-data directory. The engine will still start without it and simply skip the intro.
+The original videos live on the CD under `Data/`. For intro/cutscene playback, copy that `Data` directory into the same game-data directory. The engine will still start without it and simply skip the requested film.
 
 `tools/prepare_from_zip.py` can construct that layout from a complete `zero.zip` archive.
 
@@ -38,6 +46,8 @@ make -j4
 
 On Windows, regenerate the Visual Studio project after adding the engine in the same way you do for any other out-of-tree ScummVM engine.
 
+GitHub Actions continuously overlays this engine onto current ScummVM master and builds it, so compile regressions are caught against upstream.
+
 ## Verified retail files
 
 The examined Italian release uses:
@@ -49,7 +59,7 @@ Config.gsc       size 74       MD5 6ebce334d2118fdf554345ce7fe6067e
 
 ## Reverse-engineering references
 
-The format work was checked against the user-provided retail game data and against the excellent public measurement repository:
+The format work was checked against the user-provided retail game data and against the public measurement repositories:
 
 * https://github.com/vs-sr-dev/pc-zerocomico-doc
 * https://github.com/vs-sr-dev/pc-bloodandlace-doc
