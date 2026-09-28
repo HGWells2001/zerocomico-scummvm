@@ -259,4 +259,77 @@ bool AnimationDecoder::decodeClip(const ModelArchive &archive, const ModelRecord
 	return parseTracks(v, pos, out.tracks);
 }
 
+bool AnimationSampler::sampleChannel(const AnimationChannel &channel, float frame, float out[4]) {
+	for (int i = 0; i < 4; ++i)
+		out[i] = 0.0f;
+
+	if (!channel.enabled || channel.keys.empty() || channel.components == 0 || channel.components > 4)
+		return false;
+
+	const AnimationKey *left = &channel.keys[0];
+	const AnimationKey *right = left;
+
+	if (frame <= left->frame) {
+		right = left;
+	} else if (frame >= channel.keys.back().frame) {
+		left = right = &channel.keys.back();
+	} else {
+		for (uint32 i = 1; i < channel.keys.size(); ++i) {
+			if (frame <= channel.keys[i].frame) {
+				left = &channel.keys[i - 1];
+				right = &channel.keys[i];
+				break;
+			}
+		}
+	}
+
+	float t = 0.0f;
+	if (right->frame > left->frame)
+		t = (frame - left->frame) / (right->frame - left->frame);
+	if (t < 0.0f)
+		t = 0.0f;
+	if (t > 1.0f)
+		t = 1.0f;
+
+	for (uint32 component = 0; component < channel.components; ++component)
+		out[component] = left->value[component] +
+		                 (right->value[component] - left->value[component]) * t;
+	return true;
+}
+
+bool AnimationSampler::sampleTransform(const AnimationClip &clip, const Common::String &targetName,
+                                       float frame, float translation[3], float scale[3],
+                                       float rotation[4]) {
+	translation[0] = translation[1] = translation[2] = 0.0f;
+	scale[0] = scale[1] = scale[2] = 1.0f;
+	rotation[0] = 1.0f;
+	rotation[1] = rotation[2] = rotation[3] = 0.0f;
+
+	for (uint32 i = 0; i < clip.tracks.size(); ++i) {
+		const AnimationTrack &track = clip.tracks[i];
+		if (track.kind != kAnimTransform || !track.targetName.equalsIgnoreCase(targetName) ||
+		    track.channels.size() < 3)
+			continue;
+
+		float value[4];
+		if (sampleChannel(track.channels[0], frame, value)) {
+			translation[0] = value[0];
+			translation[1] = value[1];
+			translation[2] = value[2];
+		}
+		if (sampleChannel(track.channels[1], frame, value)) {
+			scale[0] = value[0];
+			scale[1] = value[1];
+			scale[2] = value[2];
+		}
+		if (sampleChannel(track.channels[2], frame, value)) {
+			for (int component = 0; component < 4; ++component)
+				rotation[component] = value[component];
+		}
+		return true;
+	}
+
+	return false;
+}
+
 } // namespace ZeroComico
