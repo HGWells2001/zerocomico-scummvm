@@ -24,6 +24,7 @@ enum CutsceneEventType {
 struct CutsceneEvent {
 	CutsceneEventType type;
 	uint32 frame;
+	uint32 speechIndex;
 	Common::Array<Common::String> args;
 };
 
