@@ -384,4 +384,52 @@ bool AnimationSampler::sampleTransform(const AnimationClip &clip, const Common::
 	return false;
 }
 
+bool AnimationSampler::sampleCamera(const AnimationClip &clip, const Common::String &targetName,
+                                    float frame, float position[3], float &fovDegrees, float &roll) {
+	position[0] = position[1] = position[2] = 0.0f;
+	fovDegrees = 60.0f;
+	roll = 0.0f;
+
+	for (uint32 i = 0; i < clip.tracks.size(); ++i) {
+		const AnimationTrack &track = clip.tracks[i];
+		if (track.kind != kAnimCamera || !track.targetName.equalsIgnoreCase(targetName) ||
+		    track.channels.size() < 3)
+			continue;
+
+		float value[4];
+		if (sampleChannel(track.channels[0], frame, value)) {
+			position[0] = value[0];
+			position[1] = value[1];
+			position[2] = value[2];
+		}
+		if (sampleChannel(track.channels[1], frame, value))
+			fovDegrees = value[0];
+		if (sampleChannel(track.channels[2], frame, value))
+			roll = value[0];
+		return true;
+	}
+	return false;
+}
+
+bool AnimationSampler::sampleTarget(const AnimationClip &clip, const Common::String &targetName,
+                                    float frame, float target[3]) {
+	target[0] = target[1] = target[2] = 0.0f;
+
+	for (uint32 i = 0; i < clip.tracks.size(); ++i) {
+		const AnimationTrack &track = clip.tracks[i];
+		if (track.kind != kAnimTarget || !track.targetName.equalsIgnoreCase(targetName) ||
+		    track.channels.empty())
+			continue;
+
+		float value[4];
+		if (!sampleChannel(track.channels[0], frame, value))
+			return false;
+		target[0] = value[0];
+		target[1] = value[1];
+		target[2] = value[2];
+		return true;
+	}
+	return false;
+}
+
 } // namespace ZeroComico
