@@ -981,6 +981,12 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 		      walkSequence ? "yes" : "no", runSequence ? "yes" : "no");
 	}
 
+	const Common::Path puzzlePath(level + "/gameplay/puzzle.isc");
+	if (!_activePuzzle.load(puzzlePath))
+		warning("Zero Comico: cannot parse puzzle objects %s", puzzlePath.toString().c_str());
+	else
+		debug(1, "Zero Comico: loaded %u puzzle objects", (uint)_activePuzzle.objects.size());
+
 	// Load both navigation layers declared by room.isc. The ordinary map
 	// carries the walkable floor/path graph; cameramap is the camera-control
 	// partition used by the original runtime.
@@ -1104,6 +1110,15 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 	// that route continuously while the 0>1, 1>1 and 1>0 JACS sequence states
 	// drive start, looping walk and stop animation clips. Idle rendering keeps
 	// the Stay pose and playl room-object loops alive at 25 fps.
+	Common::Array<Common::String> examineMeshes;
+	for (uint32 objectIndex = 0; objectIndex < _activePuzzle.objects.size(); ++objectIndex) {
+		const PuzzleObject &object = _activePuzzle.objects[objectIndex];
+		if (!object.enabled || !object.examinable || object.entity.empty())
+			continue;
+		if (_activeScene.findMesh(object.entity))
+			examineMeshes.push_back(object.entity);
+	}
+
 	bool done = false;
 	uint32 lastIdleRender = _system->getMillis();
 	const uint32 idleAnimationStart = lastIdleRender;
@@ -1118,6 +1133,59 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 				done = true;
 				break;
 			}
+			if (event.type == Common::EVENT_RBUTTONDOWN) {
+				Common::String pickedEntity;
+				if (_gameplayRenderer.pickMesh(_activeScene, renderCamera,
+				                               event.mouse.x, event.mouse.y,
+				                               examineMeshes, pickedEntity)) {
+					const PuzzleObject *object = _activePuzzle.findByEntity(pickedEntity);
+					if (object && !object->examineText.empty()) {
+						drawCutsceneSubtitle(frame, "Giovanni", object->examineText);
+						_system->copyRectToScreen(frame.getPixels(), frame.pitch,
+						                          0, 0, frame.w, frame.h);
+						_system->updateScreen();
+
+						uint32 examineDuration = (uint32)object->examineText.size() * 55U;
+						if (examineDuration < 1200U)
+							examineDuration = 1200U;
+						if (examineDuration > 5000U)
+							examineDuration = 5000U;
+
+						const uint32 examineStart = _system->getMillis();
+						bool dismissExamine = false;
+						while (!shouldQuit() && !dismissExamine &&
+						       _system->getMillis() - examineStart < examineDuration) {
+							Common::Event examineEvent;
+							while (_system->getEventManager()->pollEvent(examineEvent)) {
+								if (examineEvent.type == Common::EVENT_QUIT ||
+								    examineEvent.type == Common::EVENT_RETURN_TO_LAUNCHER) {
+									quitGame();
+									dismissExamine = true;
+									break;
+								}
+								if (examineEvent.type == Common::EVENT_KEYDOWN ||
+								    examineEvent.type == Common::EVENT_LBUTTONDOWN ||
+								    examineEvent.type == Common::EVENT_RBUTTONDOWN) {
+									dismissExamine = true;
+									break;
+								}
+							}
+							_system->delayMillis(10);
+						}
+
+						if (!shouldQuit()) {
+							float stayStart = 0.0f;
+							float stayEnd = 0.0f;
+							animationClipRange(_playerScene, "gio_giovanni", "Stay",
+							                   stayStart, stayEnd);
+							renderGameplayFrame(renderCamera, sceneDirectory, playerDirectory,
+							                    "Stay", stayStart, frame);
+						}
+					}
+				}
+				continue;
+			}
+
 			if (event.type != Common::EVENT_LBUTTONDOWN || _playerNavNode < 0)
 				continue;
 
