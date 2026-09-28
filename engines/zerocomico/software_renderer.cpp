@@ -533,4 +533,90 @@ bool SoftwareRenderer::renderWithActor(const SceneModel &scene, const RenderCame
 	return renderedRoom || renderedActor;
 }
 
+
+bool SoftwareRenderer::pickMesh(const SceneModel &scene, const RenderCamera &camera,
+                                int screenX, int screenY,
+                                const Common::Array<Common::String> &candidates,
+                                Common::String &pickedName, int width, int height) const {
+	pickedName.clear();
+	if (width <= 0 || height <= 0 || camera.focalPixels <= 0.0f)
+		return false;
+
+	Vec3f forward = sub3(camera.target, camera.position);
+	if (!normalize3(forward))
+		return false;
+
+	const Vec3f worldUp = { 0.0f, 1.0f, 0.0f };
+	Vec3f right = cross3(forward, worldUp);
+	if (!normalize3(right))
+		return false;
+	Vec3f up = cross3(right, forward);
+	if (!normalize3(up))
+		return false;
+
+	float bestDepth = 1.0e30f;
+	for (uint32 candidateIndex = 0; candidateIndex < candidates.size(); ++candidateIndex) {
+		const NamedMesh *namedMesh = scene.findMesh(candidates[candidateIndex]);
+		if (!namedMesh || namedMesh->data.isFlesh())
+			continue;
+
+		const MeshData &mesh = namedMesh->data;
+		const Common::Array<Vec3f> *posed =
+			namedMesh->posedVertices.empty() ? nullptr : &namedMesh->posedVertices;
+		const uint32 vertexCount = posed ? posed->size() : mesh.vertices.size();
+		if (vertexCount == 0)
+			continue;
+
+		float minX = 1.0e30f;
+		float minY = 1.0e30f;
+		float maxX = -1.0e30f;
+		float maxY = -1.0e30f;
+		float nearestDepth = 1.0e30f;
+		uint32 projectedCount = 0;
+
+		for (uint32 vertexIndex = 0; vertexIndex < vertexCount; ++vertexIndex) {
+			Vec3f world;
+			if (posed) {
+				world = (*posed)[vertexIndex];
+			} else if (mesh.isSkinnedParent()) {
+				world = mesh.vertices[vertexIndex];
+			} else {
+				world = transformVertex(mesh.vertices[vertexIndex], mesh.transform);
+			}
+
+			ProjectedVertex projected;
+			if (!projectVertex(world, camera, right, up, forward, camera.focalPixels,
+			                   width, height, projected))
+				continue;
+
+			if (projected.x < minX) minX = projected.x;
+			if (projected.x > maxX) maxX = projected.x;
+			if (projected.y < minY) minY = projected.y;
+			if (projected.y > maxY) maxY = projected.y;
+			if (projected.z < nearestDepth) nearestDepth = projected.z;
+			++projectedCount;
+		}
+
+		if (projectedCount == 0)
+			continue;
+
+		// A small pad keeps thin doorframes and props usable without turning the
+		// whole room into overlapping giant hotspots.
+		minX -= 4.0f;
+		minY -= 4.0f;
+		maxX += 4.0f;
+		maxY += 4.0f;
+		if ((float)screenX < minX || (float)screenX > maxX ||
+		    (float)screenY < minY || (float)screenY > maxY)
+			continue;
+
+		if (nearestDepth < bestDepth) {
+			bestDepth = nearestDepth;
+			pickedName = namedMesh->name;
+		}
+	}
+
+	return !pickedName.empty();
+}
+
 } // namespace ZeroComico
