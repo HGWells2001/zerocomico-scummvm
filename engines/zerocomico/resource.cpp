@@ -6,9 +6,11 @@
 #include "zerocomico/lzhuf.h"
 
 #include "common/file.h"
+#include "common/memstream.h"
 #include "common/stream.h"
 #include "graphics/pixelformat.h"
 
+#include <cstdlib>
 #include <cstring>
 
 namespace ZeroComico {
@@ -42,6 +44,20 @@ bool ResourceReader::decodeJfxFile(const Common::Path &path, Common::Array<byte>
 	if (!file.open(path))
 		return false;
 	return decodeJfx(file, decoded);
+}
+
+Common::SeekableReadStream *ResourceReader::openDecodedJfxFile(const Common::Path &path) {
+	Common::Array<byte> decoded;
+	if (!decodeJfxFile(path, decoded))
+		return nullptr;
+
+	byte *copy = static_cast<byte *>(malloc(decoded.size()));
+	if (!copy && !decoded.empty())
+		return nullptr;
+	if (!decoded.empty())
+		memcpy(copy, decoded.data(), decoded.size());
+
+	return new Common::MemoryReadStream(copy, decoded.size(), DisposeAfterUse::YES);
 }
 
 bool ResourceReader::decodeJgf(Common::SeekableReadStream &stream, Graphics::ManagedSurface &surface, JgfInfo *info) {

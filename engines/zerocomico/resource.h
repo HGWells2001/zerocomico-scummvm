@@ -27,6 +27,7 @@ class ResourceReader {
 public:
 	static bool decodeJfx(Common::SeekableReadStream &stream, Common::Array<byte> &decoded);
 	static bool decodeJfxFile(const Common::Path &path, Common::Array<byte> &decoded);
+	static Common::SeekableReadStream *openDecodedJfxFile(const Common::Path &path);
 	static bool decodeJgf(Common::SeekableReadStream &stream, Graphics::ManagedSurface &surface, JgfInfo *info = nullptr);
 	static bool decodeJgfFile(const Common::Path &path, Graphics::ManagedSurface &surface, JgfInfo *info = nullptr);
 };

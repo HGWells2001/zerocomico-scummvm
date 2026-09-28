@@ -8,6 +8,7 @@ MODULE_OBJS := \
 	model_animation.o \
 	model_data.o \
 	resource.o \
+	scene_model.o \
 	script.o \
 	zerocomico.o
 
