@@ -668,6 +668,40 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 		return true;
 	}
 
+	if (op.equalsIgnoreCase("SetCharPos_Vector")) {
+		if (instruction.args.size() < 2)
+			return false;
+		const ShapeMarker *marker = _activeShapes.find(instruction.args[1]);
+		if (!marker)
+			return false;
+		_playerPosition = marker->a;
+		_playerFacingTarget = marker->b;
+		_havePlayerStart = true;
+		_playerNavNode = -1;
+		return true;
+	}
+
+	if (op.equalsIgnoreCase("chplace")) {
+		if (instruction.args.empty())
+			return false;
+		_pendingRoomName = instruction.args[0];
+		_pendingRoomCutscene.clear();
+		if (instruction.args.size() >= 2)
+			_pendingRoomCutscene = instruction.args[1];
+		return true;
+	}
+
+	if (op.equalsIgnoreCase("say")) {
+		if (!instruction.args.empty()) {
+			_pendingSaySpeaker = "Giovanni";
+			_pendingSayText = instruction.args[0];
+		}
+		return true;
+	}
+
+	if (op.equalsIgnoreCase("play"))
+		return true;
+
 	if (op.equalsIgnoreCase("e3d_Parse") || op.equalsIgnoreCase("setcameramode"))
 		return true;
 
@@ -875,6 +909,8 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 	_playerHatVisible = true;
 	_pendingSaySpeaker.clear();
 	_pendingSayText.clear();
+	_pendingRoomName.clear();
+	_pendingRoomCutscene.clear();
 	_sceneLoopTargets.clear();
 	_sceneLoopSources.clear();
 	_sceneLoopStartMillis.clear();
@@ -924,10 +960,10 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 	}
 
 	_havePlayerStart = false;
-	ShapeScript shapeScript;
+	_activeShapes = ShapeScript();
 	const Common::Path shapePath(level + "/gameplay/Shape.shp");
-	if (shapeScript.load(shapePath)) {
-		const ShapeMarker *startMarker = shapeScript.find(chapter.startMarker);
+	if (_activeShapes.load(shapePath)) {
+		const ShapeMarker *startMarker = _activeShapes.find(chapter.startMarker);
 		if (startMarker) {
 			_playerPosition = startMarker->a;
 			_playerFacingTarget = startMarker->b;
