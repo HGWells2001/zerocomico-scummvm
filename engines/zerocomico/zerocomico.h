@@ -76,6 +76,7 @@ private:
 	bool _playerHatVisible;
 	int _playerNavNode;
 	Common::String _currentMainPlace;
+	Common::String _activeRoomPrefix;
 	Common::String _pendingSaySpeaker;
 	Common::String _pendingSayText;
 	Common::String _pendingDialogName;
