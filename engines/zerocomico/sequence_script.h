@@ -35,6 +35,8 @@ public:
 	bool parse(const ScriptProgram &program);
 
 	const AnimationSequence *findSequence(const Common::String &name) const;
+	const SequenceTransition *findTransition(const Common::String &sequenceName,
+	                                         const Common::String &state) const;
 
 	Common::String bodyName;
 	Common::Array<AnimationSequence> sequences;
