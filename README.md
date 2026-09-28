@@ -12,7 +12,7 @@ The engine now has a substantial native data/runtime foundation:
 * native C++ decoder for the `JFX1` container and its LZHUF bitstream;
 * native C++ decoder for `JGF5` images with the retail BGRA pixel layout;
 * parser for all seven compressed text-script families (`.gsc`, `.isc`, `.mat`, `.par`, `.shp`, `.scr`, `.seq`), including the inline and slightly malformed brace patterns present in shipped data;
-* script VM foundation with scalar variables, arrays, indexed references, `mov`, `if_e` / `else` / `endif`, labels and `jmp`;
+* script VM foundation with scalar variables, arrays, indexed references, `mov`, arithmetic (`inc`, `dec`, `add`, `sub`, `mul`), numeric comparisons (`if_e`, `if_ne`, `if_g`, `if_ge`, `if_l`, `if_le`), `else` / `endif`, labels and `jmp`;
 * parser for the text `.bsp` walkable-floor BSP and pathfinding graph;
 * lossless `.p3d` / `.anj` record parser with nested `0xF044` groups and ambiguous-end-marker backtracking;
 * semantic decoding for P3D materials, cameras, lights, meshes, UVs, normals, material ranges, skin/flesh data and transforms;
@@ -25,9 +25,10 @@ The engine now has a substantial native data/runtime foundation:
 * textured software rendering of decoded JapoTek meshes with camera projection and z buffering;
 * live keyboard navigation of the original 3D main menu, including Help, Credits and Exit actions;
 * parsing of main-place room definitions and scripted gameplay cameras from `room.isc` / `Camera.scr`;
-* New Game now follows `ChangeMainPlace mp1`, loads the declared `room1_1` P3D/ANJ scene, the retail gameplay camera, and both BSP navigation maps, then renders the first-room preview.
+* native parsing of `Shape.shp` position/range markers and BSP graph shortest-path helpers;
+* New Game now follows `ChangeMainPlace mp1`, executes Mp1's scalar startup block, resolves `r11_Start` to Giovanni's retail position/facing vector, binds that point to the nearest BSP navigation node, loads the declared `room1_1` P3D/ANJ scene, the retail gameplay camera, and both BSP navigation maps, then renders the first-room preview.
 
-The project is **not yet a completable port**, but the first live 3D runtime is now present. A CPU software renderer applies decoded object transforms, z buffering, perspective-correct UVs and JGF5 textures. The original `interfaccia.p3d` menu is rendered and can be navigated with the keyboard. Help opens the shipped help image, Credits plays `crediti.avi`, and Exit quits. New Game now crosses into Mp1 far enough to parse the start-room declaration, load `room1_1.p3d/.anj`, use the camera defined in `Camera.scr`, load the walk/camera BSP maps, and render a room preview. Character spawning, room startup/cutscene execution, interaction, and Load/Save are still pending.
+The project is **not yet a completable port**, but the first live 3D runtime is now present. A CPU software renderer applies decoded object transforms, z buffering, perspective-correct UVs and JGF5 textures. The original `interfaccia.p3d` menu is rendered and can be navigated with the keyboard. Help opens the shipped help image, Credits plays `crediti.avi`, and Exit quits. New Game now crosses into Mp1 far enough to execute the variable startup state, resolve the `r11_Start` player marker, map it onto the navigation graph, load `room1_1.p3d/.anj`, use the camera defined in `Camera.scr`, load the walk/camera BSP maps, and render a room preview. Character model spawning, continuous movement/animation, room runtime/cutscene execution, interaction, and Load/Save are still pending.
 
 The next major layer is turning that Mp1 preview into gameplay: execute the room startup/cutscene state, apply JACS visibility/animation continuously, evaluate material effects and animated FLC textures, spawn and move Giovanni on the parsed navigation graph, and expand opcode coverage for interaction, dialogue/audio routing, inventory and save/load.
 
