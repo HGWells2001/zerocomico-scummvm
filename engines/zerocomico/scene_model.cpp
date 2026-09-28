@@ -6,7 +6,173 @@
 
 #include "zerocomico/model.h"
 
+#include <cmath>
+
 namespace ZeroComico {
+
+namespace {
+
+struct PoseMatrix {
+	float m[16];
+};
+
+static PoseMatrix identityMatrix() {
+	PoseMatrix out;
+	for (int i = 0; i < 16; ++i)
+		out.m[i] = 0.0f;
+	out.m[0] = out.m[5] = out.m[10] = out.m[15] = 1.0f;
+	return out;
+}
+
+static PoseMatrix multiplyMatrix(const PoseMatrix &a, const PoseMatrix &b) {
+	PoseMatrix out;
+	for (int row = 0; row < 4; ++row) {
+		for (int col = 0; col < 4; ++col) {
+			float value = 0.0f;
+			for (int k = 0; k < 4; ++k)
+				value += a.m[row * 4 + k] * b.m[k * 4 + col];
+			out.m[row * 4 + col] = value;
+		}
+	}
+	return out;
+}
+
+static PoseMatrix transformMatrix(const float translation[3], const float scale[3],
+                                  const float rotation[4]) {
+	PoseMatrix out = identityMatrix();
+
+	float x = rotation[0];
+	float y = rotation[1];
+	float z = rotation[2];
+	const float angle = rotation[3];
+	const float length2 = x * x + y * y + z * z;
+	if (length2 > 1.0e-12f && angle != 0.0f) {
+		const float invLength = 1.0f / std::sqrt(length2);
+		x *= invLength;
+		y *= invLength;
+		z *= invLength;
+		const float c = std::cos(angle);
+		const float s = std::sin(angle);
+		const float t = 1.0f - c;
+
+		out.m[0] = (t * x * x + c) * scale[0];
+		out.m[1] = (t * x * y - s * z) * scale[1];
+		out.m[2] = (t * x * z + s * y) * scale[2];
+		out.m[4] = (t * x * y + s * z) * scale[0];
+		out.m[5] = (t * y * y + c) * scale[1];
+		out.m[6] = (t * y * z - s * x) * scale[2];
+		out.m[8] = (t * x * z - s * y) * scale[0];
+		out.m[9] = (t * y * z + s * x) * scale[1];
+		out.m[10] = (t * z * z + c) * scale[2];
+	} else {
+		out.m[0] = scale[0];
+		out.m[5] = scale[1];
+		out.m[10] = scale[2];
+	}
+
+	out.m[3] = translation[0];
+	out.m[7] = translation[1];
+	out.m[11] = translation[2];
+	return out;
+}
+
+static bool invertAffine(const PoseMatrix &in, PoseMatrix &out) {
+	const float a = in.m[0], b = in.m[1], c = in.m[2];
+	const float d = in.m[4], e = in.m[5], f = in.m[6];
+	const float g = in.m[8], h = in.m[9], i = in.m[10];
+	const float det = a * (e * i - f * h) -
+	                  b * (d * i - f * g) +
+	                  c * (d * h - e * g);
+	if (std::fabs(det) <= 1.0e-12f)
+		return false;
+
+	const float invDet = 1.0f / det;
+	out = identityMatrix();
+	out.m[0] = (e * i - f * h) * invDet;
+	out.m[1] = (c * h - b * i) * invDet;
+	out.m[2] = (b * f - c * e) * invDet;
+	out.m[4] = (f * g - d * i) * invDet;
+	out.m[5] = (a * i - c * g) * invDet;
+	out.m[6] = (c * d - a * f) * invDet;
+	out.m[8] = (d * h - e * g) * invDet;
+	out.m[9] = (b * g - a * h) * invDet;
+	out.m[10] = (a * e - b * d) * invDet;
+
+	const float tx = in.m[3];
+	const float ty = in.m[7];
+	const float tz = in.m[11];
+	out.m[3] = -(out.m[0] * tx + out.m[1] * ty + out.m[2] * tz);
+	out.m[7] = -(out.m[4] * tx + out.m[5] * ty + out.m[6] * tz);
+	out.m[11] = -(out.m[8] * tx + out.m[9] * ty + out.m[10] * tz);
+	return true;
+}
+
+static Vec3f transformPoint(const PoseMatrix &m, const Vec3f &point) {
+	Vec3f out = {
+		m.m[0] * point.x + m.m[1] * point.y + m.m[2] * point.z + m.m[3],
+		m.m[4] * point.x + m.m[5] * point.y + m.m[6] * point.z + m.m[7],
+		m.m[8] * point.x + m.m[9] * point.y + m.m[10] * point.z + m.m[11]
+	};
+	return out;
+}
+
+static const HierarchyData *findHierarchy(const SceneModel &scene, const Common::String &rootName) {
+	for (uint32 i = 0; i < scene.hierarchies.size(); ++i)
+		if (scene.hierarchies[i].name.equalsIgnoreCase(rootName))
+			return &scene.hierarchies[i].data;
+	return nullptr;
+}
+
+static const Common::String *findParentName(const HierarchyData &hierarchy, const Common::String &name) {
+	for (uint32 i = 0; i < hierarchy.entries.size(); ++i)
+		if (hierarchy.entries[i].name.equalsIgnoreCase(name))
+			return &hierarchy.entries[i].parent;
+	return nullptr;
+}
+
+static bool sampleLocalMatrix(const AnimationClip &clip, const Common::String &name,
+                              float frame, PoseMatrix &matrix) {
+	float translation[3];
+	float scale[3];
+	float rotation[4];
+	if (!AnimationSampler::sampleTransform(clip, name, frame, translation, scale, rotation))
+		return false;
+	matrix = transformMatrix(translation, scale, rotation);
+	return true;
+}
+
+static bool buildGlobalMatrix(const AnimationClip &clip, const HierarchyData &hierarchy,
+                              const Common::String &rootName, const Common::String &name,
+                              float frame, PoseMatrix &matrix, uint32 depth = 0) {
+	if (depth > hierarchy.entries.size())
+		return false;
+
+	// Root motion is applied by the gameplay actor transform, outside the
+	// skeleton. Treating the JACS root as identity keeps bone matrices in the
+	// actor-local coordinate system used by the P3D flesh vertices.
+	if (name.equalsIgnoreCase(rootName)) {
+		matrix = identityMatrix();
+		return true;
+	}
+
+	PoseMatrix local;
+	if (!sampleLocalMatrix(clip, name, frame, local))
+		return false;
+
+	const Common::String *parentName = findParentName(hierarchy, name);
+	if (!parentName || parentName->empty() || parentName->equalsIgnoreCase("NULL")) {
+		matrix = local;
+		return true;
+	}
+
+	PoseMatrix parent;
+	if (!buildGlobalMatrix(clip, hierarchy, rootName, *parentName, frame, parent, depth + 1))
+		return false;
+	matrix = multiplyMatrix(parent, local);
+	return true;
+}
+
+} // namespace
 
 void SceneModel::clear() {
 	materials.clear();
@@ -169,6 +335,78 @@ bool SceneModel::resolveSkinnedGeometry() {
 			parent.vertices[i].x *= invWeight;
 			parent.vertices[i].y *= invWeight;
 			parent.vertices[i].z *= invWeight;
+		}
+	}
+
+	return true;
+}
+
+
+bool SceneModel::poseSkinnedGeometry(const Common::String &rootName,
+                                     const Common::String &bindSource,
+                                     const Common::String &sourceName,
+                                     float frame) {
+	const NamedAnimationClip *bindClip = findClipBySource(rootName, bindSource);
+	const NamedAnimationClip *poseClip = findClipBySource(rootName, sourceName);
+	const HierarchyData *hierarchy = findHierarchy(*this, rootName);
+	if (!bindClip || !poseClip || !hierarchy)
+		return false;
+
+	for (uint32 parentIndex = 0; parentIndex < meshes.size(); ++parentIndex) {
+		MeshData &parent = meshes[parentIndex].data;
+		if (!parent.isSkinnedParent())
+			continue;
+
+		Common::Array<Vec3f> posed;
+		Common::Array<float> weights;
+		posed.resize(parent.vertexCount);
+		weights.resize(parent.vertexCount);
+		for (uint32 i = 0; i < parent.vertexCount; ++i) {
+			posed[i].x = posed[i].y = posed[i].z = 0.0f;
+			weights[i] = 0.0f;
+		}
+
+		for (uint32 fleshIndex = 0; fleshIndex < meshes.size(); ++fleshIndex) {
+			const NamedMesh &namedFlesh = meshes[fleshIndex];
+			const MeshData &flesh = namedFlesh.data;
+			if (!flesh.isFlesh() ||
+			    !flesh.parentMesh.equalsIgnoreCase(meshes[parentIndex].name) ||
+			    flesh.vertices.size() != flesh.influences.size())
+				continue;
+
+			PoseMatrix bindGlobal;
+			PoseMatrix poseGlobal;
+			PoseMatrix inverseBind;
+			if (!buildGlobalMatrix(bindClip->data, *hierarchy, rootName, namedFlesh.name,
+			                       (float)bindClip->data.startFrame, bindGlobal) ||
+			    !buildGlobalMatrix(poseClip->data, *hierarchy, rootName, namedFlesh.name,
+			                       frame, poseGlobal) ||
+			    !invertAffine(bindGlobal, inverseBind))
+				return false;
+
+			const PoseMatrix delta = multiplyMatrix(poseGlobal, inverseBind);
+			for (uint32 i = 0; i < flesh.vertices.size(); ++i) {
+				const SkinInfluence &influence = flesh.influences[i];
+				if (influence.parentVertexIndex >= parent.vertexCount ||
+				    influence.weight <= 0.0f)
+					continue;
+
+				const Vec3f transformed = transformPoint(delta, flesh.vertices[i]);
+				Vec3f &dst = posed[influence.parentVertexIndex];
+				dst.x += transformed.x * influence.weight;
+				dst.y += transformed.y * influence.weight;
+				dst.z += transformed.z * influence.weight;
+				weights[influence.parentVertexIndex] += influence.weight;
+			}
+		}
+
+		for (uint32 i = 0; i < parent.vertexCount; ++i) {
+			if (weights[i] <= 0.000001f)
+				return false;
+			const float invWeight = 1.0f / weights[i];
+			parent.vertices[i].x = posed[i].x * invWeight;
+			parent.vertices[i].y = posed[i].y * invWeight;
+			parent.vertices[i].z = posed[i].z * invWeight;
 		}
 	}
 
