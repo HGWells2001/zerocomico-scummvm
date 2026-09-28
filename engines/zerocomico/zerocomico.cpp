@@ -416,6 +416,7 @@ bool ZeroComicoEngine::playCutscene(const Common::String &name) {
 	Common::String subtitleSpeaker;
 	Common::String subtitleText;
 	Audio::SoundHandle cutsceneSfxHandle;
+	Audio::SoundHandle cutsceneSpeechHandle;
 	bool skip = false;
 
 	for (float frame = startFrame; frame <= endFrame && !shouldQuit() && !skip; frame += 1.0f) {
@@ -489,8 +490,44 @@ bool ZeroComicoEngine::playCutscene(const Common::String &name) {
 					if (event.args.size() >= 2) {
 						subtitleSpeaker = event.args[0];
 						subtitleText = event.args[1];
-						debug(1, "Zero Comico: cutscene %s subtitle %s: %s",
-						      name.c_str(), subtitleSpeaker.c_str(), subtitleText.c_str());
+						debug(1, "Zero Comico: cutscene %s subtitle %s[%u]: %s",
+						      name.c_str(), subtitleSpeaker.c_str(), event.speechIndex,
+						      subtitleText.c_str());
+#ifdef USE_MAD
+						if (_mixer->isSoundHandleActive(cutsceneSpeechHandle))
+							_mixer->stopHandle(cutsceneSpeechHandle);
+
+						const Common::String speechDirectory =
+							_currentMainPlace.equalsIgnoreCase("Mp1")
+								? Common::String("Speech/MP1")
+								: Common::String("Speech/") + _currentMainPlace;
+						Common::String speechFileName = Common::String::format(
+							"%s%04u.mp3", subtitleSpeaker.c_str(), event.speechIndex);
+						Common::Path speechPath =
+							Common::Path(speechDirectory).appendComponent(speechFileName);
+
+						Common::File *speechFile = new Common::File();
+						if (!speechFile->open(speechPath)) {
+							delete speechFile;
+							speechFile = new Common::File();
+							speechFileName.toLowercase();
+							speechPath = Common::Path(speechDirectory).appendComponent(speechFileName);
+							if (!speechFile->open(speechPath)) {
+								delete speechFile;
+								speechFile = nullptr;
+							}
+						}
+
+						if (speechFile) {
+							Audio::SeekableAudioStream *stream =
+								Audio::makeMP3Stream(speechFile, DisposeAfterUse::YES);
+							if (stream)
+								_mixer->playStream(Audio::Mixer::kSpeechSoundType,
+								                   &cutsceneSpeechHandle, stream);
+							else
+								delete speechFile;
+						}
+#endif
 					}
 					break;
 				case kCutsceneStopText:
@@ -535,6 +572,8 @@ bool ZeroComicoEngine::playCutscene(const Common::String &name) {
 
 	if (_mixer->isSoundHandleActive(cutsceneSfxHandle))
 		_mixer->stopHandle(cutsceneSfxHandle);
+	if (_mixer->isSoundHandleActive(cutsceneSpeechHandle))
+		_mixer->stopHandle(cutsceneSpeechHandle);
 	return !shouldQuit();
 }
 
