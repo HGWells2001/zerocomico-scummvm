@@ -104,44 +104,42 @@ static bool screenPointToGround(const RenderCamera &camera, int screenX, int scr
 }
 
 static bool sampleRootTransform(const SceneModel &scene, const Common::String &targetName,
-                                const Common::String &sourceName, RenderTransform &transform) {
+                                const Common::String &sourceName, float frame,
+                                RenderTransform &transform) {
 	transform.localTranslation.x = transform.localTranslation.y = transform.localTranslation.z = 0.0f;
 	transform.localScale.x = transform.localScale.y = transform.localScale.z = 1.0f;
 	transform.localRotation[0] = 1.0f;
-	transform.localRotation[1] = transform.localRotation[2] = 0.0f;
-	transform.localRotation[3] = 0.0f;
+	transform.localRotation[1] = transform.localRotation[2] = transform.localRotation[3] = 0.0f;
 
 	const NamedAnimationClip *clip = scene.findClipBySource(targetName, sourceName);
 	if (!clip)
 		return false;
 
-	for (uint32 i = 0; i < clip->data.tracks.size(); ++i) {
-		const AnimationTrack &track = clip->data.tracks[i];
-		if (track.kind != kAnimTransform || !track.targetName.equalsIgnoreCase(targetName) ||
-		    track.channels.size() < 3)
-			continue;
+	float translation[3];
+	float scale[3];
+	float rotation[4];
+	if (!AnimationSampler::sampleTransform(clip->data, targetName, frame, translation, scale, rotation))
+		return false;
 
-		if (!track.channels[0].keys.empty()) {
-			const AnimationKey &key = track.channels[0].keys[0];
-			transform.localTranslation.x = key.value[0];
-			transform.localTranslation.y = key.value[1];
-			transform.localTranslation.z = key.value[2];
-		}
-		if (!track.channels[1].keys.empty()) {
-			const AnimationKey &key = track.channels[1].keys[0];
-			transform.localScale.x = key.value[0];
-			transform.localScale.y = key.value[1];
-			transform.localScale.z = key.value[2];
-		}
-		if (!track.channels[2].keys.empty()) {
-			const AnimationKey &key = track.channels[2].keys[0];
-			for (int component = 0; component < 4; ++component)
-				transform.localRotation[component] = key.value[component];
-		}
-		return true;
-	}
+	// Gameplay movement owns horizontal root motion. Retain the sampled height,
+	// scale and orientation but anchor X/Z to the first frame so a walk clip
+	// does not translate the actor a second time on top of the BSP path.
+	float baseTranslation[3];
+	float baseScale[3];
+	float baseRotation[4];
+	if (!AnimationSampler::sampleTransform(clip->data, targetName, (float)clip->data.startFrame,
+	                                      baseTranslation, baseScale, baseRotation))
+		return false;
 
-	return false;
+	transform.localTranslation.x = baseTranslation[0];
+	transform.localTranslation.y = translation[1];
+	transform.localTranslation.z = baseTranslation[2];
+	transform.localScale.x = scale[0];
+	transform.localScale.y = scale[1];
+	transform.localScale.z = scale[2];
+	for (int component = 0; component < 4; ++component)
+		transform.localRotation[component] = rotation[component];
+	return true;
 }
 
 } // namespace
@@ -372,6 +370,8 @@ bool ZeroComicoEngine::renderMenuFrame(int selection) {
 bool ZeroComicoEngine::renderGameplayFrame(const RenderCamera &camera,
                                                 const Common::Path &sceneDirectory,
                                                 const Common::Path &playerDirectory,
+                                                const Common::String &animationSource,
+                                                float animationFrame,
                                                 Graphics::ManagedSurface &frame) {
 	SoftwareRenderer renderer;
 	Common::Array<Common::String> visibleMeshes;
@@ -390,8 +390,9 @@ bool ZeroComicoEngine::renderGameplayFrame(const RenderCamera &camera,
 		const float faceX = _playerFacingTarget.x - _playerPosition.x;
 		const float faceZ = _playerFacingTarget.z - _playerPosition.z;
 		playerTransform.yawRadians = std::atan2(faceX, faceZ);
-		if (!sampleRootTransform(_playerScene, "gio_giovanni", "Stay", playerTransform))
-			warning("Zero Comico: Giovanni Stay root transform missing; using identity root pose");
+		if (!sampleRootTransform(_playerScene, "gio_giovanni", animationSource, animationFrame, playerTransform))
+			warning("Zero Comico: Giovanni %s root transform missing; using identity root pose",
+			        animationSource.c_str());
 
 		rendered = renderer.renderWithActor(_activeScene, camera, sceneDirectory, visibleMeshes,
 		                                    _playerScene, playerDirectory, playerVisible,
@@ -583,7 +584,7 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 	}
 
 	Graphics::ManagedSurface frame;
-	if (!renderGameplayFrame(renderCamera, sceneDirectory, playerDirectory, frame)) {
+	if (!renderGameplayFrame(renderCamera, sceneDirectory, playerDirectory, "Stay", 0.0f, frame)) {
 		warning("Zero Comico: could not render start room %s", room->name.c_str());
 		return false;
 	}
@@ -624,27 +625,89 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 			    !_activeWalkMap.shortestPath(_playerNavNode, destinationNode, route) || route.empty())
 				continue;
 
-			const Vec3f previousPosition = _playerPosition;
-			const NavNode &destination = _activeWalkMap.graph[(uint32)destinationNode];
-			_playerPosition.x = destination.pos.x;
-			_playerPosition.y = 0.0f;
-			_playerPosition.z = destination.pos.y;
-
-			const float moveX = _playerPosition.x - previousPosition.x;
-			const float moveZ = _playerPosition.z - previousPosition.z;
-			if (moveX * moveX + moveZ * moveZ > 0.0001f) {
-				_playerFacingTarget.x = _playerPosition.x + moveX;
-				_playerFacingTarget.y = _playerPosition.y;
-				_playerFacingTarget.z = _playerPosition.z + moveZ;
-			}
-			_playerNavNode = destinationNode;
-
 			debug(1, "Zero Comico: click navigation selected node %d through %u path nodes",
 			      destinationNode, (uint)route.size());
-			if (!renderGameplayFrame(renderCamera, sceneDirectory, playerDirectory, frame)) {
-				done = true;
-				break;
+
+			const AnimationSequence *walkSequence = _playerSequences.findSequence("cammina");
+			Common::Array<Common::String> walkClips;
+			if (walkSequence) {
+				for (uint32 transitionIndex = 0; transitionIndex < walkSequence->transitions.size(); ++transitionIndex) {
+					if (walkSequence->transitions[transitionIndex].state == "1>1") {
+						walkClips = walkSequence->transitions[transitionIndex].clips;
+						break;
+					}
+				}
 			}
+			if (walkClips.empty())
+				walkClips.push_back("Camm1");
+
+			uint32 walkClipIndex = 0;
+			float animationFrame = 0.0f;
+			const float frameRate = 25.0f;
+			const float tickSeconds = 0.02f;
+			const float walkSpeed = 45.0f;
+			const float stepDistance = walkSpeed * tickSeconds;
+
+			for (uint32 routeIndex = 1; routeIndex < route.size() && !done && !shouldQuit(); ++routeIndex) {
+				const NavNode &targetNode = _activeWalkMap.graph[(uint32)route[routeIndex]];
+				Vec3f target = { targetNode.pos.x, 0.0f, targetNode.pos.y };
+				float dx = target.x - _playerPosition.x;
+				float dz = target.z - _playerPosition.z;
+				float distance = std::sqrt(dx * dx + dz * dz);
+
+				if (distance > 0.0001f) {
+					_playerFacingTarget = target;
+					dx /= distance;
+					dz /= distance;
+				}
+
+				while (distance > 0.0001f && !done && !shouldQuit()) {
+					const float advance = distance < stepDistance ? distance : stepDistance;
+					_playerPosition.x += dx * advance;
+					_playerPosition.z += dz * advance;
+					distance -= advance;
+
+					const Common::String &clipName = walkClips[walkClipIndex % walkClips.size()];
+					const NamedAnimationClip *clip = _playerScene.findClipBySource("gio_giovanni", clipName);
+					float clipEnd = clip ? (float)clip->data.endFrame : 30.0f;
+					if (clipEnd <= 0.0f)
+						clipEnd = 30.0f;
+
+					if (!renderGameplayFrame(renderCamera, sceneDirectory, playerDirectory,
+					                         clipName, animationFrame, frame)) {
+						done = true;
+						break;
+					}
+
+					animationFrame += frameRate * tickSeconds;
+					if (animationFrame > clipEnd) {
+						animationFrame = 0.0f;
+						walkClipIndex = (walkClipIndex + 1) % walkClips.size();
+					}
+
+					Common::Event moveEvent;
+					while (_system->getEventManager()->pollEvent(moveEvent)) {
+						if (moveEvent.type == Common::EVENT_QUIT ||
+						    moveEvent.type == Common::EVENT_RETURN_TO_LAUNCHER) {
+							quitGame();
+							done = true;
+							break;
+						}
+						if (moveEvent.type == Common::EVENT_KEYDOWN &&
+						    moveEvent.kbd.keycode == Common::KEYCODE_ESCAPE) {
+							done = true;
+							break;
+						}
+					}
+					_system->delayMillis(20);
+				}
+
+				_playerPosition = target;
+				_playerNavNode = route[routeIndex];
+			}
+
+			if (!done && !shouldQuit())
+				renderGameplayFrame(renderCamera, sceneDirectory, playerDirectory, "Stay", 0.0f, frame);
 		}
 		_system->delayMillis(10);
 	}
