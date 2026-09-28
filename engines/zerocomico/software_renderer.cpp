@@ -94,6 +94,20 @@ static Vec3f transformVertex(const Vec3f &stored, const ObjectTransform &transfo
 	return world;
 }
 
+static Vec3f applyInstanceTransform(const Vec3f &world, const RenderTransform *transform) {
+	if (!transform)
+		return world;
+
+	const float c = std::cos(transform->yawRadians);
+	const float s = std::sin(transform->yawRadians);
+	Vec3f out = {
+		world.x * c - world.z * s + transform->translation.x,
+		world.y + transform->translation.y,
+		world.x * s + world.z * c + transform->translation.z
+	};
+	return out;
+}
+
 static bool projectVertex(const Vec3f &world, const RenderCamera &camera,
                           const Vec3f &right, const Vec3f &up, const Vec3f &forward,
                           float focalPixels, int width, int height, ProjectedVertex &out) {
@@ -239,6 +253,7 @@ static void renderFaceRange(const SceneModel &scene, const MeshData &mesh,
                             const MeshMaterialRange *range, const Common::Path &textureDirectory,
                             const RenderCamera &camera, const Vec3f &right, const Vec3f &up,
                             const Vec3f &forward, float focalPixels,
+                            const RenderTransform *instanceTransform,
                             Graphics::ManagedSurface &target, Common::Array<float> &zBuffer) {
 	uint32 firstFace = 0;
 	uint32 faceCount = mesh.faceCount;
@@ -271,7 +286,8 @@ static void renderFaceRange(const SceneModel &scene, const MeshData &mesh,
 				valid = false;
 				break;
 			}
-			const Vec3f world = transformVertex(mesh.vertices[vertexIndex], mesh.transform);
+			const Vec3f meshWorld = transformVertex(mesh.vertices[vertexIndex], mesh.transform);
+			const Vec3f world = applyInstanceTransform(meshWorld, instanceTransform);
 			if (!projectVertex(world, camera, right, up, forward, focalPixels,
 			                   target.w, target.h, projected[i])) {
 				valid = false;
@@ -295,6 +311,36 @@ static void renderFaceRange(const SceneModel &scene, const MeshData &mesh,
 
 		drawTriangle(target, zBuffer, projected, uv, haveUv, texturePtr, material);
 	}
+}
+
+static bool renderScene(const SceneModel &scene, const Common::Path &textureDirectory,
+                        const Common::Array<Common::String> &visibleMeshes,
+                        const RenderCamera &camera, const Vec3f &right, const Vec3f &up,
+                        const Vec3f &forward, float focalPixels,
+                        const RenderTransform *instanceTransform,
+                        Graphics::ManagedSurface &target, Common::Array<float> &zBuffer) {
+	bool renderedAny = false;
+	for (uint32 meshIndex = 0; meshIndex < scene.meshes.size(); ++meshIndex) {
+		const NamedMesh &namedMesh = scene.meshes[meshIndex];
+		const MeshData &mesh = namedMesh.data;
+		if (!isVisible(namedMesh.name, visibleMeshes) || mesh.isFlesh() || mesh.vertices.empty())
+			continue;
+
+		if (mesh.materials.empty()) {
+			renderFaceRange(scene, mesh, nullptr, textureDirectory, camera, right, up, forward,
+			                focalPixels, instanceTransform, target, zBuffer);
+			renderedAny = true;
+			continue;
+		}
+
+		for (uint32 materialIndex = 0; materialIndex < mesh.materials.size(); ++materialIndex) {
+			renderFaceRange(scene, mesh, &mesh.materials[materialIndex], textureDirectory,
+			                camera, right, up, forward, focalPixels, instanceTransform,
+			                target, zBuffer);
+			renderedAny = true;
+		}
+	}
+	return renderedAny;
 }
 
 } // namespace
@@ -357,28 +403,53 @@ bool SoftwareRenderer::render(const SceneModel &scene, const RenderCamera &camer
 	for (uint32 i = 0; i < zBuffer.size(); ++i)
 		zBuffer[i] = 1.0e30f;
 
-	bool renderedAny = false;
-	for (uint32 meshIndex = 0; meshIndex < scene.meshes.size(); ++meshIndex) {
-		const NamedMesh &namedMesh = scene.meshes[meshIndex];
-		const MeshData &mesh = namedMesh.data;
-		if (!isVisible(namedMesh.name, visibleMeshes) || mesh.isFlesh() || mesh.vertices.empty())
-			continue;
+	return renderScene(scene, textureDirectory, visibleMeshes, camera, right, up, forward,
+	                   focalPixels, nullptr, target, zBuffer);
+}
 
-		if (mesh.materials.empty()) {
-			renderFaceRange(scene, mesh, nullptr, textureDirectory, camera, right, up, forward,
-			                focalPixels, target, zBuffer);
-			renderedAny = true;
-			continue;
-		}
+bool SoftwareRenderer::renderWithActor(const SceneModel &scene, const RenderCamera &camera,
+                                       const Common::Path &textureDirectory,
+                                       const Common::Array<Common::String> &visibleMeshes,
+                                       const SceneModel &actor,
+                                       const Common::Path &actorTextureDirectory,
+                                       const Common::Array<Common::String> &actorVisibleMeshes,
+                                       const RenderTransform &actorTransform,
+                                       Graphics::ManagedSurface &target, int width, int height) const {
+	if (width <= 0 || height <= 0 || camera.focalPixels <= 0.0f)
+		return false;
 
-		for (uint32 materialIndex = 0; materialIndex < mesh.materials.size(); ++materialIndex) {
-			renderFaceRange(scene, mesh, &mesh.materials[materialIndex], textureDirectory,
-			                camera, right, up, forward, focalPixels, target, zBuffer);
-			renderedAny = true;
-		}
+	Vec3f forward = sub3(camera.target, camera.position);
+	if (!normalize3(forward))
+		return false;
+
+	const Vec3f worldUp = { 0.0f, 1.0f, 0.0f };
+	Vec3f right = cross3(forward, worldUp);
+	if (!normalize3(right)) {
+		const Vec3f alternateUp = { 0.0f, 0.0f, 1.0f };
+		right = cross3(forward, alternateUp);
+		if (!normalize3(right))
+			return false;
 	}
+	Vec3f up = cross3(right, forward);
+	if (!normalize3(up))
+		return false;
 
-	return renderedAny;
+	target.free();
+	target.create((int16)width, (int16)height, Graphics::PixelFormat::createFormatBGRA32());
+	clearTarget(target);
+
+	Common::Array<float> zBuffer;
+	zBuffer.resize((uint32)width * (uint32)height);
+	for (uint32 i = 0; i < zBuffer.size(); ++i)
+		zBuffer[i] = 1.0e30f;
+
+	const bool renderedRoom = renderScene(scene, textureDirectory, visibleMeshes, camera,
+	                                      right, up, forward, camera.focalPixels,
+	                                      nullptr, target, zBuffer);
+	const bool renderedActor = renderScene(actor, actorTextureDirectory, actorVisibleMeshes, camera,
+	                                       right, up, forward, camera.focalPixels,
+	                                       &actorTransform, target, zBuffer);
+	return renderedRoom || renderedActor;
 }
 
 } // namespace ZeroComico
