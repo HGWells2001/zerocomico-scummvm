@@ -298,6 +298,22 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 		return false;
 	}
 
+	// Load both navigation layers declared by room.isc. The ordinary map
+	// carries the walkable floor/path graph; cameramap is the camera-control
+	// partition used by the original runtime.
+	_activeWalkMap = BspMap();
+	_activeCameraMap = BspMap();
+	if (!room->maps.empty()) {
+		const Common::Path mapPath = Common::Path(level + "/gameplay").appendComponent(room->maps[0]);
+		if (!_activeWalkMap.load(mapPath))
+			warning("Zero Comico: cannot load walk map %s", mapPath.toString().c_str());
+	}
+	if (!room->cameraMaps.empty()) {
+		const Common::Path cameraMapPath = Common::Path(level + "/gameplay").appendComponent(room->cameraMaps[0]);
+		if (!_activeCameraMap.load(cameraMapPath))
+			warning("Zero Comico: cannot load camera map %s", cameraMapPath.toString().c_str());
+	}
+
 	Common::String cameraName = room->camera;
 	RenderCamera renderCamera;
 	bool haveRenderCamera = false;
@@ -348,9 +364,9 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 	_system->copyRectToScreen(frame.getPixels(), frame.pitch, 0, 0, frame.w, frame.h);
 	_system->updateScreen();
 
-	debug(1, "Zero Comico: main place %s start room %s marker %s, camera %s, %u meshes",
+	debug(1, "Zero Comico: main place %s start room %s marker %s, camera %s, %u meshes, %u nav nodes",
 	      level.c_str(), room->name.c_str(), chapter.startMarker.c_str(),
-	      cameraName.c_str(), (uint)_activeScene.meshes.size());
+	      cameraName.c_str(), (uint)_activeScene.meshes.size(), (uint)_activeWalkMap.graph.size());
 
 	// This is deliberately a room-preview boundary, not fake gameplay. The
 	// next runtime milestone is to execute the room's startup/cutscene state,
