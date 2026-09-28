@@ -116,6 +116,21 @@ static Vec3f transformPoint(const PoseMatrix &m, const Vec3f &point) {
 	return out;
 }
 
+static Vec3f transformBindVertex(const Vec3f &stored, const ObjectTransform &transform) {
+	Vec3f local = {
+		(stored.x - transform.translation.x) * transform.scale.x,
+		(stored.y - transform.translation.y) * transform.scale.y,
+		(stored.z - transform.translation.z) * transform.scale.z
+	};
+
+	Vec3f out = {
+		transform.matrix[0] * local.x + transform.matrix[1] * local.y + transform.matrix[2] * local.z + transform.translation.x,
+		transform.matrix[3] * local.x + transform.matrix[4] * local.y + transform.matrix[5] * local.z + transform.translation.y,
+		transform.matrix[6] * local.x + transform.matrix[7] * local.y + transform.matrix[8] * local.z + transform.translation.z
+	};
+	return out;
+}
+
 static const HierarchyData *findHierarchy(const SceneModel &scene, const Common::String &rootName) {
 	for (uint32 i = 0; i < scene.hierarchies.size(); ++i)
 		if (scene.hierarchies[i].name.equalsIgnoreCase(rootName))
@@ -287,6 +302,9 @@ bool SceneModel::loadPair(const Common::Path &p3dPath, const Common::Path &anjPa
 
 
 bool SceneModel::resolveSkinnedGeometry() {
+	for (uint32 meshIndex = 0; meshIndex < meshes.size(); ++meshIndex)
+		meshes[meshIndex].posedVertices.clear();
+
 	for (uint32 parentIndex = 0; parentIndex < meshes.size(); ++parentIndex) {
 		MeshData &parent = meshes[parentIndex].data;
 		if (!parent.isSkinnedParent())
@@ -400,13 +418,41 @@ bool SceneModel::poseSkinnedGeometry(const Common::String &rootName,
 			}
 		}
 
+		meshes[parentIndex].posedVertices.resize(parent.vertexCount);
 		for (uint32 i = 0; i < parent.vertexCount; ++i) {
 			if (weights[i] <= 0.000001f)
 				return false;
 			const float invWeight = 1.0f / weights[i];
-			parent.vertices[i].x = posed[i].x * invWeight;
-			parent.vertices[i].y = posed[i].y * invWeight;
-			parent.vertices[i].z = posed[i].z * invWeight;
+			meshes[parentIndex].posedVertices[i].x = posed[i].x * invWeight;
+			meshes[parentIndex].posedVertices[i].y = posed[i].y * invWeight;
+			meshes[parentIndex].posedVertices[i].z = posed[i].z * invWeight;
+		}
+	}
+
+	// Rigid child meshes such as Giovanni's head and hat also participate in
+	// the JACS hierarchy. Move their bind-space geometry with the same bone
+	// delta so they stay attached to the animated skinned body.
+	for (uint32 meshIndex = 0; meshIndex < meshes.size(); ++meshIndex) {
+		NamedMesh &namedMesh = meshes[meshIndex];
+		MeshData &mesh = namedMesh.data;
+		if (mesh.isFlesh() || mesh.isSkinnedParent() || mesh.vertices.empty())
+			continue;
+
+		PoseMatrix bindGlobal;
+		PoseMatrix poseGlobal;
+		PoseMatrix inverseBind;
+		if (!buildGlobalMatrix(bindClip->data, *hierarchy, rootName, namedMesh.name,
+		                       (float)bindClip->data.startFrame, bindGlobal) ||
+		    !buildGlobalMatrix(poseClip->data, *hierarchy, rootName, namedMesh.name,
+		                       frame, poseGlobal) ||
+		    !invertAffine(bindGlobal, inverseBind))
+			continue;
+
+		const PoseMatrix delta = multiplyMatrix(poseGlobal, inverseBind);
+		namedMesh.posedVertices.resize(mesh.vertices.size());
+		for (uint32 i = 0; i < mesh.vertices.size(); ++i) {
+			const Vec3f bindPoint = transformBindVertex(mesh.vertices[i], mesh.transform);
+			namedMesh.posedVertices[i] = transformPoint(delta, bindPoint);
 		}
 	}
 
