@@ -8,18 +8,21 @@
 #include "engines/engine.h"
 
 #include "zerocomico/scene_model.h"
+#include "zerocomico/script_vm.h"
 
 struct ADGameDescription;
 
 namespace ZeroComico {
 
-class ZeroComicoEngine : public Engine {
+class ZeroComicoEngine : public Engine, public ScriptVMHost {
 public:
 	ZeroComicoEngine(OSystem *syst, const ADGameDescription *desc);
 	~ZeroComicoEngine() override = default;
 
 	Common::Error run() override;
 	bool hasFeature(EngineFeature f) const override;
+
+	bool executeScriptOpcode(const ScriptInstruction &instruction) override;
 
 private:
 	bool runStartupScript(const Common::String &mainPlace);
@@ -30,6 +33,9 @@ private:
 
 	const ADGameDescription *_gameDescription;
 	SceneModel _menuScene;
+	ScriptVM _scriptVM;
+	bool _interfaceDisabled;
+	bool _3dEnabled;
 };
 
 } // namespace ZeroComico
