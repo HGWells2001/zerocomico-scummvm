@@ -29,6 +29,7 @@ private:
 	void playFilmIfPresent(const Common::Path &path);
 	bool loadMenuScene();
 	bool renderMenuFrame(int selection);
+	bool runMainPlacePreview(const Common::String &mainPlace);
 	void runMenu();
 	void showImageModal(const Common::Path &path);
 	void showBootstrapScreen();
@@ -36,6 +37,7 @@ private:
 
 	const ADGameDescription *_gameDescription;
 	SceneModel _menuScene;
+	SceneModel _activeScene;
 	ScriptVM _scriptVM;
 	bool _interfaceDisabled;
 	bool _3dEnabled;
