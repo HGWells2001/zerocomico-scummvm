@@ -8,6 +8,7 @@
 #include "zerocomico/resource.h"
 #include "zerocomico/script.h"
 #include "zerocomico/script_program.h"
+#include "zerocomico/shape_script.h"
 #include "zerocomico/software_renderer.h"
 
 #include "common/events.h"
@@ -39,8 +40,10 @@ static const int kMenuButtonCount = 5;
 } // namespace
 
 ZeroComicoEngine::ZeroComicoEngine(OSystem *syst, const ADGameDescription *desc)
-	: Engine(syst), _gameDescription(desc), _scriptVM(this),
+	: Engine(syst), _gameDescription(desc), _havePlayerStart(false), _scriptVM(this),
 	  _interfaceDisabled(false), _3dEnabled(true) {
+	_playerPosition.x = _playerPosition.y = _playerPosition.z = 0.0f;
+	_playerFacingTarget.x = _playerFacingTarget.y = _playerFacingTarget.z = 0.0f;
 }
 
 bool ZeroComicoEngine::hasFeature(EngineFeature f) const {
@@ -269,17 +272,68 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 	    (level[1] == 'p' || level[1] == 'P'))
 		level = Common::String("Mp") + level.substr(2);
 
-	ChapterDefinition chapter;
 	const Common::Path roomScript(level + "/gameplay/room.isc");
-	if (!chapter.load(roomScript)) {
+	ScriptProgram roomProgram;
+	if (!roomProgram.load(roomScript)) {
 		warning("Zero Comico: cannot parse main-place room script %s", roomScript.toString().c_str());
 		return false;
+	}
+
+	ChapterDefinition chapter;
+	if (!chapter.parse(roomProgram)) {
+		warning("Zero Comico: cannot decode main-place room definitions %s", roomScript.toString().c_str());
+		return false;
+	}
+
+	// Initialize the retail main-place variables before entering the room. Mp1's
+	// startup block is intentionally side-effect free beyond scalar declarations,
+	// so executing it now gives later puzzle/character scripts the same base state.
+	uint32 startupStart = roomProgram.instructions().size();
+	uint32 startupEnd = roomProgram.instructions().size();
+	for (uint32 i = 0; i < roomProgram.instructions().size(); ++i) {
+		if (!roomProgram.instructions()[i].opcode.equalsIgnoreCase("startup"))
+			continue;
+		startupStart = i + 1;
+		for (uint32 j = startupStart; j < roomProgram.instructions().size(); ++j) {
+			if (roomProgram.instructions()[j].opcode.equalsIgnoreCase("end")) {
+				startupEnd = j;
+				break;
+			}
+		}
+		break;
+	}
+	if (startupStart < startupEnd) {
+		_scriptVM.reset();
+		if (!_scriptVM.run(roomProgram, startupStart, startupEnd, 4096)) {
+			warning("Zero Comico: failed to execute %s startup state", level.c_str());
+			return false;
+		}
 	}
 
 	const RoomDefinition *room = chapter.findRoom(chapter.startRoom);
 	if (!room) {
 		warning("Zero Comico: start room %s is not declared", chapter.startRoom.c_str());
 		return false;
+	}
+
+	_havePlayerStart = false;
+	ShapeScript shapeScript;
+	const Common::Path shapePath(level + "/gameplay/Shape.shp");
+	if (shapeScript.load(shapePath)) {
+		const ShapeMarker *startMarker = shapeScript.find(chapter.startMarker);
+		if (startMarker) {
+			_playerPosition = startMarker->a;
+			_playerFacingTarget = startMarker->b;
+			_havePlayerStart = true;
+			debug(1, "Zero Comico: player marker %s at %.3f %.3f %.3f facing %.3f %.3f %.3f",
+			      chapter.startMarker.c_str(), _playerPosition.x, _playerPosition.y, _playerPosition.z,
+			      _playerFacingTarget.x, _playerFacingTarget.y, _playerFacingTarget.z);
+		} else {
+			warning("Zero Comico: start marker %s is missing from %s",
+			        chapter.startMarker.c_str(), shapePath.toString().c_str());
+		}
+	} else {
+		warning("Zero Comico: cannot parse gameplay markers %s", shapePath.toString().c_str());
 	}
 
 	// Retail filenames use lower-case room stems even though room declarations
@@ -364,9 +418,10 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 	_system->copyRectToScreen(frame.getPixels(), frame.pitch, 0, 0, frame.w, frame.h);
 	_system->updateScreen();
 
-	debug(1, "Zero Comico: main place %s start room %s marker %s, camera %s, %u meshes, %u nav nodes",
+	debug(1, "Zero Comico: main place %s start room %s marker %s, camera %s, %u meshes, %u nav nodes%s",
 	      level.c_str(), room->name.c_str(), chapter.startMarker.c_str(),
-	      cameraName.c_str(), (uint)_activeScene.meshes.size(), (uint)_activeWalkMap.graph.size());
+	      cameraName.c_str(), (uint)_activeScene.meshes.size(), (uint)_activeWalkMap.graph.size(),
+	      _havePlayerStart ? ", player start resolved" : ", player start unresolved");
 
 	// This is deliberately a room-preview boundary, not fake gameplay. The
 	// next runtime milestone is to execute the room's startup/cutscene state,
