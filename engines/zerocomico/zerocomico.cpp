@@ -732,6 +732,14 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 		return true;
 	}
 
+	if (op.equalsIgnoreCase("SetPlace")) {
+		if (instruction.args.empty())
+			return false;
+		_pendingRoomName = instruction.args[0];
+		_pendingRoomCutscene.clear();
+		return true;
+	}
+
 	if (op.equalsIgnoreCase("say")) {
 		if (!instruction.args.empty()) {
 			_pendingSaySpeaker = "Giovanni";
@@ -797,7 +805,12 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 		return true;
 	}
 
-	if (op.equalsIgnoreCase("play"))
+	if (op.equalsIgnoreCase("play") ||
+	    op.equalsIgnoreCase("wait_say") ||
+	    op.equalsIgnoreCase("SetDialogCameras") ||
+	    op.equalsIgnoreCase("e3d_hide") ||
+	    op.equalsIgnoreCase("e3d_unhide") ||
+	    op.equalsIgnoreCase("BreakLifeToChar"))
 		return true;
 
 	if (op.equalsIgnoreCase("e3d_Parse") || op.equalsIgnoreCase("setcameramode"))
