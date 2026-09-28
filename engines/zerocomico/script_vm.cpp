@@ -9,6 +9,16 @@
 
 namespace ZeroComico {
 
+namespace {
+
+static bool isConditionalOpcode(const Common::String &op) {
+	return op.equalsIgnoreCase("if_e") || op.equalsIgnoreCase("if_ne") ||
+	       op.equalsIgnoreCase("if_g") || op.equalsIgnoreCase("if_ge") ||
+	       op.equalsIgnoreCase("if_l") || op.equalsIgnoreCase("if_le");
+}
+
+} // namespace
+
 ScriptVM::ScriptVM(ScriptVMHost *host) : _host(host) {
 }
 
@@ -128,7 +138,37 @@ bool ScriptVM::executeMove(const ScriptInstruction &instruction) {
 	return setVariable(instruction.args[0], value);
 }
 
-bool ScriptVM::evaluateEqual(const ScriptInstruction &instruction, bool &result) const {
+bool ScriptVM::executeArithmetic(const ScriptInstruction &instruction) {
+	if (instruction.args.empty())
+		return false;
+
+	int32 current = 0;
+	if (!resolveValue(instruction.args[0], current))
+		return false;
+
+	if (instruction.opcode.equalsIgnoreCase("inc"))
+		return setVariable(instruction.args[0], current + 1);
+	if (instruction.opcode.equalsIgnoreCase("dec"))
+		return setVariable(instruction.args[0], current - 1);
+
+	if (instruction.args.size() < 2)
+		return false;
+
+	int32 operand = 0;
+	if (!resolveValue(instruction.args[1], operand))
+		return false;
+
+	if (instruction.opcode.equalsIgnoreCase("add"))
+		return setVariable(instruction.args[0], current + operand);
+	if (instruction.opcode.equalsIgnoreCase("sub"))
+		return setVariable(instruction.args[0], current - operand);
+	if (instruction.opcode.equalsIgnoreCase("mul"))
+		return setVariable(instruction.args[0], current * operand);
+
+	return false;
+}
+
+bool ScriptVM::evaluateComparison(const ScriptInstruction &instruction, bool &result) const {
 	if (instruction.args.size() < 2)
 		return false;
 
@@ -137,7 +177,21 @@ bool ScriptVM::evaluateEqual(const ScriptInstruction &instruction, bool &result)
 	if (!resolveValue(instruction.args[0], left) || !resolveValue(instruction.args[1], right))
 		return false;
 
-	result = left == right;
+	if (instruction.opcode.equalsIgnoreCase("if_e"))
+		result = left == right;
+	else if (instruction.opcode.equalsIgnoreCase("if_ne"))
+		result = left != right;
+	else if (instruction.opcode.equalsIgnoreCase("if_g"))
+		result = left > right;
+	else if (instruction.opcode.equalsIgnoreCase("if_ge"))
+		result = left >= right;
+	else if (instruction.opcode.equalsIgnoreCase("if_l"))
+		result = left < right;
+	else if (instruction.opcode.equalsIgnoreCase("if_le"))
+		result = left <= right;
+	else
+		return false;
+
 	return true;
 }
 
@@ -147,7 +201,7 @@ uint32 ScriptVM::skipFalseBranch(const ScriptProgram &program, uint32 pc, uint32
 
 	for (uint32 i = pc + 1; i < endIndex; ++i) {
 		const Common::String &op = instructions[i].opcode;
-		if (op.equalsIgnoreCase("if_e")) {
+		if (isConditionalOpcode(op)) {
 			++nested;
 		} else if (op.equalsIgnoreCase("endif")) {
 			if (nested == 0)
@@ -167,7 +221,7 @@ uint32 ScriptVM::skipElseBranch(const ScriptProgram &program, uint32 pc, uint32 
 
 	for (uint32 i = pc + 1; i < endIndex; ++i) {
 		const Common::String &op = instructions[i].opcode;
-		if (op.equalsIgnoreCase("if_e")) {
+		if (isConditionalOpcode(op)) {
 			++nested;
 		} else if (op.equalsIgnoreCase("endif")) {
 			if (nested == 0)
@@ -218,11 +272,20 @@ bool ScriptVM::run(const ScriptProgram &program, uint32 startIndex, uint32 endIn
 			continue;
 		}
 
-		if (op.equalsIgnoreCase("if_e")) {
-			bool equal = false;
-			if (!evaluateEqual(instruction, equal))
+		if (op.equalsIgnoreCase("inc") || op.equalsIgnoreCase("dec") ||
+		    op.equalsIgnoreCase("add") || op.equalsIgnoreCase("sub") ||
+		    op.equalsIgnoreCase("mul")) {
+			if (!executeArithmetic(instruction))
 				return false;
-			pc = equal ? pc + 1 : skipFalseBranch(program, pc, endIndex);
+			++pc;
+			continue;
+		}
+
+		if (isConditionalOpcode(op)) {
+			bool condition = false;
+			if (!evaluateComparison(instruction, condition))
+				return false;
+			pc = condition ? pc + 1 : skipFalseBranch(program, pc, endIndex);
 			continue;
 		}
 
