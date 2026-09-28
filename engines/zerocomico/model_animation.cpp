@@ -266,34 +266,86 @@ bool AnimationSampler::sampleChannel(const AnimationChannel &channel, float fram
 	if (!channel.enabled || channel.keys.empty() || channel.components == 0 || channel.components > 4)
 		return false;
 
-	const AnimationKey *left = &channel.keys[0];
-	const AnimationKey *right = left;
-
-	if (frame <= left->frame) {
-		right = left;
-	} else if (frame >= channel.keys.back().frame) {
-		left = right = &channel.keys.back();
-	} else {
-		for (uint32 i = 1; i < channel.keys.size(); ++i) {
-			if (frame <= channel.keys[i].frame) {
-				left = &channel.keys[i - 1];
-				right = &channel.keys[i];
-				break;
-			}
-		}
+	if (channel.keys.size() == 1 || frame <= channel.keys[0].frame) {
+		for (uint32 component = 0; component < channel.components; ++component)
+			out[component] = channel.keys[0].value[component];
+		return true;
 	}
 
-	float t = 0.0f;
-	if (right->frame > left->frame)
-		t = (frame - left->frame) / (right->frame - left->frame);
+	const uint32 last = channel.keys.size() - 1;
+	if (frame >= channel.keys[last].frame) {
+		for (uint32 component = 0; component < channel.components; ++component)
+			out[component] = channel.keys[last].value[component];
+		return true;
+	}
+
+	uint32 rightIndex = 1;
+	while (rightIndex < channel.keys.size() && frame > channel.keys[rightIndex].frame)
+		++rightIndex;
+	if (rightIndex >= channel.keys.size())
+		rightIndex = last;
+
+	const uint32 leftIndex = rightIndex - 1;
+	const AnimationKey &left = channel.keys[leftIndex];
+	const AnimationKey &right = channel.keys[rightIndex];
+	const AnimationKey &previous = leftIndex > 0 ? channel.keys[leftIndex - 1] : left;
+	const AnimationKey &next = rightIndex < last ? channel.keys[rightIndex + 1] : right;
+
+	const float segmentFrames = right.frame - left.frame;
+	if (segmentFrames <= 0.0f) {
+		for (uint32 component = 0; component < channel.components; ++component)
+			out[component] = left.value[component];
+		return true;
+	}
+
+	float t = (frame - left.frame) / segmentFrames;
 	if (t < 0.0f)
 		t = 0.0f;
 	if (t > 1.0f)
 		t = 1.0f;
 
-	for (uint32 component = 0; component < channel.components; ++component)
-		out[component] = left->value[component] +
-		                 (right->value[component] - left->value[component]) * t;
+	const float t2 = t * t;
+	const float t3 = t2 * t;
+	const float h00 = 2.0f * t3 - 3.0f * t2 + 1.0f;
+	const float h10 = t3 - 2.0f * t2 + t;
+	const float h01 = -2.0f * t3 + 3.0f * t2;
+	const float h11 = t3 - t2;
+
+	for (uint32 component = 0; component < channel.components; ++component) {
+		const float segmentSlope = (right.value[component] - left.value[component]) / segmentFrames;
+
+		float previousSlope = segmentSlope;
+		if (leftIndex > 0) {
+			const float previousFrames = left.frame - previous.frame;
+			if (previousFrames > 0.0f)
+				previousSlope = (left.value[component] - previous.value[component]) / previousFrames;
+		}
+
+		float nextSlope = segmentSlope;
+		if (rightIndex < last) {
+			const float nextFrames = next.frame - right.frame;
+			if (nextFrames > 0.0f)
+				nextSlope = (next.value[component] - right.value[component]) / nextFrames;
+		}
+
+		const float leftFactor = 0.5f * (1.0f - left.tension);
+		const float leftOutgoing =
+			leftFactor * ((1.0f + left.continuity) * (1.0f + left.bias) * previousSlope +
+			              (1.0f - left.continuity) * (1.0f - left.bias) * segmentSlope);
+
+		const float rightFactor = 0.5f * (1.0f - right.tension);
+		const float rightIncoming =
+			rightFactor * ((1.0f - right.continuity) * (1.0f + right.bias) * segmentSlope +
+			               (1.0f + right.continuity) * (1.0f - right.bias) * nextSlope);
+
+		const float leftTangent = leftOutgoing * segmentFrames;
+		const float rightTangent = rightIncoming * segmentFrames;
+		out[component] = h00 * left.value[component] +
+		                 h10 * leftTangent +
+		                 h01 * right.value[component] +
+		                 h11 * rightTangent;
+	}
+
 	return true;
 }
 
