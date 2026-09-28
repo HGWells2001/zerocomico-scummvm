@@ -5,6 +5,7 @@ MODULE_OBJS := \
 	camera_script.o \
 	chapter.o \
 	cutscene_script.o \
+	dialog_script.o \
 	lzhuf.o \
 	metaengine.o \
 	model.o \
