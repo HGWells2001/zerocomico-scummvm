@@ -60,6 +60,20 @@ public:
 	static bool decodeClip(const ModelArchive &archive, const ModelRecord &record, AnimationClip &out);
 };
 
+class AnimationSampler {
+public:
+	// Samples the decoded key stream at an arbitrary animation frame. This first
+	// runtime sampler linearly interpolates values while retaining T/C/B values
+	// in the parsed data for the later exact Kochanek-Bartels evaluator.
+	static bool sampleChannel(const AnimationChannel &channel, float frame, float out[4]);
+
+	// Finds a transform track by target name and samples translation, scale and
+	// axis-angle rotation. Missing individual channels keep their identity values.
+	static bool sampleTransform(const AnimationClip &clip, const Common::String &targetName,
+	                            float frame, float translation[3], float scale[3],
+	                            float rotation[4]);
+};
+
 } // namespace ZeroComico
 
 #endif
