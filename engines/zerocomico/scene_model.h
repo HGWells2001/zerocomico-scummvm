@@ -59,6 +59,11 @@ public:
 	const NamedMesh *findMesh(const Common::String &name) const;
 	const NamedAnimationClip *findClip(const Common::String &name) const;
 
+	// Reconstructs the bind-pose vertices of JapoTek skinned-parent meshes
+	// from their flesh records. This gives the software renderer a complete
+	// static character mesh before animation transforms are applied.
+	bool resolveSkinnedGeometry();
+
 	Common::Array<NamedMaterial> materials;
 	Common::Array<NamedCamera> cameras;
 	Common::Array<NamedLight> lights;
