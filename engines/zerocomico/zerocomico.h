@@ -7,6 +7,7 @@
 
 #include "engines/engine.h"
 
+#include "zerocomico/bsp.h"
 #include "zerocomico/scene_model.h"
 #include "zerocomico/script_vm.h"
 
@@ -38,6 +39,8 @@ private:
 	const ADGameDescription *_gameDescription;
 	SceneModel _menuScene;
 	SceneModel _activeScene;
+	BspMap _activeWalkMap;
+	BspMap _activeCameraMap;
 	ScriptVM _scriptVM;
 	bool _interfaceDisabled;
 	bool _3dEnabled;
