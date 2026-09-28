@@ -46,7 +46,8 @@ private:
 	bool declareVariable(const ScriptInstruction &instruction);
 	bool declareArray(const ScriptInstruction &instruction);
 	bool executeMove(const ScriptInstruction &instruction);
-	bool evaluateEqual(const ScriptInstruction &instruction, bool &result) const;
+	bool executeArithmetic(const ScriptInstruction &instruction);
+	bool evaluateComparison(const ScriptInstruction &instruction, bool &result) const;
 
 	uint32 skipFalseBranch(const ScriptProgram &program, uint32 pc, uint32 endIndex) const;
 	uint32 skipElseBranch(const ScriptProgram &program, uint32 pc, uint32 endIndex) const;
