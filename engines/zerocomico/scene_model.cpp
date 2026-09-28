@@ -210,4 +210,14 @@ const NamedAnimationClip *SceneModel::findClip(const Common::String &name) const
 	return nullptr;
 }
 
+const NamedAnimationClip *SceneModel::findClipBySource(const Common::String &targetName,
+                                                       const Common::String &sourceName) const {
+	for (uint32 i = 0; i < clips.size(); ++i) {
+		if (clips[i].name.equalsIgnoreCase(targetName) &&
+		    clips[i].data.sourceName.equalsIgnoreCase(sourceName))
+			return &clips[i];
+	}
+	return nullptr;
+}
+
 } // namespace ZeroComico
