@@ -62,9 +62,9 @@ public:
 
 class AnimationSampler {
 public:
-	// Samples the decoded key stream at an arbitrary animation frame. This first
-	// runtime sampler linearly interpolates values while retaining T/C/B values
-	// in the parsed data for the later exact Kochanek-Bartels evaluator.
+	// Samples the decoded key stream at an arbitrary animation frame using the
+	// stored Kochanek-Bartels tension/continuity/bias values. Endpoint tangents
+	// fall back to the adjacent segment slope, matching the single-sided case.
 	static bool sampleChannel(const AnimationChannel &channel, float frame, float out[4]);
 
 	// Finds a transform track by target name and samples translation, scale and
