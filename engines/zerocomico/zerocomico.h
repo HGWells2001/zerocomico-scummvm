@@ -7,6 +7,7 @@
 
 #include "engines/engine.h"
 #include "audio/mixer.h"
+#include "common/events.h"
 
 #include "zerocomico/bsp.h"
 #include "zerocomico/cutscene_script.h"
