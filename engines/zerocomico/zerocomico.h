@@ -96,6 +96,7 @@ private:
 	Common::String _pendingRoomName;
 	Common::String _pendingRoomCutscene;
 	Common::String _pendingCameraName;
+	Common::String _defaultRoomCameraName;
 	Common::String _selectedInventoryObject;
 	Common::String _combineInventoryFirst;
 	Common::String _combineInventorySecond;
