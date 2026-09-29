@@ -1395,17 +1395,19 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 		    !_scriptVM.resolveValue(instruction.args[2], secondIndex))
 			return false;
 
-		NamedMesh *first = _activeScene.findMesh(
-			indexedSceneEntityName(instruction.args[0], (int)firstIndex));
-		NamedMesh *second = _activeScene.findMesh(
-			indexedSceneEntityName(instruction.args[0], (int)secondIndex));
+		const Common::String firstName =
+			indexedSceneEntityName(instruction.args[0], (int)firstIndex);
+		const Common::String secondName =
+			indexedSceneEntityName(instruction.args[0], (int)secondIndex);
+		NamedMesh *first = _activeScene.findMesh(firstName);
+		NamedMesh *second = _activeScene.findMesh(secondName);
 		if (!first || !second)
 			return false;
 
-		const Vec3f position = first->data.transform.translation;
-		first->data.transform.translation = second->data.transform.translation;
-		second->data.transform.translation = position;
-		return true;
+		const Vec3f firstPosition = first->data.transform.translation;
+		const Vec3f secondPosition = second->data.transform.translation;
+		return setSceneEntityTranslation(firstName, secondPosition) &&
+		       setSceneEntityTranslation(secondName, firstPosition);
 	}
 
 	if (op.equalsIgnoreCase("setpos_on_entity_byindex")) {
@@ -1415,14 +1417,15 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 		if (!_scriptVM.resolveValue(instruction.args[2], index))
 			return false;
 
+		const Common::String sourceName =
+			indexedSceneEntityName(instruction.args[1], (int)index);
 		NamedMesh *target = _activeScene.findMesh(instruction.args[0]);
-		const NamedMesh *source = _activeScene.findMesh(
-			indexedSceneEntityName(instruction.args[1], (int)index));
+		const NamedMesh *source = _activeScene.findMesh(sourceName);
 		if (!target || !source)
 			return false;
 
-		target->data.transform.translation = source->data.transform.translation;
-		return true;
+		return setSceneEntityTranslation(
+			instruction.args[0], source->data.transform.translation);
 	}
 
 	if (op.equalsIgnoreCase("Setp")) {
