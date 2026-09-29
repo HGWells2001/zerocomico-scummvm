@@ -1356,6 +1356,23 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 	if (op.equalsIgnoreCase("SetCharPos_Vector")) {
 		if (instruction.args.size() < 2)
 			return false;
+
+		// Runtime puzzle scripts use this opcode for MainPlayer (or the actual
+		// playable-character name). CPU spawn versions live in char.isc initialize
+		// blocks and are handled by CharacterScript/installCpuCharactersForRoom.
+		// Do not silently teleport the player when an unrelated character name is
+		// supplied by custom or malformed data.
+		const Common::String &characterName = instruction.args[0];
+		const bool targetsPlayer =
+			characterName.equalsIgnoreCase("MainPlayer") ||
+			(!_playerCharacterScript.playerName.empty() &&
+			 characterName.equalsIgnoreCase(_playerCharacterScript.playerName));
+		if (!targetsPlayer) {
+			warning("Zero Comico: runtime SetCharPos_Vector for non-player %s is unsupported",
+			        characterName.c_str());
+			return false;
+		}
+
 		const ShapeMarker *marker = _activeShapes.find(instruction.args[1]);
 		if (!marker)
 			return false;
