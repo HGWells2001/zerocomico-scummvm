@@ -50,6 +50,7 @@ private:
 	                         const Common::String &animationSource,
 	                         float animationFrame,
 	                         Graphics::ManagedSurface &frame);
+	bool showScriptLine(const Common::String &speaker, const Common::String &text);
 	bool playDialogue(const Common::String &name,
 	                  const RenderCamera &camera,
 	                  const Common::Path &sceneDirectory,
