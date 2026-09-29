@@ -211,8 +211,30 @@ static const Graphics::ManagedSurface *loadTextureCached(
 	}
 
 	Graphics::ManagedSurface *texture = new Graphics::ManagedSurface();
-	if (!ResourceReader::decodeJgfFile(directory.appendComponent(fileName), *texture) &&
-	    !ResourceReader::decodeJgfFile(directory.appendComponent(material.textureName), *texture)) {
+	bool loaded =
+		ResourceReader::decodeJgfFile(directory.appendComponent(fileName), *texture) ||
+		ResourceReader::decodeJgfFile(directory.appendComponent(material.textureName), *texture);
+
+	// CloneEntity templates such as Mp2's Star_Star live under
+	// bodies/helpers, but once cloned they are rendered as room background
+	// meshes. The retail resource manager resolves textures independently of
+	// the current background directory, so mirror that behavior with a narrow
+	// helper fallback when the room lookup misses.
+	if (!loaded) {
+		const Common::String directoryName = directory.toString();
+		const uint32 backgroundMarker = directoryName.find("/backgrd");
+		if (backgroundMarker != Common::String::npos) {
+			const Common::Path helperDirectory =
+				Common::Path(directoryName.substr(0, backgroundMarker))
+					.appendComponent("bodies")
+					.appendComponent("helpers");
+			loaded =
+				ResourceReader::decodeJgfFile(helperDirectory.appendComponent(fileName), *texture) ||
+				ResourceReader::decodeJgfFile(helperDirectory.appendComponent(material.textureName), *texture);
+		}
+	}
+
+	if (!loaded) {
 		delete texture;
 		return nullptr;
 	}
