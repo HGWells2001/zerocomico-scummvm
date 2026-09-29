@@ -2124,7 +2124,8 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 		return true;
 	}
 
-	if (op.equalsIgnoreCase("csay_FromTextable")) {
+	if (op.equalsIgnoreCase("csay_FromTextable") ||
+	    op.equalsIgnoreCase("csay_Textable")) {
 		if (instruction.args.size() < 3)
 			return false;
 
