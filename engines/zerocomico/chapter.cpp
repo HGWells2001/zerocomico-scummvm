@@ -68,6 +68,17 @@ bool ChapterDefinition::parse(const ScriptProgram &program) {
 			room.maps.push_back(inst.args[0]);
 		} else if (inst.opcode.equalsIgnoreCase("cameramap") && !inst.args.empty()) {
 			room.cameraMaps.push_back(inst.args[0]);
+		} else if (inst.opcode.equalsIgnoreCase("portal") && inst.args.size() >= 2) {
+			RoomPortal portal;
+			portal.name = inst.args[0];
+			portal.destinationRoom = inst.args[1];
+			if (inst.args.size() >= 3)
+				portal.marker = inst.args[2];
+			if (inst.args.size() >= 4)
+				portal.backgroundPattern = inst.args[3];
+			if (inst.args.size() >= 5)
+				portal.destinationPortal = inst.args[4];
+			room.portals.push_back(portal);
 		}
 	}
 
