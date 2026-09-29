@@ -50,6 +50,15 @@ bool PuzzleScript::parse() {
 		object.enabled = true;
 		object.examinable = false;
 		object.pickable = false;
+		object.operated = false;
+		object.examinated = false;
+		object.autoCamera = false;
+		object.randomPos = false;
+		object.combined = false;
+		object.assigned = false;
+		object.inside = false;
+		object.collision = false;
+		object.soundState = false;
 		object.operateStart = object.operateEnd = 0xffffffffU;
 
 		const int objectDepth = header.depth;
@@ -74,6 +83,24 @@ bool PuzzleScript::parse() {
 				object.examinable = scriptBool(inst.args[0], object.examinable);
 			} else if (inst.opcode.equalsIgnoreCase("PICKABLE") && !inst.args.empty()) {
 				object.pickable = scriptBool(inst.args[0], object.pickable);
+			} else if (inst.opcode.equalsIgnoreCase("OPERATED") && !inst.args.empty()) {
+				object.operated = scriptBool(inst.args[0], object.operated);
+			} else if (inst.opcode.equalsIgnoreCase("EXAMINATED") && !inst.args.empty()) {
+				object.examinated = scriptBool(inst.args[0], object.examinated);
+			} else if (inst.opcode.equalsIgnoreCase("AUTOCAMERA") && !inst.args.empty()) {
+				object.autoCamera = scriptBool(inst.args[0], object.autoCamera);
+			} else if (inst.opcode.equalsIgnoreCase("RANDOMPOS") && !inst.args.empty()) {
+				object.randomPos = scriptBool(inst.args[0], object.randomPos);
+			} else if (inst.opcode.equalsIgnoreCase("COMBINED") && !inst.args.empty()) {
+				object.combined = scriptBool(inst.args[0], object.combined);
+			} else if (inst.opcode.equalsIgnoreCase("ASSIGNED") && !inst.args.empty()) {
+				object.assigned = scriptBool(inst.args[0], object.assigned);
+			} else if (inst.opcode.equalsIgnoreCase("INSIDE") && !inst.args.empty()) {
+				object.inside = scriptBool(inst.args[0], object.inside);
+			} else if (inst.opcode.equalsIgnoreCase("COLLISION") && !inst.args.empty()) {
+				object.collision = scriptBool(inst.args[0], object.collision);
+			} else if (inst.opcode.equalsIgnoreCase("SOUNDSTATE") && !inst.args.empty()) {
+				object.soundState = scriptBool(inst.args[0], object.soundState);
 			} else if (inst.opcode.equalsIgnoreCase("operate")) {
 				object.operateStart = j + 1;
 				for (uint32 k = j + 1; k < instructions.size(); ++k) {

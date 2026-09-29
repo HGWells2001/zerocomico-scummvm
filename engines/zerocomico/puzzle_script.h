@@ -23,6 +23,15 @@ struct PuzzleObject {
 	bool enabled;
 	bool examinable;
 	bool pickable;
+	bool operated;
+	bool examinated;
+	bool autoCamera;
+	bool randomPos;
+	bool combined;
+	bool assigned;
+	bool inside;
+	bool collision;
+	bool soundState;
 	uint32 operateStart;
 	uint32 operateEnd;
 };
