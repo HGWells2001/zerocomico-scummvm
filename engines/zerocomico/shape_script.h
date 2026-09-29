@@ -23,19 +23,29 @@ struct ShapeMarker {
 	Vec3f b;
 };
 
+struct ShapePolygon {
+	Common::String name;
+	Common::Array<Vec3f> vertices;
+};
+
 class ShapeScript {
 public:
 	bool load(const Common::Path &path);
 	bool parse(const ScriptProgram &program);
 
 	const ShapeMarker *find(const Common::String &name) const;
+	const ShapePolygon *findPolygon(const Common::String &name) const;
+	bool containsRegion(const Common::String &name, float x, float z) const;
 	const Common::Array<ShapeMarker> &shapes() const { return _shapes; }
+	const Common::Array<ShapePolygon> &polygons() const { return _polygons; }
 
 private:
 	static bool parseFloat(const Common::String &token, float &value);
 	static bool parseVec3(const ScriptInstruction &instruction, Vec3f &value);
+	static bool parsePolygonVec3(const ScriptInstruction &instruction, Vec3f &value);
 
 	Common::Array<ShapeMarker> _shapes;
+	Common::Array<ShapePolygon> _polygons;
 };
 
 } // namespace ZeroComico

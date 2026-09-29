@@ -17,6 +17,8 @@ struct PuzzleObject {
 	Common::String name;
 	Common::String entity;
 	Common::String polygon;
+	Common::String rangeShape;
+	Common::String roomScope;
 	Common::String examineText;
 	float range;
 	float size;
@@ -34,6 +36,8 @@ struct PuzzleObject {
 	bool soundState;
 	uint32 operateStart;
 	uint32 operateEnd;
+	uint32 enterStart;
+	uint32 enterEnd;
 };
 
 class PuzzleScript {

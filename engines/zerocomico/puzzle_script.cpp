@@ -60,6 +60,7 @@ bool PuzzleScript::parse() {
 		object.collision = false;
 		object.soundState = false;
 		object.operateStart = object.operateEnd = 0xffffffffU;
+		object.enterStart = object.enterEnd = 0xffffffffU;
 
 		const int objectDepth = header.depth;
 		for (uint32 j = i + 1; j < instructions.size(); ++j) {
@@ -73,6 +74,10 @@ bool PuzzleScript::parse() {
 				object.entity = inst.args[0];
 			} else if (inst.opcode.equalsIgnoreCase("polygon") && !inst.args.empty()) {
 				object.polygon = inst.args[0];
+			} else if (inst.opcode.equalsIgnoreCase("rangeshape") && !inst.args.empty()) {
+				object.rangeShape = inst.args[0];
+			} else if (inst.opcode.equalsIgnoreCase("roomscope") && !inst.args.empty()) {
+				object.roomScope = inst.args[0];
 			} else if (inst.opcode.equalsIgnoreCase("range") && !inst.args.empty()) {
 				object.range = scriptFloat(inst.args[0], object.range);
 			} else if (inst.opcode.equalsIgnoreCase("size") && !inst.args.empty()) {
@@ -101,6 +106,16 @@ bool PuzzleScript::parse() {
 				object.collision = scriptBool(inst.args[0], object.collision);
 			} else if (inst.opcode.equalsIgnoreCase("SOUNDSTATE") && !inst.args.empty()) {
 				object.soundState = scriptBool(inst.args[0], object.soundState);
+			} else if (inst.opcode.equalsIgnoreCase("in")) {
+				object.enterStart = j + 1;
+				for (uint32 k = j + 1; k < instructions.size(); ++k) {
+					if (instructions[k].opcode.equalsIgnoreCase("end")) {
+						object.enterEnd = k;
+						break;
+					}
+					if (instructions[k].opcode.equalsIgnoreCase("Object"))
+						break;
+				}
 			} else if (inst.opcode.equalsIgnoreCase("operate")) {
 				object.operateStart = j + 1;
 				for (uint32 k = j + 1; k < instructions.size(); ++k) {
