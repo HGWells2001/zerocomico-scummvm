@@ -9,6 +9,7 @@
 
 #include "zerocomico/bsp.h"
 #include "zerocomico/cutscene_script.h"
+#include "zerocomico/character_script.h"
 #include "zerocomico/dialog_script.h"
 #include "zerocomico/puzzle_script.h"
 #include "zerocomico/scene_model.h"
@@ -64,6 +65,7 @@ private:
 	SceneModel _activeScene;
 	SceneModel _playerScene;
 	SequenceScript _playerSequences;
+	CharacterScript _playerCharacterScript;
 	PuzzleScript _activePuzzle;
 	DialogScript _activeDialog;
 	ShapeScript _activeShapes;
@@ -83,6 +85,8 @@ private:
 	Common::String _pendingRoomName;
 	Common::String _pendingRoomCutscene;
 	Common::String _selectedInventoryObject;
+	Common::String _combineInventoryFirst;
+	Common::String _combineInventorySecond;
 	Common::Array<Common::String> _inventoryObjects;
 	Common::Array<Common::String> _hiddenSceneMeshes;
 	Common::Array<Common::String> _sceneLoopTargets;
