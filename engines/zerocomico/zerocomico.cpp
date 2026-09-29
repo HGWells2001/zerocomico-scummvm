@@ -144,6 +144,33 @@ static bool normalizeVec3(Vec3f &v) {
 	return true;
 }
 
+static float cross2D(float ax, float az, float bx, float bz) {
+	return ax * bz - az * bx;
+}
+
+static bool movementCrossesPortal(const Vec3f &from, const Vec3f &to,
+                                  const ShapeMarker &portal) {
+	const float rx = to.x - from.x;
+	const float rz = to.z - from.z;
+	const float sx = portal.b.x - portal.a.x;
+	const float sz = portal.b.z - portal.a.z;
+	const float denominator = cross2D(rx, rz, sx, sz);
+	if (std::fabs(denominator) <= 1.0e-6f)
+		return false;
+
+	const float qpx = portal.a.x - from.x;
+	const float qpz = portal.a.z - from.z;
+	const float t = cross2D(qpx, qpz, sx, sz) / denominator;
+	const float u = cross2D(qpx, qpz, rx, rz) / denominator;
+
+	// The retail executable tests the character's previous-to-current movement
+	// segment against the portal A/B segment and requires an interior crossing.
+	// Keep movement endpoints exclusive to avoid bouncing on the same boundary
+	// immediately after a room switch.
+	return t > 1.0e-5f && t < 1.0f - 1.0e-5f &&
+	       u >= -1.0e-5f && u <= 1.0f + 1.0e-5f;
+}
+
 static bool screenPointToGround(const RenderCamera &camera, int screenX, int screenY,
                                 int width, int height, Vec3f &ground) {
 	if (camera.focalPixels <= 0.0f)
@@ -2340,6 +2367,188 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 			operateMeshes.push_back(sceneEntity);
 	}
 
+	auto rebuildInteractionMeshes = [&]() {
+		examineMeshes.clear();
+		operateMeshes.clear();
+		for (uint32 objectIndex = 0; objectIndex < _activePuzzle.objects.size(); ++objectIndex) {
+			const PuzzleObject &object = _activePuzzle.objects[objectIndex];
+			if (!object.enabled || object.entity.empty())
+				continue;
+			const Common::String entity = resolveSceneEntity(
+				_activeScene, object.entity, _activeRoomPrefix);
+			if (!_activeScene.findMesh(entity) ||
+			    containsIgnoreCase(_hiddenSceneMeshes, entity))
+				continue;
+			if (object.examinable)
+				examineMeshes.push_back(entity);
+			if (object.operateStart != 0xffffffffU &&
+			    object.operateEnd != 0xffffffffU &&
+			    object.operateStart < object.operateEnd)
+				operateMeshes.push_back(entity);
+		}
+	};
+
+	auto findPortalShape = [&](const RoomDefinition &sourceRoom,
+	                           const RoomPortal &portal) -> const ShapeMarker * {
+		const Common::String candidates[] = {
+			portal.marker, portal.name, portal.destinationPortal
+		};
+		for (uint32 i = 0; i < ARRAYSIZE(candidates); ++i) {
+			if (candidates[i].empty())
+				continue;
+			const ShapeMarker *shape = _activeShapes.find(candidates[i]);
+			if (shape && shape->kind.equalsIgnoreCase("Portal"))
+				return shape;
+		}
+
+		// Mp5 stores one physical Portal shape for each connection, while the
+		// reverse room declaration can use a mirrored logical name. Resolve that
+		// reverse declaration through the destination room's outbound portal.
+		const RoomDefinition *destination = chapter.findRoom(portal.destinationRoom);
+		if (!destination)
+			return nullptr;
+		for (uint32 i = 0; i < destination->portals.size(); ++i) {
+			const RoomPortal &reverse = destination->portals[i];
+			if (!reverse.destinationRoom.equalsIgnoreCase(sourceRoom.name))
+				continue;
+			const Common::String reverseCandidates[] = {
+				reverse.marker, reverse.name, reverse.destinationPortal
+			};
+			for (uint32 j = 0; j < ARRAYSIZE(reverseCandidates); ++j) {
+				if (reverseCandidates[j].empty())
+					continue;
+				const ShapeMarker *shape = _activeShapes.find(reverseCandidates[j]);
+				if (shape && shape->kind.equalsIgnoreCase("Portal"))
+					return shape;
+			}
+		}
+		return nullptr;
+	};
+
+	auto applyPendingRoomTransition = [&]() -> bool {
+		if (_pendingRoomName.empty())
+			return true;
+
+		if (_pendingRoomCutscene.equalsIgnoreCase("d101"))
+			playCutscene("d101_dor");
+
+		const RoomDefinition *nextRoom = chapter.findRoom(_pendingRoomName);
+		if (!nextRoom) {
+			warning("Zero Comico: destination room %s is not declared",
+			        _pendingRoomName.c_str());
+			_pendingRoomName.clear();
+			_pendingRoomCutscene.clear();
+			return true;
+		}
+
+		room = nextRoom;
+		_activeRoomName = room->name;
+		_activeRoomPrefix = room->prefix;
+		_activeRoomMaps = room->maps;
+		_activeRoomCameraMaps = room->cameraMaps;
+		Common::String nextStem = room->name;
+		nextStem.toLowercase();
+
+		_activeScene.clear();
+		if (!_activeScene.loadPair(
+				sceneDirectory.appendComponent(nextStem + ".p3d"),
+				sceneDirectory.appendComponent(nextStem + ".anj"))) {
+			warning("Zero Comico: cannot load destination room %s",
+			        room->name.c_str());
+			return false;
+		}
+
+		_activeWalkMap = BspMap();
+		_activeCameraMap = BspMap();
+		Common::String destinationMap;
+		if (!room->maps.empty())
+			destinationMap = room->maps[0];
+		if (_pendingRoomMapRoomName.equalsIgnoreCase(room->name) &&
+		    !_pendingRoomMapName.empty()) {
+			if (containsIgnoreCase(room->maps, _pendingRoomMapName))
+				destinationMap = _pendingRoomMapName;
+			else
+				warning("Zero Comico: queued map %s is not declared for destination room %s",
+				        _pendingRoomMapName.c_str(), room->name.c_str());
+		}
+		if (!destinationMap.empty()) {
+			const Common::Path nextMap = Common::Path(level + "/gameplay")
+				.appendComponent(destinationMap);
+			if (!_activeWalkMap.load(nextMap))
+				warning("Zero Comico: cannot load destination walk map %s",
+				        nextMap.toString().c_str());
+		}
+		_pendingRoomMapRoomName.clear();
+		_pendingRoomMapName.clear();
+
+		if (!room->cameraMaps.empty()) {
+			Common::String cameraMapName = room->cameraMaps[0];
+			const Common::String paired = pairedCameraMapName(destinationMap);
+			if (!paired.empty() && containsIgnoreCase(room->cameraMaps, paired))
+				cameraMapName = paired;
+			const Common::Path nextCameraMap = Common::Path(level + "/gameplay")
+				.appendComponent(cameraMapName);
+			if (!_activeCameraMap.load(nextCameraMap))
+				warning("Zero Comico: cannot load destination camera map %s",
+				        nextCameraMap.toString().c_str());
+		}
+
+		_playerNavNode = -1;
+		if (_havePlayerStart && !_activeWalkMap.graph.empty())
+			_playerNavNode = _activeWalkMap.nearestGraphNode(
+				_playerPosition.x, _playerPosition.z);
+
+		_pendingCameraName.clear();
+		_activeAutoCameraTrigger.clear();
+		_defaultRoomCameraName = room->camera;
+		startRoomMusic(room->music, room->musicVolume);
+		cameraName = room->camera;
+
+		bool nextCameraReady = false;
+		const ScriptCamera *nextScriptCamera = cameraScript.findCamera(cameraName);
+		if (nextScriptCamera) {
+			const float radians = nextScriptCamera->horizontalFovDegrees *
+				3.14159265358979323846f / 180.0f;
+			const float halfTan = std::tan(radians * 0.5f);
+			if (halfTan > 0.0001f) {
+				renderCamera.position = nextScriptCamera->source;
+				renderCamera.target = nextScriptCamera->target;
+				renderCamera.focalPixels = 400.0f / halfTan;
+				renderCamera.rollRadians = 0.0f;
+				nextCameraReady = true;
+			}
+		}
+		if (!nextCameraReady) {
+			const NamedCamera *embedded = _activeScene.findCamera(cameraName);
+			if (!embedded && !_activeScene.cameras.empty())
+				embedded = &_activeScene.cameras[0];
+			if (embedded && embedded->data.fov > 0.0f) {
+				cameraName = embedded->name;
+				renderCamera.position = embedded->data.position;
+				renderCamera.target = embedded->data.target;
+				renderCamera.focalPixels = embedded->data.fov * 800.0f / 36.0f;
+				renderCamera.rollRadians = 0.0f;
+				nextCameraReady = true;
+			}
+		}
+		if (!nextCameraReady) {
+			warning("Zero Comico: destination room %s has no usable camera",
+			        room->name.c_str());
+			return false;
+		}
+
+		rebuildInteractionMeshes();
+		updateAutoCamera();
+		debug(1, "Zero Comico: changed place to %s at nav node %d",
+		      room->name.c_str(), _playerNavNode);
+		renderGameplayFrame(renderCamera, sceneDirectory, playerDirectory,
+		                    "Stay", 0.0f, frame);
+
+		_pendingRoomName.clear();
+		_pendingRoomCutscene.clear();
+		return true;
+	};
+
 	bool done = false;
 	uint32 lastIdleRender = _system->getMillis();
 	const uint32 idleAnimationStart = lastIdleRender;
@@ -2557,24 +2766,7 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 						break;
 					}
 
-					examineMeshes.clear();
-					operateMeshes.clear();
-					for (uint32 objectIndex = 0; objectIndex < _activePuzzle.objects.size(); ++objectIndex) {
-						const PuzzleObject &updatedObject = _activePuzzle.objects[objectIndex];
-						if (!updatedObject.enabled || updatedObject.entity.empty())
-							continue;
-						const Common::String updatedEntity = resolveSceneEntity(
-							_activeScene, updatedObject.entity, _activeRoomPrefix);
-						if (!_activeScene.findMesh(updatedEntity) ||
-						    containsIgnoreCase(_hiddenSceneMeshes, updatedEntity))
-							continue;
-						if (updatedObject.examinable)
-							examineMeshes.push_back(updatedEntity);
-						if (updatedObject.operateStart != 0xffffffffU &&
-						    updatedObject.operateEnd != 0xffffffffU &&
-						    updatedObject.operateStart < updatedObject.operateEnd)
-							operateMeshes.push_back(updatedEntity);
-					}
+					rebuildInteractionMeshes();
 
 					if (!_pendingDialogName.empty() && !done && !shouldQuit()) {
 						playDialogue(_pendingDialogName, renderCamera, sceneDirectory,
@@ -2582,132 +2774,9 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 						_pendingDialogName.clear();
 					}
 
-					if (!_pendingRoomName.empty()) {
-						if (_pendingRoomCutscene.equalsIgnoreCase("d101"))
-							playCutscene("d101_dor");
-
-						const RoomDefinition *nextRoom = chapter.findRoom(_pendingRoomName);
-						if (nextRoom) {
-							room = nextRoom;
-							_activeRoomName = room->name;
-							_activeRoomPrefix = room->prefix;
-							_activeRoomMaps = room->maps;
-							_activeRoomCameraMaps = room->cameraMaps;
-							Common::String nextStem = room->name;
-							nextStem.toLowercase();
-
-							_activeScene.clear();
-							if (!_activeScene.loadPair(
-									sceneDirectory.appendComponent(nextStem + ".p3d"),
-									sceneDirectory.appendComponent(nextStem + ".anj"))) {
-								warning("Zero Comico: cannot load destination room %s",
-								        room->name.c_str());
-								done = true;
-								break;
-							}
-
-							_activeWalkMap = BspMap();
-							_activeCameraMap = BspMap();
-							Common::String destinationMap;
-							if (!room->maps.empty())
-								destinationMap = room->maps[0];
-							if (_pendingRoomMapRoomName.equalsIgnoreCase(room->name) &&
-							    !_pendingRoomMapName.empty()) {
-								if (containsIgnoreCase(room->maps, _pendingRoomMapName))
-								destinationMap = _pendingRoomMapName;
-								else
-									warning("Zero Comico: queued map %s is not declared for destination room %s",
-									        _pendingRoomMapName.c_str(), room->name.c_str());
-							}
-							if (!destinationMap.empty()) {
-								const Common::Path nextMap = Common::Path(level + "/gameplay")
-									.appendComponent(destinationMap);
-								if (!_activeWalkMap.load(nextMap))
-									warning("Zero Comico: cannot load destination walk map %s",
-									        nextMap.toString().c_str());
-							}
-							_pendingRoomMapRoomName.clear();
-							_pendingRoomMapName.clear();
-							if (!room->cameraMaps.empty()) {
-								const Common::Path nextCameraMap = Common::Path(level + "/gameplay")
-									.appendComponent(room->cameraMaps[0]);
-								if (!_activeCameraMap.load(nextCameraMap))
-									warning("Zero Comico: cannot load destination camera map %s",
-									        nextCameraMap.toString().c_str());
-							}
-
-							_playerNavNode = -1;
-							if (_havePlayerStart && !_activeWalkMap.graph.empty())
-								_playerNavNode = _activeWalkMap.nearestGraphNode(
-									_playerPosition.x, _playerPosition.z);
-
-							_pendingCameraName.clear();
-							_activeAutoCameraTrigger.clear();
-							_defaultRoomCameraName = room->camera;
-							startRoomMusic(room->music, room->musicVolume);
-							cameraName = room->camera;
-							bool nextCameraReady = false;
-							const ScriptCamera *nextScriptCamera = cameraScript.findCamera(cameraName);
-							if (nextScriptCamera) {
-								const float radians = nextScriptCamera->horizontalFovDegrees *
-									3.14159265358979323846f / 180.0f;
-								const float halfTan = std::tan(radians * 0.5f);
-								if (halfTan > 0.0001f) {
-									renderCamera.position = nextScriptCamera->source;
-									renderCamera.target = nextScriptCamera->target;
-									renderCamera.focalPixels = 400.0f / halfTan;
-									nextCameraReady = true;
-								}
-							}
-							if (!nextCameraReady) {
-								const NamedCamera *embedded = _activeScene.findCamera(cameraName);
-								if (!embedded && !_activeScene.cameras.empty())
-									embedded = &_activeScene.cameras[0];
-								if (embedded && embedded->data.fov > 0.0f) {
-									cameraName = embedded->name;
-									renderCamera.position = embedded->data.position;
-									renderCamera.target = embedded->data.target;
-									renderCamera.focalPixels = embedded->data.fov * 800.0f / 36.0f;
-									nextCameraReady = true;
-								}
-							}
-							if (!nextCameraReady) {
-								warning("Zero Comico: destination room %s has no usable camera",
-								        room->name.c_str());
-								done = true;
-								break;
-							}
-
-							examineMeshes.clear();
-							operateMeshes.clear();
-							for (uint32 objectIndex = 0; objectIndex < _activePuzzle.objects.size(); ++objectIndex) {
-								const PuzzleObject &nextObject = _activePuzzle.objects[objectIndex];
-								if (!nextObject.enabled || nextObject.entity.empty())
-									continue;
-								const Common::String nextEntity = resolveSceneEntity(
-									_activeScene, nextObject.entity, _activeRoomPrefix);
-								if (!_activeScene.findMesh(nextEntity) ||
-								    containsIgnoreCase(_hiddenSceneMeshes, nextEntity))
-									continue;
-								if (nextObject.examinable)
-									examineMeshes.push_back(nextEntity);
-								if (nextObject.operateStart != 0xffffffffU &&
-								    nextObject.operateEnd != 0xffffffffU &&
-								    nextObject.operateStart < nextObject.operateEnd)
-									operateMeshes.push_back(nextEntity);
-							}
-
-							updateAutoCamera();
-							debug(1, "Zero Comico: changed place to %s at nav node %d",
-							      room->name.c_str(), _playerNavNode);
-							renderGameplayFrame(renderCamera, sceneDirectory, playerDirectory,
-							                    "Stay", 0.0f, frame);
-						} else {
-							warning("Zero Comico: destination room %s is not declared",
-							        _pendingRoomName.c_str());
-						}
-						_pendingRoomName.clear();
-						_pendingRoomCutscene.clear();
+					if (!applyPendingRoomTransition()) {
+						done = true;
+						break;
 					}
 
 					if (!_pendingSayText.empty() && !done && !shouldQuit()) {
@@ -2826,6 +2895,7 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 			}
 
 			for (uint32 routeIndex = 1; routeIndex < route.size() && !done && !shouldQuit(); ++routeIndex) {
+				const Common::String routeRoomName = _activeRoomName;
 				const NavNode &targetNode = _activeWalkMap.graph[(uint32)route[routeIndex]];
 				Vec3f target = { targetNode.pos.x, 0.0f, targetNode.pos.y };
 				float dx = target.x - _playerPosition.x;
@@ -2840,9 +2910,40 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 
 				while (distance > 0.0001f && !done && !shouldQuit()) {
 					const float advance = distance < stepDistance ? distance : stepDistance;
+					const Vec3f previousPosition = _playerPosition;
 					_playerPosition.x += dx * advance;
 					_playerPosition.z += dz * advance;
 					distance -= advance;
+
+					bool crossedPortal = false;
+					if (_portalsEnabled && room && !room->portals.empty()) {
+						for (uint32 portalIndex = 0; portalIndex < room->portals.size(); ++portalIndex) {
+							const RoomPortal &portal = room->portals[portalIndex];
+							const ShapeMarker *portalShape = findPortalShape(*room, portal);
+							if (!portalShape ||
+							    !movementCrossesPortal(previousPosition, _playerPosition, *portalShape))
+								continue;
+
+							debug(1, "Zero Comico: crossed retail portal %s from %s to %s",
+							      portal.name.c_str(), room->name.c_str(),
+							      portal.destinationRoom.c_str());
+							_pendingRoomName = portal.destinationRoom;
+							_pendingRoomCutscene.clear();
+							if (!applyPendingRoomTransition()) {
+								done = true;
+								break;
+							}
+							crossedPortal = true;
+							break;
+						}
+					}
+					if (done)
+						break;
+					if (crossedPortal) {
+						// The source-room route is no longer valid after crossing.
+						distance = 0.0f;
+						break;
+					}
 
 					updateAutoCamera();
 
@@ -2885,6 +2986,8 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 					_system->delayMillis(20);
 				}
 
+				if (!_activeRoomName.equalsIgnoreCase(routeRoomName))
+					break;
 				_playerPosition = target;
 				_playerNavNode = route[routeIndex];
 			}
