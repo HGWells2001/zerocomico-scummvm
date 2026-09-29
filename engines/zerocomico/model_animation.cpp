@@ -385,9 +385,9 @@ bool AnimationSampler::sampleTransform(const AnimationClip &clip, const Common::
 }
 
 bool AnimationSampler::sampleCamera(const AnimationClip &clip, const Common::String &targetName,
-                                    float frame, float position[3], float &fovDegrees, float &roll) {
+                                    float frame, float position[3], float &focalLength, float &roll) {
 	position[0] = position[1] = position[2] = 0.0f;
-	fovDegrees = 60.0f;
+	focalLength = 60.0f;
 	roll = 0.0f;
 
 	for (uint32 i = 0; i < clip.tracks.size(); ++i) {
@@ -403,7 +403,7 @@ bool AnimationSampler::sampleCamera(const AnimationClip &clip, const Common::Str
 			position[2] = value[2];
 		}
 		if (sampleChannel(track.channels[1], frame, value))
-			fovDegrees = value[0];
+			focalLength = value[0];
 		if (sampleChannel(track.channels[2], frame, value))
 			roll = value[0];
 		return true;
