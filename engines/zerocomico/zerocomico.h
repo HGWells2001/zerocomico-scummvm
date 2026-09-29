@@ -65,6 +65,7 @@ private:
 	SceneModel _activeScene;
 	SceneModel _playerScene;
 	SequenceScript _playerSequences;
+	Common::Path _playerAssetDirectory;
 	CharacterScript _playerCharacterScript;
 	PuzzleScript _activePuzzle;
 	DialogScript _activeDialog;
