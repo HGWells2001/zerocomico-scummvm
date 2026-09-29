@@ -1198,6 +1198,14 @@ bool ZeroComicoEngine::giveLifeToCharacter(const Common::String &name) {
 			bodyDirectory.appendComponent(lowerStem + ".anj"));
 	}
 	if (!loaded) {
+		// Some retail folders use a lower-case directory but preserve the
+		// character declaration's capitalization in the asset filename
+		// (notably Mp4/bodies/testa/Testa.p3d).
+		loaded = body.loadPair(
+			bodyDirectory.appendComponent(name + ".p3d"),
+			bodyDirectory.appendComponent(name + ".anj"));
+	}
+	if (!loaded) {
 		warning("Zero Comico: cannot load CPU body %s for %s",
 		        definition->initialBodyName.c_str(), name.c_str());
 		return false;
