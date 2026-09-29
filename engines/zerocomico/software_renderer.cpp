@@ -561,7 +561,10 @@ bool SoftwareRenderer::pickMesh(const SceneModel &scene, const RenderCamera &cam
 	if (!buildCameraBasis(camera, right, up, forward))
 		return false;
 
+	const float px = (float)screenX + 0.5f;
+	const float py = (float)screenY + 0.5f;
 	float bestDepth = 1.0e30f;
+
 	for (uint32 candidateIndex = 0; candidateIndex < candidates.size(); ++candidateIndex) {
 		const NamedMesh *namedMesh = scene.findMesh(candidates[candidateIndex]);
 		if (!namedMesh || namedMesh->data.isFlesh())
@@ -571,55 +574,61 @@ bool SoftwareRenderer::pickMesh(const SceneModel &scene, const RenderCamera &cam
 		const Common::Array<Vec3f> *posed =
 			namedMesh->posedVertices.empty() ? nullptr : &namedMesh->posedVertices;
 		const uint32 vertexCount = posed ? posed->size() : mesh.vertices.size();
-		if (vertexCount == 0)
+		if (vertexCount == 0 || mesh.indices.size() < 3)
 			continue;
 
-		float minX = 1.0e30f;
-		float minY = 1.0e30f;
-		float maxX = -1.0e30f;
-		float maxY = -1.0e30f;
-		float nearestDepth = 1.0e30f;
-		uint32 projectedCount = 0;
+		for (uint32 corner = 0; corner + 2 < mesh.indices.size(); corner += 3) {
+			ProjectedVertex projected[3];
+			bool valid = true;
+			for (uint32 i = 0; i < 3; ++i) {
+				const uint32 vertexIndex = mesh.indices[corner + i];
+				if (vertexIndex >= vertexCount) {
+					valid = false;
+					break;
+				}
 
-		for (uint32 vertexIndex = 0; vertexIndex < vertexCount; ++vertexIndex) {
-			Vec3f world;
-			if (posed) {
-				world = (*posed)[vertexIndex];
-			} else if (mesh.isSkinnedParent()) {
-				world = mesh.vertices[vertexIndex];
-			} else {
-				world = transformVertex(mesh.vertices[vertexIndex], mesh.transform);
+				Vec3f world;
+				if (posed)
+					world = (*posed)[vertexIndex];
+				else if (mesh.isSkinnedParent())
+					world = mesh.vertices[vertexIndex];
+				else
+					world = transformVertex(mesh.vertices[vertexIndex], mesh.transform);
+
+				if (!projectVertex(world, camera, right, up, forward, camera.focalPixels,
+				                   width, height, projected[i])) {
+					valid = false;
+					break;
+				}
 			}
-
-			ProjectedVertex projected;
-			if (!projectVertex(world, camera, right, up, forward, camera.focalPixels,
-			                   width, height, projected))
+			if (!valid)
 				continue;
 
-			if (projected.x < minX) minX = projected.x;
-			if (projected.x > maxX) maxX = projected.x;
-			if (projected.y < minY) minY = projected.y;
-			if (projected.y > maxY) maxY = projected.y;
-			if (projected.z < nearestDepth) nearestDepth = projected.z;
-			++projectedCount;
-		}
+			const float area = edge(projected[0].x, projected[0].y,
+			                        projected[1].x, projected[1].y,
+			                        projected[2].x, projected[2].y);
+			if (std::fabs(area) < 1.0e-6f)
+				continue;
 
-		if (projectedCount == 0)
-			continue;
+			const float w0 = edge(projected[1].x, projected[1].y,
+			                      projected[2].x, projected[2].y, px, py) / area;
+			const float w1 = edge(projected[2].x, projected[2].y,
+			                      projected[0].x, projected[0].y, px, py) / area;
+			const float w2 = 1.0f - w0 - w1;
+			if (w0 < -0.0025f || w1 < -0.0025f || w2 < -0.0025f)
+				continue;
 
-		// A small pad keeps thin doorframes and props usable without turning the
-		// whole room into overlapping giant hotspots.
-		minX -= 4.0f;
-		minY -= 4.0f;
-		maxX += 4.0f;
-		maxY += 4.0f;
-		if ((float)screenX < minX || (float)screenX > maxX ||
-		    (float)screenY < minY || (float)screenY > maxY)
-			continue;
-
-		if (nearestDepth < bestDepth) {
-			bestDepth = nearestDepth;
-			pickedName = namedMesh->name;
+			// Use the same perspective depth interpolation as rasterization so an
+			// overlapping hotspot resolves to the triangle actually visible in front.
+			const float invDepth =
+				w0 / projected[0].z + w1 / projected[1].z + w2 / projected[2].z;
+			if (invDepth <= 0.0f)
+				continue;
+			const float depth = 1.0f / invDepth;
+			if (depth < bestDepth) {
+				bestDepth = depth;
+				pickedName = namedMesh->name;
+			}
 		}
 	}
 
