@@ -46,6 +46,7 @@ struct CpuCharacterRuntime {
 	bool lifeBroken;
 	bool positioned;
 	bool haveFacing;
+	int32 waitState;
 };
 
 class ZeroComicoEngine : public Engine, public ScriptVMHost {

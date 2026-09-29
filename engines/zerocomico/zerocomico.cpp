@@ -1455,6 +1455,7 @@ bool ZeroComicoEngine::giveLifeToCharacter(const Common::String &name) {
 	runtime.lifeBroken = definition->breakLifeOnInitialize;
 	runtime.positioned = false;
 	runtime.haveFacing = false;
+	runtime.waitState = 0;
 	_cpuCharacters.push_back(runtime);
 
 	debug(1, "Zero Comico: GiveLifeToChar activated %s using %s in %s%s",
@@ -2137,6 +2138,27 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 		if (!line)
 			return false;
 		return showScriptLine(instruction.args[0], *line);
+	}
+
+	if (op.equalsIgnoreCase("SetWaitState")) {
+		if (instruction.args.size() < 2)
+			return false;
+
+		CpuCharacterRuntime *character = findCpuCharacter(instruction.args[0]);
+		if (!character)
+			return false;
+
+		int32 enabled = 0;
+		if (!_scriptVM.resolveValue(instruction.args[1], enabled))
+			return false;
+
+		// Zero Comico.exe stores 0 for disabled and 0x1f for enabled at
+		// character offset +0x150. Preserve the exact retail value even though
+		// the CPU-character autonomous state machine is not active yet.
+		character->waitState = enabled == 0 ? 0 : 0x1f;
+		debug(1, "Zero Comico: %s wait state = %d",
+		      character->name.c_str(), (int)character->waitState);
+		return true;
 	}
 
 	if (op.equalsIgnoreCase("SetAnimSet")) {
