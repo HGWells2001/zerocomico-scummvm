@@ -17,6 +17,7 @@
 #include "zerocomico/sequence_script.h"
 #include "zerocomico/shape_script.h"
 #include "zerocomico/software_renderer.h"
+#include "zerocomico/text_table_script.h"
 #include "graphics/managed_surface.h"
 
 struct ADGameDescription;
@@ -69,6 +70,7 @@ private:
 	CharacterScript _playerCharacterScript;
 	PuzzleScript _activePuzzle;
 	DialogScript _activeDialog;
+	TextTableScript _activeTextTables;
 	ShapeScript _activeShapes;
 	SoftwareRenderer _gameplayRenderer;
 	BspMap _activeWalkMap;
