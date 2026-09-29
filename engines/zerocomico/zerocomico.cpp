@@ -23,6 +23,7 @@
 #include "graphics/surface.h"
 
 #include "audio/mixer.h"
+#include "audio/audiostream.h"
 #ifdef USE_MAD
 #include "audio/decoders/mp3.h"
 #endif
@@ -1303,6 +1304,58 @@ bool ZeroComicoEngine::evaluateScriptCondition(const ScriptInstruction &instruct
 	return false;
 }
 
+void ZeroComicoEngine::startRoomMusic(const Common::String &fileName, float volume) {
+	if (fileName.empty()) {
+		if (_mixer->isSoundHandleActive(_musicHandle))
+			_mixer->stopHandle(_musicHandle);
+		_currentMusicName.clear();
+		return;
+	}
+
+	if (_currentMusicName.equalsIgnoreCase(fileName) &&
+	    _mixer->isSoundHandleActive(_musicHandle))
+		return;
+
+	if (_mixer->isSoundHandleActive(_musicHandle))
+		_mixer->stopHandle(_musicHandle);
+	_currentMusicName.clear();
+
+#ifdef USE_MAD
+	Common::File *musicFile = new Common::File();
+	const Common::Path musicPath =
+		Common::Path("Music").appendComponent(fileName);
+	if (!musicFile->open(musicPath)) {
+		delete musicFile;
+		warning("Zero Comico: cannot open room music %s", musicPath.toString().c_str());
+		return;
+	}
+
+	Audio::SeekableAudioStream *decoded =
+		Audio::makeMP3Stream(musicFile, DisposeAfterUse::YES);
+	if (!decoded) {
+		delete musicFile;
+		warning("Zero Comico: cannot decode room music %s", musicPath.toString().c_str());
+		return;
+	}
+
+	float clampedVolume = volume;
+	if (clampedVolume < 0.0f)
+		clampedVolume = 0.0f;
+	if (clampedVolume > 100.0f)
+		clampedVolume = 100.0f;
+	const byte mixerVolume = (byte)(clampedVolume * Audio::Mixer::kMaxChannelVolume / 100.0f + 0.5f);
+
+	Audio::AudioStream *loop =
+		Audio::makeLoopingAudioStream(decoded, 0);
+	_mixer->playStream(Audio::Mixer::kMusicSoundType, &_musicHandle, loop,
+	                   -1, mixerVolume);
+	_currentMusicName = fileName;
+	debug(1, "Zero Comico: room music %s at %.1f%%", fileName.c_str(), clampedVolume);
+#else
+	(void)volume;
+#endif
+}
+
 void ZeroComicoEngine::playFilmIfPresent(const Common::Path &path) {
 	if (!Common::File::exists(path))
 		return;
@@ -1902,6 +1955,8 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 		renderCamera.focalPixels = embedded->data.fov * 800.0f / 36.0f;
 	}
 
+	startRoomMusic(room->music, room->musicVolume);
+
 	auto applyPendingCamera = [&]() -> bool {
 		if (_pendingCameraName.empty())
 			return false;
@@ -2311,6 +2366,7 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 
 							_pendingCameraName.clear();
 							_defaultRoomCameraName = room->camera;
+							startRoomMusic(room->music, room->musicVolume);
 							cameraName = room->camera;
 							bool nextCameraReady = false;
 							const ScriptCamera *nextScriptCamera = cameraScript.findCamera(cameraName);
