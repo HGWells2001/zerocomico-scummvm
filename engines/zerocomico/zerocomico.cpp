@@ -1364,37 +1364,59 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 		return false;
 	}
 
-	const Common::Path playerDirectory("Mpx/bodies/Giovanni");
-	_playerScene.clear();
-	const bool havePlayerScene = _playerScene.loadPair(
-		playerDirectory.appendComponent("Giovanni.p3d"),
-		playerDirectory.appendComponent("Giovanni.anj"));
-	if (!havePlayerScene)
-		warning("Zero Comico: cannot decode Giovanni P3D/ANJ scene");
-	else
-		debug(1, "Zero Comico: Giovanni decoded: %u materials, %u meshes, %u clips",
-		      (uint)_playerScene.materials.size(), (uint)_playerScene.meshes.size(),
-		      (uint)_playerScene.clips.size());
+	const Common::Path characterPath(level + "/gameplay/char.isc");
+	Common::String playerAssetStem("Giovanni");
+	if (!_playerCharacterScript.load(characterPath)) {
+		warning("Zero Comico: cannot parse playable character metadata %s",
+		        characterPath.toString().c_str());
+	} else {
+		const uint32 separator = _playerCharacterScript.initialBodyName.find('_');
+		if (separator != Common::String::npos &&
+		    separator + 1 < _playerCharacterScript.initialBodyName.size())
+			playerAssetStem = _playerCharacterScript.initialBodyName.substr(separator + 1);
 
-	if (!_playerSequences.load(playerDirectory.appendComponent("Giovanni.seq"))) {
-		warning("Zero Comico: cannot parse Giovanni.seq");
+		debug(1, "Zero Comico: main player %s uses %s (%s), combine block=%s",
+		      _playerCharacterScript.playerName.c_str(),
+		      _playerCharacterScript.initialBodyName.c_str(), playerAssetStem.c_str(),
+		      _playerCharacterScript.hasCombineBlock() ? "yes" : "no");
+	}
+
+	Common::Path playerDirectory =
+		Common::Path("Mpx/bodies").appendComponent(playerAssetStem);
+	_playerScene.clear();
+	bool havePlayerScene = _playerScene.loadPair(
+		playerDirectory.appendComponent(playerAssetStem + ".p3d"),
+		playerDirectory.appendComponent(playerAssetStem + ".anj"));
+
+	// The retail tree mixes Giovanni with title-case directory spelling and
+	// aldo/giacomo with lower-case folders. Retry the folder only, keeping the
+	// actual asset filename stem from the character script.
+	if (!havePlayerScene) {
+		Common::String lowerFolder = playerAssetStem;
+		lowerFolder.toLowercase();
+		playerDirectory = Common::Path("Mpx/bodies").appendComponent(lowerFolder);
+		havePlayerScene = _playerScene.loadPair(
+			playerDirectory.appendComponent(playerAssetStem + ".p3d"),
+			playerDirectory.appendComponent(playerAssetStem + ".anj"));
+	}
+
+	if (!havePlayerScene)
+		warning("Zero Comico: cannot decode main-player P3D/ANJ scene %s",
+		        playerAssetStem.c_str());
+	else
+		debug(1, "Zero Comico: player %s decoded: %u materials, %u meshes, %u clips",
+		      playerAssetStem.c_str(), (uint)_playerScene.materials.size(),
+		      (uint)_playerScene.meshes.size(), (uint)_playerScene.clips.size());
+
+	if (!_playerSequences.load(playerDirectory.appendComponent(playerAssetStem + ".seq"))) {
+		warning("Zero Comico: cannot parse player sequence file %s.seq",
+		        playerAssetStem.c_str());
 	} else {
 		const AnimationSequence *walkSequence = _playerSequences.findSequence("cammina");
 		const AnimationSequence *runSequence = _playerSequences.findSequence("corsa");
 		debug(1, "Zero Comico: JACS body %s exposes %u sequences (walk=%s, run=%s)",
 		      _playerSequences.bodyName.c_str(), (uint)_playerSequences.sequences.size(),
 		      walkSequence ? "yes" : "no", runSequence ? "yes" : "no");
-	}
-
-	const Common::Path characterPath(level + "/gameplay/char.isc");
-	if (!_playerCharacterScript.load(characterPath)) {
-		warning("Zero Comico: cannot parse playable character metadata %s",
-		        characterPath.toString().c_str());
-	} else {
-		debug(1, "Zero Comico: main player %s uses %s, combine block=%s",
-		      _playerCharacterScript.playerName.c_str(),
-		      _playerCharacterScript.initialBodyName.c_str(),
-		      _playerCharacterScript.hasCombineBlock() ? "yes" : "no");
 	}
 
 	const Common::Path puzzlePath(level + "/gameplay/puzzle.isc");
