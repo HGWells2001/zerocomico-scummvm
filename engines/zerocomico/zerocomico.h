@@ -26,6 +26,13 @@ struct ADGameDescription;
 
 namespace ZeroComico {
 
+struct DynamicSceneEntity {
+	Common::String name;
+	Common::String roomName;
+	NamedMesh mesh;
+	Common::Array<NamedMaterial> materials;
+};
+
 class ZeroComicoEngine : public Engine, public ScriptVMHost {
 public:
 	ZeroComicoEngine(OSystem *syst, const ADGameDescription *desc);
@@ -67,6 +74,12 @@ private:
 	void showBootstrapScreen();
 	void waitForExit();
 	void updateScriptKeyState(const Common::Event &event);
+	DynamicSceneEntity *findDynamicSceneEntity(const Common::String &name);
+	const DynamicSceneEntity *findDynamicSceneEntity(const Common::String &name) const;
+	bool cloneSceneEntity(const Common::String &sourceName, const Common::String &cloneName);
+	void installDynamicBackgroundForRoom(const Common::String &roomName);
+	bool setSceneEntityTranslation(const Common::String &name, const Vec3f &position);
+	bool setSceneEntityVectorTransform(const Common::String &name, const ShapeMarker &marker);
 
 	const ADGameDescription *_gameDescription;
 	SceneModel _menuScene;
@@ -124,6 +137,7 @@ private:
 	Common::Array<Common::String> _sceneLoopSources;
 	Common::Array<uint32> _sceneLoopStartMillis;
 	Common::Array<Common::String> _loadedSetpAssets;
+	Common::Array<DynamicSceneEntity> _dynamicSceneEntities;
 	ScriptVM _scriptVM;
 	bool _interfaceDisabled;
 	bool _3dEnabled;

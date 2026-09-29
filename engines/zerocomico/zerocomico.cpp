@@ -942,6 +942,166 @@ bool ZeroComicoEngine::playCutscene(const Common::String &name) {
 	return !shouldQuit();
 }
 
+DynamicSceneEntity *ZeroComicoEngine::findDynamicSceneEntity(const Common::String &name) {
+	for (uint32 i = 0; i < _dynamicSceneEntities.size(); ++i)
+		if (_dynamicSceneEntities[i].name.equalsIgnoreCase(name))
+			return &_dynamicSceneEntities[i];
+	return nullptr;
+}
+
+const DynamicSceneEntity *ZeroComicoEngine::findDynamicSceneEntity(const Common::String &name) const {
+	for (uint32 i = 0; i < _dynamicSceneEntities.size(); ++i)
+		if (_dynamicSceneEntities[i].name.equalsIgnoreCase(name))
+			return &_dynamicSceneEntities[i];
+	return nullptr;
+}
+
+static void translateRigidMesh(NamedMesh &mesh, const Vec3f &position) {
+	const Vec3f delta = {
+		position.x - mesh.data.transform.translation.x,
+		position.y - mesh.data.transform.translation.y,
+		position.z - mesh.data.transform.translation.z
+	};
+
+	// MeshData vertices retain the retail loader representation
+	// filePosition + translation - pivot. Move that stored representation by
+	// the same delta as the transform so transformVertex() keeps the object's
+	// local geometry intact while changing its world position.
+	for (uint32 i = 0; i < mesh.data.vertices.size(); ++i) {
+		mesh.data.vertices[i].x += delta.x;
+		mesh.data.vertices[i].y += delta.y;
+		mesh.data.vertices[i].z += delta.z;
+	}
+	mesh.data.transform.translation = position;
+}
+
+bool ZeroComicoEngine::cloneSceneEntity(const Common::String &sourceName,
+                                        const Common::String &cloneName) {
+	if (findDynamicSceneEntity(cloneName) || _activeScene.findMesh(cloneName))
+		return true;
+
+	const NamedMesh *source = _activeScene.findMesh(sourceName);
+	if (!source) {
+		const DynamicSceneEntity *dynamicSource = findDynamicSceneEntity(sourceName);
+		if (dynamicSource)
+			source = &dynamicSource->mesh;
+	}
+	if (!source) {
+		warning("Zero Comico: CloneEntity source %s is not available", sourceName.c_str());
+		return false;
+	}
+
+	DynamicSceneEntity entity;
+	entity.name = cloneName;
+	entity.mesh = *source;
+	entity.mesh.name = cloneName;
+
+	for (uint32 i = 0; i < entity.mesh.data.materials.size(); ++i) {
+		const Common::String &materialName = entity.mesh.data.materials[i].name;
+		bool duplicate = false;
+		for (uint32 j = 0; j < entity.materials.size(); ++j) {
+			if (entity.materials[j].name.equalsIgnoreCase(materialName)) {
+				duplicate = true;
+				break;
+			}
+		}
+		if (duplicate)
+			continue;
+
+		const NamedMaterial *material = _activeScene.findMaterial(materialName);
+		if (!material) {
+			for (uint32 j = 0; j < _dynamicSceneEntities.size() && !material; ++j)
+				for (uint32 k = 0; k < _dynamicSceneEntities[j].materials.size(); ++k)
+					if (_dynamicSceneEntities[j].materials[k].name.equalsIgnoreCase(materialName)) {
+						material = &_dynamicSceneEntities[j].materials[k];
+						break;
+					}
+		}
+		if (material)
+			entity.materials.push_back(*material);
+	}
+
+	_dynamicSceneEntities.push_back(entity);
+	debug(1, "Zero Comico: cloned scene entity %s -> %s",
+	      sourceName.c_str(), cloneName.c_str());
+	return true;
+}
+
+void ZeroComicoEngine::installDynamicBackgroundForRoom(const Common::String &roomName) {
+	for (uint32 i = 0; i < _dynamicSceneEntities.size(); ++i) {
+		DynamicSceneEntity &entity = _dynamicSceneEntities[i];
+		if (!entity.roomName.equalsIgnoreCase(roomName))
+			continue;
+
+		for (uint32 m = 0; m < entity.materials.size(); ++m)
+			if (!_activeScene.findMaterial(entity.materials[m].name))
+				_activeScene.materials.push_back(entity.materials[m]);
+
+		NamedMesh *existing = _activeScene.findMesh(entity.name);
+		if (existing)
+			*existing = entity.mesh;
+		else
+			_activeScene.meshes.push_back(entity.mesh);
+	}
+}
+
+bool ZeroComicoEngine::setSceneEntityTranslation(const Common::String &name,
+                                                  const Vec3f &position) {
+	bool changed = false;
+	DynamicSceneEntity *dynamic = findDynamicSceneEntity(name);
+	if (dynamic) {
+		translateRigidMesh(dynamic->mesh, position);
+		changed = true;
+	}
+
+	NamedMesh *active = _activeScene.findMesh(name);
+	if (active) {
+		translateRigidMesh(*active, position);
+		changed = true;
+	}
+	return changed;
+}
+
+bool ZeroComicoEngine::setSceneEntityVectorTransform(const Common::String &name,
+                                                      const ShapeMarker &marker) {
+	Vec3f direction = subtractVec3(marker.b, marker.a);
+	direction.y = 0.0f;
+	if (!normalizeVec3(direction))
+		return false;
+
+	const float yaw = std::atan2(direction.x, -direction.z);
+	const float cs = std::cos(yaw);
+	const float sn = std::sin(yaw);
+
+	bool changed = false;
+	DynamicSceneEntity *dynamic = findDynamicSceneEntity(name);
+	NamedMesh *targets[2] = {
+		dynamic ? &dynamic->mesh : nullptr,
+		_activeScene.findMesh(name)
+	};
+
+	for (uint32 targetIndex = 0; targetIndex < ARRAYSIZE(targets); ++targetIndex) {
+		NamedMesh *mesh = targets[targetIndex];
+		if (!mesh)
+			continue;
+		if (targetIndex == 1 && targets[0] == targets[1])
+			continue;
+
+		translateRigidMesh(*mesh, marker.a);
+		mesh->data.transform.matrix[0] = cs;
+		mesh->data.transform.matrix[1] = 0.0f;
+		mesh->data.transform.matrix[2] = -sn;
+		mesh->data.transform.matrix[3] = 0.0f;
+		mesh->data.transform.matrix[4] = 1.0f;
+		mesh->data.transform.matrix[5] = 0.0f;
+		mesh->data.transform.matrix[6] = sn;
+		mesh->data.transform.matrix[7] = 0.0f;
+		mesh->data.transform.matrix[8] = cs;
+		changed = true;
+	}
+	return changed;
+}
+
 bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction) {
 	const Common::String &op = instruction.opcode;
 
@@ -1109,11 +1269,78 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 		return true;
 	}
 
-	// Scene-construction/controller boundaries used by later main places. The
-	// decoded room/cutscene assets are already loaded independently by this
-	// engine, so these can advance the retail startup script without inventing
-	// state we do not render yet. Clone placement is deliberately left as a
-	// boundary until dynamic scene instances are represented natively.
+	// Scene-construction commands. CloneEntity's retail callback is empty
+	// because its typed entity argument resolver performs the clone before the
+	// callback fires. Our VM has no such binder, so reproduce that side effect
+	// explicitly here.
+	if (op.equalsIgnoreCase("CloneEntity")) {
+		if (instruction.args.size() < 2)
+			return false;
+		return cloneSceneEntity(instruction.args[0], instruction.args[1]);
+	}
+
+	if (op.equalsIgnoreCase("SetEntityPos_Vector")) {
+		if (instruction.args.size() < 2)
+			return false;
+		const ShapeMarker *marker = _activeShapes.find(instruction.args[1]);
+		if (!marker)
+			return false;
+		if (!setSceneEntityVectorTransform(instruction.args[0], *marker)) {
+			warning("Zero Comico: SetEntityPos_Vector cannot resolve %s",
+			        instruction.args[0].c_str());
+			return false;
+		}
+		return true;
+	}
+
+	if (op.equalsIgnoreCase("InsertInBackground")) {
+		if (instruction.args.size() < 2)
+			return false;
+		DynamicSceneEntity *entity = findDynamicSceneEntity(instruction.args[1]);
+		if (!entity) {
+			// Existing room entities can also be inserted/reinserted by retail
+			// scripts; their base room scene already owns them.
+			return _activeScene.findMesh(instruction.args[1]) != nullptr;
+		}
+		entity->roomName = instruction.args[0];
+		if (_activeRoomName.equalsIgnoreCase(entity->roomName))
+			installDynamicBackgroundForRoom(_activeRoomName);
+		return true;
+	}
+
+	if (op.equalsIgnoreCase("setpos_x") ||
+	    op.equalsIgnoreCase("setpos_y") ||
+	    op.equalsIgnoreCase("setpos_z")) {
+		if (instruction.args.size() < 2)
+			return false;
+		float value = 0.0f;
+		int32 integerValue = 0;
+		if (_scriptVM.resolveValue(instruction.args[1], integerValue))
+			value = (float)integerValue;
+		else if (!parseScriptFloat(instruction.args[1], value))
+			return false;
+
+		NamedMesh *active = _activeScene.findMesh(instruction.args[0]);
+		DynamicSceneEntity *dynamic = findDynamicSceneEntity(instruction.args[0]);
+		if (!active && !dynamic) {
+			// Setp targets may be hierarchy/controller names rather than visible
+			// meshes. Those need their own controller transform path.
+			debug(2, "Zero Comico: %s target %s is not a rigid mesh",
+			      op.c_str(), instruction.args[0].c_str());
+			return true;
+		}
+
+		Vec3f position = active ? active->data.transform.translation
+		                        : dynamic->mesh.data.transform.translation;
+		if (op.equalsIgnoreCase("setpos_x"))
+			position.x = value;
+		else if (op.equalsIgnoreCase("setpos_y"))
+			position.y = value;
+		else
+			position.z = value;
+		return setSceneEntityTranslation(instruction.args[0], position);
+	}
+
 	if (op.equalsIgnoreCase("Setpos_z_by_index")) {
 		if (instruction.args.size() < 3)
 			return false;
@@ -1129,10 +1356,13 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 
 		const Common::String entityName = indexedSceneEntityName(instruction.args[0], (int)index);
 		NamedMesh *mesh = _activeScene.findMesh(entityName);
-		if (!mesh)
+		const DynamicSceneEntity *dynamic = findDynamicSceneEntity(entityName);
+		if (!mesh && !dynamic)
 			return false;
-		mesh->data.transform.translation.z = z;
-		return true;
+		Vec3f position = mesh ? mesh->data.transform.translation
+		                    : dynamic->mesh.data.transform.translation;
+		position.z = z;
+		return setSceneEntityTranslation(entityName, position);
 	}
 
 	if (op.equalsIgnoreCase("hide_by_index")) {
@@ -1223,12 +1453,6 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 	}
 
 	if (op.equalsIgnoreCase("GiveLifeToChar") ||
-	    op.equalsIgnoreCase("setpos_x") ||
-	    op.equalsIgnoreCase("setpos_y") ||
-	    op.equalsIgnoreCase("setpos_z") ||
-	    op.equalsIgnoreCase("CloneEntity") ||
-	    op.equalsIgnoreCase("SetEntityPos_Vector") ||
-	    op.equalsIgnoreCase("InsertInBackground") ||
 	    op.equalsIgnoreCase("dcue_all"))
 		return true;
 
@@ -2269,6 +2493,7 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 	_sceneLoopSources.clear();
 	_sceneLoopStartMillis.clear();
 	_loadedSetpAssets.clear();
+	_dynamicSceneEntities.clear();
 
 	const Common::Path roomScript(level + "/gameplay/room.isc");
 	ScriptProgram roomProgram;
@@ -2886,6 +3111,7 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 			        room->name.c_str());
 			return false;
 		}
+		installDynamicBackgroundForRoom(room->name);
 
 		_activeWalkMap = BspMap();
 		_activeCameraMap = BspMap();
