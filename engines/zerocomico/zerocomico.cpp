@@ -908,6 +908,15 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 		return true;
 	}
 
+	if (op.equalsIgnoreCase("ResetCamera")) {
+		if (_defaultRoomCameraName.empty())
+			return false;
+		_pendingCameraName = _defaultRoomCameraName;
+		debug(1, "Zero Comico: script reset camera to room default %s",
+		      _defaultRoomCameraName.c_str());
+		return true;
+	}
+
 	if (op.equalsIgnoreCase("say")) {
 		if (instruction.args.empty())
 			return false;
@@ -1854,6 +1863,7 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 			debug(1, "Zero Comico: player start mapped to navigation node %d", _playerNavNode);
 	}
 
+	_defaultRoomCameraName = room->camera;
 	Common::String cameraName = room->camera;
 	RenderCamera renderCamera;
 	bool haveRenderCamera = false;
@@ -2300,6 +2310,7 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 									_playerPosition.x, _playerPosition.z);
 
 							_pendingCameraName.clear();
+							_defaultRoomCameraName = room->camera;
 							cameraName = room->camera;
 							bool nextCameraReady = false;
 							const ScriptCamera *nextScriptCamera = cameraScript.findCamera(cameraName);
