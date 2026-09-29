@@ -46,6 +46,11 @@ static const char *const kMenuButtons[] = {
 
 static const int kMenuButtonCount = 5;
 
+// Zero Comico.exe initializes the Subjective-camera fallback eye height to
+// 0.52 metres. With the retail GlobalScaling value of 1, the engine's world
+// conversion (value * 100 * GlobalScaling) produces 52 world units.
+static const float kSubjectiveFallbackEyeHeight = 52.0f;
+
 enum ScriptKeyMask {
 	kScriptKeyLeft    = 1 << 0,
 	kScriptKeyRight   = 1 << 1,
@@ -2912,11 +2917,12 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 		if (_cameraMode == 1) {
 			// Retail Subjective mode obtains an attachment/head point from the live
 			// character, offsets source by 0.125 m (12.5 world units) along forward,
-			// then aims another 40 world units forward. The current native actor
-			// runtime does not expose the named head attachment yet, so SpotHeight is
-			// used as the vertical fallback while retaining the measured offsets.
+			// then aims another 40 world units forward. When the head attachment is
+			// unavailable, Zero Comico.exe uses a distinct 0.52 m fallback height,
+			// not SpotHeight. The native actor runtime does not expose that attachment
+			// yet, so use the measured retail fallback here.
 			Vec3f source = _playerPosition;
-			source.y += _spotHeight;
+			source.y += kSubjectiveFallbackEyeHeight;
 			source.x += forward.x * 12.5f;
 			source.z += forward.z * 12.5f;
 
