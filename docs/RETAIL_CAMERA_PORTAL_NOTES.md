@@ -164,6 +164,33 @@ Changing camera mode alone does not destroy that Spot history. The
 reimplementation now mirrors that separation instead of sharing the smoothing
 state with Subjective mode.
 
+### SpotMinDistance and look-ahead order
+
+The final Spot-camera operations were verified directly in `Zero Comico.exe`.
+After MapCam clipping, vertical correction and smoothing, the engine computes
+the horizontal unit vector:
+
+```text
+look = normalizeXZ(focus - smoothedCamera)
+```
+
+It then performs the two operations in this order:
+
+```text
+camera = smoothedCamera - look * SpotMinDistance
+target = focus          + look * 150
+```
+
+The Y component is explicitly cleared before normalizing the look vector, so
+both offsets are horizontal. The current runtime already matched this order and
+orientation; no gameplay-code correction was required.
+
+The executable also pushes the literal float `48.0` when selecting the active
+camera through a generic renderer helper. Cross-references show the same value
+for Placed and other camera selections, not only Spot, and the examined helper
+does not consume that second argument on this path. It is therefore not treated
+as a Spot FOV or another missing Spot parameter.
+
 ## SetPlace followed by SetMap
 
 Retail scripts can request a room first and its map immediately afterwards,
