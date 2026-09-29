@@ -54,6 +54,19 @@ static bool containsIgnoreCase(const Common::Array<Common::String> &values,
 	return false;
 }
 
+static Common::String pairedCameraMapName(const Common::String &walkMap) {
+	Common::String lower = walkMap;
+	lower.toLowercase();
+	const uint32 marker = lower.find("_map");
+	if (marker == Common::String::npos)
+		return Common::String();
+
+	Common::String cameraMap = walkMap.substr(0, marker + 4);
+	cameraMap += "Cam";
+	cameraMap += walkMap.substr(marker + 4);
+	return cameraMap;
+}
+
 static bool removeIgnoreCase(Common::Array<Common::String> &values,
                              const Common::String &value) {
 	for (uint32 i = 0; i < values.size(); ++i) {
@@ -888,16 +901,43 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 		if (instruction.args.size() < 2 || _currentMainPlace.empty())
 			return false;
 
-		const Common::Path mapPath =
-			Common::Path(_currentMainPlace + "/gameplay").appendComponent(instruction.args[1]);
+		const Common::String &requestedMap = instruction.args[1];
+		if (!_activeRoomMaps.empty() && !containsIgnoreCase(_activeRoomMaps, requestedMap)) {
+			warning("Zero Comico: map %s is not declared for room %s",
+			        requestedMap.c_str(), _activeRoomName.c_str());
+			return false;
+		}
+
+		const Common::Path gameplayDirectory(_currentMainPlace + "/gameplay");
+		const Common::Path mapPath = gameplayDirectory.appendComponent(requestedMap);
 		BspMap replacement;
 		if (!replacement.load(mapPath))
 			return false;
+
+		BspMap cameraReplacement;
+		bool replaceCameraMap = false;
+		const Common::String expectedCameraMap = pairedCameraMapName(requestedMap);
+		if (!expectedCameraMap.empty()) {
+			for (uint32 i = 0; i < _activeRoomCameraMaps.size(); ++i) {
+				if (!_activeRoomCameraMaps[i].equalsIgnoreCase(expectedCameraMap))
+					continue;
+				const Common::Path cameraMapPath =
+					gameplayDirectory.appendComponent(_activeRoomCameraMaps[i]);
+				if (!cameraReplacement.load(cameraMapPath))
+					return false;
+				replaceCameraMap = true;
+				break;
+			}
+		}
+
 		_activeWalkMap = replacement;
+		if (replaceCameraMap)
+			_activeCameraMap = cameraReplacement;
 		_playerNavNode = _activeWalkMap.graph.empty()
 			? -1 : _activeWalkMap.nearestGraphNode(_playerPosition.x, _playerPosition.z);
-		debug(1, "Zero Comico: switched walk map to %s at node %d",
-		      instruction.args[1].c_str(), _playerNavNode);
+		debug(1, "Zero Comico: switched walk map to %s%s at node %d",
+		      requestedMap.c_str(), replaceCameraMap ? " with paired camera map" : "",
+		      _playerNavNode);
 		return true;
 	}
 
@@ -1827,6 +1867,10 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 		level = Common::String("Mp") + level.substr(2);
 
 	_currentMainPlace = level;
+	_activeRoomName.clear();
+	_activeRoomPrefix.clear();
+	_activeRoomMaps.clear();
+	_activeRoomCameraMaps.clear();
 	_playerHatVisible = true;
 	_pendingSaySpeaker.clear();
 	_pendingSayText.clear();
@@ -1887,7 +1931,10 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 		return false;
 	}
 
+	_activeRoomName = room->name;
 	_activeRoomPrefix = room->prefix;
+	_activeRoomMaps = room->maps;
+	_activeRoomCameraMaps = room->cameraMaps;
 
 	_havePlayerStart = false;
 	_activeShapes = ShapeScript();
@@ -2437,7 +2484,10 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 						const RoomDefinition *nextRoom = chapter.findRoom(_pendingRoomName);
 						if (nextRoom) {
 							room = nextRoom;
+							_activeRoomName = room->name;
 							_activeRoomPrefix = room->prefix;
+							_activeRoomMaps = room->maps;
+							_activeRoomCameraMaps = room->cameraMaps;
 							Common::String nextStem = room->name;
 							nextStem.toLowercase();
 
