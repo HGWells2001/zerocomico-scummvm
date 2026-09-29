@@ -98,4 +98,11 @@ bool CharacterScript::parse() {
 	return !initialBodyName.empty();
 }
 
+const CharacterAnimSet *CharacterScript::findAnimSet(const Common::String &name) const {
+	for (uint32 i = 0; i < animSets.size(); ++i)
+		if (animSets[i].name.equalsIgnoreCase(name))
+			return &animSets[i];
+	return nullptr;
+}
+
 } // namespace ZeroComico
