@@ -999,8 +999,7 @@ bool ZeroComicoEngine::cloneSceneEntity(const Common::String &sourceName,
 			helperStem = helperStem.substr(0, separator);
 		helperStem.toLowercase();
 
-		const Common::Path helperDirectory =
-			Common::Path(_currentMainPlace + "/bodies/helpers").appendComponent(helperStem);
+		const Common::Path helperDirectory(_currentMainPlace + "/bodies/helpers");
 		if (helperScene.loadPair(
 				helperDirectory.appendComponent(helperStem + ".p3d"),
 				helperDirectory.appendComponent(helperStem + ".anj"))) {
