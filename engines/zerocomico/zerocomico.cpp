@@ -863,11 +863,11 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 		return true;
 
 	if (op.equalsIgnoreCase("say")) {
-		if (!instruction.args.empty()) {
-			_pendingSaySpeaker = "Giovanni";
-			_pendingSayText = instruction.args[0];
-		}
-		return true;
+		if (instruction.args.empty())
+			return false;
+		const Common::String speaker = _playerCharacterScript.playerName.empty()
+			? Common::String("MainPlayer") : _playerCharacterScript.playerName;
+		return showScriptLine(speaker, instruction.args[0]);
 	}
 
 	if (op.equalsIgnoreCase("start_dialog")) {
@@ -998,12 +998,43 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 		return true;
 	}
 
-	// Text-table substitution is the remaining part of the retail dynamic
-	// dialogue system. Preserve the script flow until those text tables are
-	// decoded into mutable line content.
-	if (op.equalsIgnoreCase("ModifySentence") ||
-	    op.equalsIgnoreCase("csay_FromTextable"))
+	if (op.equalsIgnoreCase("ModifySentence")) {
+		if (instruction.args.size() < 5)
+			return false;
+
+		int32 sentenceIndex = 0;
+		int32 tableIndex = 0;
+		if (!_scriptVM.resolveValue(instruction.args[2], sentenceIndex) ||
+		    !_scriptVM.resolveValue(instruction.args[4], tableIndex) ||
+		    sentenceIndex < 0)
+			return false;
+
+		DialogDefinition *dialog = _activeDialog.findDialogMutable(instruction.args[1]);
+		const Common::String *replacement =
+			_activeTextTables.findLine(instruction.args[3], tableIndex);
+		if (!dialog || !replacement || (uint32)sentenceIndex >= dialog->lines.size())
+			return false;
+
+		dialog->lines[(uint32)sentenceIndex].text = *replacement;
+		debug(1, "Zero Comico: dialogue %s sentence %d <- %s[%d]",
+		      instruction.args[1].c_str(), sentenceIndex,
+		      instruction.args[3].c_str(), tableIndex);
 		return true;
+	}
+
+	if (op.equalsIgnoreCase("csay_FromTextable")) {
+		if (instruction.args.size() < 3)
+			return false;
+
+		int32 tableIndex = 0;
+		if (!_scriptVM.resolveValue(instruction.args[2], tableIndex))
+			return false;
+		const Common::String *line =
+			_activeTextTables.findLine(instruction.args[1], tableIndex);
+		if (!line)
+			return false;
+		return showScriptLine(instruction.args[0], *line);
+	}
 
 	if (op.equalsIgnoreCase("SetAnimSet")) {
 		if (instruction.args.size() < 2)
@@ -1098,13 +1129,11 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 		return true;
 
 	if (op.equalsIgnoreCase("csay")) {
-		if (instruction.args.size() >= 2) {
-			_pendingSaySpeaker = instruction.args[0];
-			_pendingSayText = instruction.args[1];
-			debug(1, "Zero Comico: %s says: %s",
-			      _pendingSaySpeaker.c_str(), _pendingSayText.c_str());
-		}
-		return true;
+		if (instruction.args.size() < 2)
+			return false;
+		debug(1, "Zero Comico: %s says: %s",
+		      instruction.args[0].c_str(), instruction.args[1].c_str());
+		return showScriptLine(instruction.args[0], instruction.args[1]);
 	}
 
 	if (op.equalsIgnoreCase("quit_game")) {
@@ -1355,6 +1384,61 @@ bool ZeroComicoEngine::renderGameplayFrame(const RenderCamera &camera,
 	_system->copyRectToScreen(frame.getPixels(), frame.pitch, 0, 0, frame.w, frame.h);
 	_system->updateScreen();
 	return true;
+}
+
+bool ZeroComicoEngine::showScriptLine(const Common::String &speaker,
+                                            const Common::String &text) {
+	if (text.empty())
+		return true;
+
+	if (!_scriptDialogueContextActive || !_scriptDialogueFrame) {
+		_pendingSaySpeaker = speaker;
+		_pendingSayText = text;
+		return true;
+	}
+
+	if (!renderGameplayFrame(_scriptDialogueCamera, _scriptDialogueSceneDirectory,
+	                         _scriptDialoguePlayerDirectory, "Stay", 0.0f,
+	                         *_scriptDialogueFrame))
+		return false;
+
+	drawCutsceneSubtitle(*_scriptDialogueFrame, speaker, text);
+	_system->copyRectToScreen(_scriptDialogueFrame->getPixels(),
+	                          _scriptDialogueFrame->pitch, 0, 0,
+	                          _scriptDialogueFrame->w, _scriptDialogueFrame->h);
+	_system->updateScreen();
+
+	uint32 duration = (uint32)text.size() * 60U;
+	if (duration < 1000U)
+		duration = 1000U;
+	if (duration > 6500U)
+		duration = 6500U;
+
+	const uint32 started = _system->getMillis();
+	bool advance = false;
+	while (!shouldQuit() && !advance && _system->getMillis() - started < duration) {
+		Common::Event event;
+		while (_system->getEventManager()->pollEvent(event)) {
+			if (event.type == Common::EVENT_QUIT ||
+			    event.type == Common::EVENT_RETURN_TO_LAUNCHER) {
+				quitGame();
+				break;
+			}
+			if (event.type == Common::EVENT_KEYDOWN ||
+			    event.type == Common::EVENT_LBUTTONDOWN ||
+			    event.type == Common::EVENT_RBUTTONDOWN) {
+				advance = true;
+				break;
+			}
+		}
+		_system->delayMillis(10);
+	}
+
+	if (!shouldQuit())
+		renderGameplayFrame(_scriptDialogueCamera, _scriptDialogueSceneDirectory,
+		                    _scriptDialoguePlayerDirectory, "Stay", 0.0f,
+		                    *_scriptDialogueFrame);
+	return !shouldQuit();
 }
 
 bool ZeroComicoEngine::playDialogue(const Common::String &name,
@@ -1662,6 +1746,13 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 	else
 		debug(1, "Zero Comico: loaded %u dialogues and %u speakers",
 		      (uint)_activeDialog.dialogs.size(), (uint)_activeDialog.speakers.size());
+
+	const Common::Path textTablePath(level + "/gameplay/scene.isc");
+	if (!_activeTextTables.load(textTablePath))
+		warning("Zero Comico: cannot parse scene text tables %s", textTablePath.toString().c_str());
+	else
+		debug(1, "Zero Comico: loaded %u scene text tables",
+		      (uint)_activeTextTables.tables.size());
 
 	// Load both navigation layers declared by room.isc. The ordinary map
 	// carries the walkable floor/path graph; cameramap is the camera-control
