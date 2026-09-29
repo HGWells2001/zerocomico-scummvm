@@ -131,6 +131,8 @@ private:
 	float _spotDistance;
 	float _spotMinDistance;
 	float _spotSmooth;
+	bool _dynamicCameraInitialized;
+	Vec3f _dynamicCameraPosition;
 };
 
 } // namespace ZeroComico

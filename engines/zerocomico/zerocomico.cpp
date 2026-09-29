@@ -486,8 +486,10 @@ ZeroComicoEngine::ZeroComicoEngine(OSystem *syst, const ADGameDescription *desc)
 	  _interfaceDisabled(false), _3dEnabled(true), _portalsEnabled(true),
 	  _cameraMode(0), _cameraModeLocked(false),
 	  _spotHeight(85.0f), _spotMaxDeltaY(30.0f), _spotDistance(350.0f),
-	  _spotMinDistance(25.0f), _spotSmooth(30.0f) {
+	  _spotMinDistance(25.0f), _spotSmooth(30.0f),
+	  _dynamicCameraInitialized(false) {
 	_playerPosition.x = _playerPosition.y = _playerPosition.z = 0.0f;
+	_dynamicCameraPosition.x = _dynamicCameraPosition.y = _dynamicCameraPosition.z = 0.0f;
 	_playerFacingTarget.x = _playerFacingTarget.y = _playerFacingTarget.z = 0.0f;
 }
 
@@ -1410,6 +1412,8 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 		// SetCameraMode callback does not test it, so script-driven changes remain
 		// authoritative even while manual camera-mode controls are locked.
 		_cameraMode = (int)requested - 1;
+		_dynamicCameraInitialized = false;
+		_activeAutoCameraTrigger.clear();
 		debug(1, "Zero Comico: camera mode request %d -> %s%s",
 		      (int)requested,
 		      _cameraMode == 0 ? "Placed" : (_cameraMode == 1 ? "Subjective" : "Spot"),
@@ -2009,6 +2013,7 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 	_portalsEnabled = true;
 	_cameraMode = 0;
 	_cameraModeLocked = false;
+	_dynamicCameraInitialized = false;
 	_spotHeight = 85.0f;
 	_spotMaxDeltaY = 30.0f;
 	_spotDistance = 350.0f;
@@ -2314,6 +2319,11 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 	};
 
 	auto updateAutoCamera = [&]() -> bool {
+		if (_cameraMode != 0) {
+			_activeAutoCameraTrigger.clear();
+			return false;
+		}
+
 		const PuzzleObject *activeTrigger = nullptr;
 		for (uint32 i = 0; i < _activeCameraTriggers.objects.size(); ++i) {
 			const PuzzleObject &candidate = _activeCameraTriggers.objects[i];
@@ -2360,10 +2370,119 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 		return applyPendingCamera();
 	};
 
+	auto updateDynamicCamera = [&]() -> bool {
+		if (_cameraMode == 0) {
+			_dynamicCameraInitialized = false;
+			return false;
+		}
+
+		Vec3f forward = subtractVec3(_playerFacingTarget, _playerPosition);
+		forward.y = 0.0f;
+		if (!normalizeVec3(forward)) {
+			forward = subtractVec3(renderCamera.target, renderCamera.position);
+			forward.y = 0.0f;
+			if (!normalizeVec3(forward)) {
+				forward.x = 0.0f;
+				forward.y = 0.0f;
+				forward.z = -1.0f;
+			}
+		}
+
+		if (_cameraMode == 1) {
+			// Retail Subjective mode obtains an attachment/head point from the live
+			// character, offsets source by 0.125 m (12.5 world units) along forward,
+			// then aims another 40 world units forward. The current native actor
+			// runtime does not expose the named head attachment yet, so SpotHeight is
+			// used as the vertical fallback while retaining the measured offsets.
+			Vec3f source = _playerPosition;
+			source.y += _spotHeight;
+			source.x += forward.x * 12.5f;
+			source.z += forward.z * 12.5f;
+
+			if (!_activeCameraMap.polygons.empty()) {
+				Vec2 constrained;
+				if (_activeCameraMap.nearestWalkablePoint(source.x, source.z, constrained)) {
+					source.x = constrained.x;
+					source.z = constrained.y;
+				}
+			}
+
+			renderCamera.position = source;
+			renderCamera.target = source;
+			renderCamera.target.x += forward.x * 40.0f;
+			renderCamera.target.z += forward.z * 40.0f;
+			renderCamera.rollRadians = 0.0f;
+			_dynamicCameraPosition = source;
+			_dynamicCameraInitialized = true;
+			return true;
+		}
+
+		// Retail Spot mode builds the focus at character Y + SpotHeight, rotates
+		// a (0,0,SpotDistance) vector by the actor orientation, then resolves that
+		// candidate through the camera map. Player-facing direction is the native
+		// equivalent of the actor orientation already tracked by this runtime.
+		Vec3f focus = _playerPosition;
+		focus.y += _spotHeight;
+
+		Vec3f desired = focus;
+		desired.x -= forward.x * _spotDistance;
+		desired.z -= forward.z * _spotDistance;
+
+		if (!_activeCameraMap.polygons.empty()) {
+			Vec2 constrained;
+			if (_activeCameraMap.nearestWalkablePoint(desired.x, desired.z, constrained)) {
+				desired.x = constrained.x;
+				desired.z = constrained.y;
+			}
+		}
+
+		const float dx = desired.x - focus.x;
+		const float dz = desired.z - focus.z;
+		const float actualDistance = std::sqrt(dx * dx + dz * dz);
+		float ratio = _spotDistance > 0.0001f ? actualDistance / _spotDistance : 1.0f;
+		if (ratio < 0.0f)
+			ratio = 0.0f;
+		else if (ratio > 1.0f)
+			ratio = 1.0f;
+
+		// The original raises the camera by (1-distanceRatio)*MaxSpotDeltaY and
+		// raises the focus by half as much when MapCam shortens the boom.
+		const float verticalCorrection = (1.0f - ratio) * _spotMaxDeltaY;
+		desired.y = focus.y + verticalCorrection;
+		focus.y += verticalCorrection * 0.5f;
+
+		if (!_dynamicCameraInitialized) {
+			_dynamicCameraPosition = desired;
+			_dynamicCameraInitialized = true;
+		} else {
+			const float smooth = _spotSmooth > 1.0f ? _spotSmooth : 1.0f;
+			_dynamicCameraPosition.x += (desired.x - _dynamicCameraPosition.x) / smooth;
+			_dynamicCameraPosition.y += (desired.y - _dynamicCameraPosition.y) / smooth;
+			_dynamicCameraPosition.z += (desired.z - _dynamicCameraPosition.z) / smooth;
+		}
+
+		Vec3f lookDirection = subtractVec3(focus, _dynamicCameraPosition);
+		lookDirection.y = 0.0f;
+		if (!normalizeVec3(lookDirection))
+			lookDirection = forward;
+
+		// The executable pads the camera away from the focus by SpotMinDistance
+		// after smoothing, then aims 1.5 m (150 retail world units) beyond focus.
+		renderCamera.position = _dynamicCameraPosition;
+		renderCamera.position.x -= lookDirection.x * _spotMinDistance;
+		renderCamera.position.z -= lookDirection.z * _spotMinDistance;
+		renderCamera.target = focus;
+		renderCamera.target.x += lookDirection.x * 150.0f;
+		renderCamera.target.z += lookDirection.z * 150.0f;
+		renderCamera.rollRadians = 0.0f;
+		return true;
+	};
+
 	if (!runMainPlaceRuntime(roomProgram))
 		warning("Zero Comico: main-place runtime block did not complete cleanly");
 	applyPendingCamera();
 	updateAutoCamera();
+	updateDynamicCamera();
 	if (!_pendingMainPlace.empty())
 		return true;
 
@@ -2577,6 +2696,7 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 
 		_pendingCameraName.clear();
 		_activeAutoCameraTrigger.clear();
+		_dynamicCameraInitialized = false;
 		_defaultRoomCameraName = room->camera;
 		startRoomMusic(room->music, room->musicVolume);
 		cameraName = room->camera;
@@ -2616,6 +2736,7 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 
 		rebuildInteractionMeshes();
 		updateAutoCamera();
+		updateDynamicCamera();
 		debug(1, "Zero Comico: changed place to %s at nav node %d",
 		      room->name.c_str(), _playerNavNode);
 		renderGameplayFrame(renderCamera, sceneDirectory, playerDirectory,
@@ -3023,6 +3144,7 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 					}
 
 					updateAutoCamera();
+					updateDynamicCamera();
 
 					if (!renderGameplayFrame(renderCamera, sceneDirectory, playerDirectory,
 					                         animationSource, animationFrame, frame)) {
@@ -3079,6 +3201,7 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 				if (animationClipRange(_playerScene, _playerSequences.bodyName, stopSource,
 				                       stopFrame, stopEnd)) {
 					while (stopFrame <= stopEnd && !done && !shouldQuit()) {
+						updateDynamicCamera();
 						if (!renderGameplayFrame(renderCamera, sceneDirectory, playerDirectory,
 						                         stopSource, stopFrame, frame)) {
 							done = true;
@@ -3093,6 +3216,7 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 					float stayFrame = 0.0f;
 					float stayEnd = 0.0f;
 					animationClipRange(_playerScene, _playerSequences.bodyName, "Stay", stayFrame, stayEnd);
+					updateDynamicCamera();
 					renderGameplayFrame(renderCamera, sceneDirectory, playerDirectory,
 					                    "Stay", stayFrame, frame);
 				}
@@ -3101,12 +3225,13 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 
 		const bool cameraChanged = applyPendingCamera();
 		const uint32 idleNow = _system->getMillis();
-		if (cameraChanged && !done && !shouldQuit()) {
+		if (cameraChanged && _cameraMode == 0 && !done && !shouldQuit()) {
 			renderGameplayFrame(renderCamera, sceneDirectory, playerDirectory,
 			                    "Stay", 0.0f, frame);
 			lastIdleRender = idleNow;
 		}
 		if (!done && !shouldQuit() && idleNow - lastIdleRender >= 40U) {
+			updateDynamicCamera();
 			float stayStart = 0.0f;
 			float stayEnd = 0.0f;
 			float stayFrame = 0.0f;
