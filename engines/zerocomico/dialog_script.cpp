@@ -83,6 +83,7 @@ bool DialogScript::parse(const ScriptProgram &program) {
 			if (inChoices) {
 				DialogChoice choice;
 				choice.text = child.opcode;
+				choice.enabled = true;
 				for (uint32 arg = 0; arg < child.args.size(); ++arg) {
 					if (!child.args[arg].empty() && child.args[arg][0] == '@') {
 						choice.targetDialog = child.args[arg].substr(1);
@@ -112,6 +113,13 @@ bool DialogScript::parse(const ScriptProgram &program) {
 }
 
 const DialogDefinition *DialogScript::findDialog(const Common::String &name) const {
+	for (uint32 i = 0; i < dialogs.size(); ++i)
+		if (dialogs[i].name.equalsIgnoreCase(name))
+			return &dialogs[i];
+	return nullptr;
+}
+
+DialogDefinition *DialogScript::findDialogMutable(const Common::String &name) {
 	for (uint32 i = 0; i < dialogs.size(); ++i)
 		if (dialogs[i].name.equalsIgnoreCase(name))
 			return &dialogs[i];
