@@ -173,6 +173,11 @@ bool ScriptVM::executeArithmetic(const ScriptInstruction &instruction) {
 		return setVariable(instruction.args[0], current - operand);
 	if (instruction.opcode.equalsIgnoreCase("mul"))
 		return setVariable(instruction.args[0], current * operand);
+	if (instruction.opcode.equalsIgnoreCase("div")) {
+		if (operand == 0)
+			return false;
+		return setVariable(instruction.args[0], current / operand);
+	}
 
 	return false;
 }
@@ -323,7 +328,7 @@ bool ScriptVM::run(const ScriptProgram &program, uint32 startIndex, uint32 endIn
 
 		if (op.equalsIgnoreCase("inc") || op.equalsIgnoreCase("dec") ||
 		    op.equalsIgnoreCase("add") || op.equalsIgnoreCase("sub") ||
-		    op.equalsIgnoreCase("mul")) {
+		    op.equalsIgnoreCase("mul") || op.equalsIgnoreCase("div")) {
 			if (!executeArithmetic(instruction))
 				return false;
 			++pc;
@@ -422,14 +427,21 @@ bool ScriptVM::run(const ScriptProgram &program, uint32 startIndex, uint32 endIn
 			continue;
 		}
 
-		if (op.equalsIgnoreCase("jmp_if_z") || op.equalsIgnoreCase("jmp_if_nz")) {
+		if (op.equalsIgnoreCase("jmp_if_z") || op.equalsIgnoreCase("jmp_if_nz") ||
+		    op.equalsIgnoreCase("wjmp_if_z") || op.equalsIgnoreCase("wjmp_if_nz")) {
 			if (instruction.args.size() < 2)
 				return false;
 			int32 value = 0;
 			if (!resolveValue(instruction.args[0], value))
 				return false;
-			const bool jump = op.equalsIgnoreCase("jmp_if_z") ? value == 0 : value != 0;
+
+			const bool testZero =
+				op.equalsIgnoreCase("jmp_if_z") || op.equalsIgnoreCase("wjmp_if_z");
+			const bool jump = testZero ? value == 0 : value != 0;
 			if (jump) {
+				if ((op.equalsIgnoreCase("wjmp_if_z") || op.equalsIgnoreCase("wjmp_if_nz")) &&
+				    (!_host || !_host->yieldScriptExecution()))
+					return false;
 				const int target = program.labelIndex(instruction.args[1]);
 				if (target < 0 || (uint32)target >= endIndex)
 					return false;
