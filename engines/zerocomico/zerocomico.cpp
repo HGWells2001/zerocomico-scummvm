@@ -830,6 +830,35 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 		return true;
 	}
 
+	if (op.equalsIgnoreCase("CSetPlace")) {
+		// Character-specific SetPlace. The retail runtime uses this during the
+		// Mp5 bootstrap as "CSetPlace Mainplayer Room5_1".
+		if (instruction.args.size() < 2)
+			return false;
+		_pendingRoomName = instruction.args[1];
+		_pendingRoomCutscene.clear();
+		return true;
+	}
+
+	// Scene-construction/controller boundaries used by later main places. The
+	// decoded room/cutscene assets are already loaded independently by this
+	// engine, so these can advance the retail startup script without inventing
+	// state we do not render yet. Clone placement is deliberately left as a
+	// boundary until dynamic scene instances are represented natively.
+	if (op.equalsIgnoreCase("GiveLifeToChar") ||
+	    op.equalsIgnoreCase("Setp") ||
+	    op.equalsIgnoreCase("setpos_x") ||
+	    op.equalsIgnoreCase("setpos_y") ||
+	    op.equalsIgnoreCase("setpos_z") ||
+	    op.equalsIgnoreCase("CloneEntity") ||
+	    op.equalsIgnoreCase("SetEntityPos_Vector") ||
+	    op.equalsIgnoreCase("InsertInBackground") ||
+	    op.equalsIgnoreCase("SetFocus") ||
+	    op.equalsIgnoreCase("portals_off") ||
+	    op.equalsIgnoreCase("portals_on") ||
+	    op.equalsIgnoreCase("dcue_all"))
+		return true;
+
 	if (op.equalsIgnoreCase("say")) {
 		if (!instruction.args.empty()) {
 			_pendingSaySpeaker = "Giovanni";
