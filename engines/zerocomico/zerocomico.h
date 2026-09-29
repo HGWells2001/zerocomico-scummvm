@@ -39,6 +39,7 @@ struct CpuCharacterRuntime {
 	Common::String roomName;
 	Common::String bodyRoot;
 	Common::String initialEntity;
+	Common::String initialVector;
 	SceneModel scene;
 	Vec3f facing;
 	bool alive;

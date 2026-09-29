@@ -26,6 +26,7 @@ struct CharacterDefinition {
 	Common::String initialAnimSet;
 	Common::String initialBodyName;
 	Common::String initialEntity;
+	Common::String initialVector;
 	Common::String mainPlace;
 	Common::String roomName;
 	bool breakLifeOnInitialize;

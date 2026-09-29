@@ -1184,23 +1184,37 @@ void ZeroComicoEngine::installCpuCharactersForRoom(const Common::String &roomNam
 		if (!character.alive || !character.roomName.equalsIgnoreCase(roomName))
 			continue;
 
-		if (!character.positioned && !character.initialEntity.empty()) {
-			const NamedMesh *spawn = _activeScene.findMesh(character.initialEntity);
-			if (spawn) {
-				const Vec3f position = spawn->data.transform.translation;
-				if (character.scene.translateHierarchy(character.bodyRoot, position))
-					character.positioned = true;
+		if (!character.positioned) {
+			if (!character.initialEntity.empty()) {
+				const NamedMesh *spawn = _activeScene.findMesh(character.initialEntity);
+				if (spawn) {
+					const Vec3f position = spawn->data.transform.translation;
+					if (character.scene.translateHierarchy(character.bodyRoot, position))
+						character.positioned = true;
 
-				// SetCharPos_Entity spawn meshes carry the actor orientation in the
-				// retail 3x3 transform. Local -Z is the character's forward vector.
-				Vec3f facing = {
-					-spawn->data.transform.matrix[2],
-					0.0f,
-					-spawn->data.transform.matrix[8]
-				};
-				if (normalizeVec3(facing)) {
-					character.facing = facing;
-					character.haveFacing = true;
+					// SetCharPos_Entity spawn meshes carry the actor orientation in the
+					// retail 3x3 transform. Local -Z is the character's forward vector.
+					Vec3f facing = {
+						-spawn->data.transform.matrix[2],
+						0.0f,
+						-spawn->data.transform.matrix[8]
+					};
+					if (normalizeVec3(facing)) {
+						character.facing = facing;
+						character.haveFacing = true;
+					}
+				}
+			} else if (!character.initialVector.empty()) {
+				const ShapeMarker *marker = _activeShapes.find(character.initialVector);
+				if (marker) {
+					if (character.scene.translateHierarchy(character.bodyRoot, marker->a))
+						character.positioned = true;
+					Vec3f facing = subtractVec3(marker->b, marker->a);
+					facing.y = 0.0f;
+					if (normalizeVec3(facing)) {
+						character.facing = facing;
+						character.haveFacing = true;
+					}
 				}
 			}
 		}
@@ -1269,6 +1283,7 @@ bool ZeroComicoEngine::giveLifeToCharacter(const Common::String &name) {
 	runtime.roomName = definition->roomName;
 	runtime.bodyRoot = definition->initialBodyName;
 	runtime.initialEntity = definition->initialEntity;
+	runtime.initialVector = definition->initialVector;
 	runtime.scene = body;
 	runtime.facing.x = 0.0f;
 	runtime.facing.y = 0.0f;

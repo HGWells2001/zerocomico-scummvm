@@ -85,6 +85,12 @@ bool CharacterScript::parse() {
 				character.initialEntity = inst.args[1];
 				continue;
 			}
+			if (inst.opcode.equalsIgnoreCase("SetCharPos_Vector") &&
+			    inst.args.size() >= 2 &&
+			    inst.args[0].equalsIgnoreCase(character.name)) {
+				character.initialVector = inst.args[1];
+				continue;
+			}
 			if (inst.opcode.equalsIgnoreCase("BreakLifeToChar") &&
 			    !inst.args.empty() &&
 			    inst.args[0].equalsIgnoreCase(character.name)) {

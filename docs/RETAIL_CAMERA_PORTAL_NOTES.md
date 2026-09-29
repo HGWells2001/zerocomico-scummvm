@@ -248,13 +248,14 @@ and selects the **second** SetDialogCameras argument when `sideY <= 0`,
 otherwise the first. When the speaker is the initiator itself, `delta` is
 zero and the retail comparison selects the second camera deterministically.
 
-For CPU characters spawned through `SetCharPos_Entity`, the runtime now
-recovers forward from the marker mesh's retail transform (local -Z) and applies
-that exact side test. Characters whose initialize block uses a vector marker
-rather than an entity do not yet retain an NPC orientation; those lines safely
-fall back to the first camera. Identical camera pairs remain naturally
-unchanged. Dialogue choice lists begin on the initiator/second camera and keep
-the most recent dialogue view.
+For CPU characters spawned through `SetCharPos_Entity`, the runtime recovers
+forward from the marker mesh's retail transform (local -Z). It now also parses
+CPU `SetCharPos_Vector` initialize statements and derives forward directly
+from the marker's A->B vector in `Shape.shp`. Both spawn forms therefore feed
+the same executable-equivalent side test. If a custom character has neither
+kind of orientation marker, its line safely falls back to the first camera.
+Identical camera pairs remain naturally unchanged. Dialogue choice lists begin
+on the initiator/second camera and keep the most recent dialogue view.
 
 ## Dialogue do blocks and SetNoCameraReset
 
