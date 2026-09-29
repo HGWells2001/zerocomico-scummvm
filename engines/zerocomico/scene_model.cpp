@@ -476,6 +476,25 @@ bool SceneModel::poseSkinnedGeometry(const Common::String &rootName,
 }
 
 
+bool SceneModel::sampleHierarchyPoint(const Common::String &rootName,
+                                      const Common::String &nodeName,
+                                      const Common::String &sourceName,
+                                      float frame, Vec3f &point) const {
+	const NamedAnimationClip *clip = findClipBySource(rootName, sourceName);
+	const HierarchyData *hierarchy = findHierarchy(*this, rootName);
+	if (!clip || !hierarchy || !hierarchyContains(*hierarchy, rootName, nodeName))
+		return false;
+
+	PoseMatrix global;
+	if (!buildGlobalMatrix(clip->data, *hierarchy, rootName, nodeName,
+	                       frame, true, global))
+		return false;
+
+	const Vec3f origin = { 0.0f, 0.0f, 0.0f };
+	point = transformPoint(global, origin);
+	return true;
+}
+
 bool SceneModel::poseCutsceneGeometry(const Common::String &sourceName, float frame) {
 	for (uint32 meshIndex = 0; meshIndex < meshes.size(); ++meshIndex)
 		meshes[meshIndex].posedVertices.clear();

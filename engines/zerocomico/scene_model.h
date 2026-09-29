@@ -86,6 +86,13 @@ public:
 	                         const Common::String &sourceName,
 	                         float frame);
 
+	// Samples the actor-local origin of one animated JACS hierarchy node.
+	// Gameplay uses this for attachments such as the retail *_testa camera point.
+	bool sampleHierarchyPoint(const Common::String &rootName,
+	                          const Common::String &nodeName,
+	                          const Common::String &sourceName,
+	                          float frame, Vec3f &point) const;
+
 	// Applies all skeletal and rigid-object tracks for one cutscene source.
 	// Unlike gameplay posing, root motion remains inside the animated scene.
 	bool poseCutsceneGeometry(const Common::String &sourceName, float frame);

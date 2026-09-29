@@ -229,6 +229,57 @@ static bool normalizeVec3(Vec3f &v) {
 	return true;
 }
 
+static Common::String subjectiveHeadNodeName(const Common::String &rootName) {
+	const uint32 separator = rootName.find('_');
+	if (separator == Common::String::npos || separator == 0)
+		return Common::String();
+
+	const Common::String prefix = rootName.substr(0, separator);
+	return prefix + "_" + prefix + "testa";
+}
+
+static Vec3f transformActorLocalPoint(const Vec3f &point,
+                                      const RenderTransform &transform) {
+	Vec3f local = {
+		point.x * transform.localScale.x,
+		point.y * transform.localScale.y,
+		point.z * transform.localScale.z
+	};
+
+	Vec3f axis = {
+		transform.localRotation[0],
+		transform.localRotation[1],
+		transform.localRotation[2]
+	};
+	const float angle = transform.localRotation[3];
+	if (std::fabs(angle) > 1.0e-7f && normalizeVec3(axis)) {
+		const float c = std::cos(angle);
+		const float s = std::sin(angle);
+		const float oneMinusC = 1.0f - c;
+		const float projection = dotVec3(axis, local);
+		const Vec3f cross = crossVec3(axis, local);
+		Vec3f rotated = {
+			local.x * c + cross.x * s + axis.x * projection * oneMinusC,
+			local.y * c + cross.y * s + axis.y * projection * oneMinusC,
+			local.z * c + cross.z * s + axis.z * projection * oneMinusC
+		};
+		local = rotated;
+	}
+
+	local.x += transform.localTranslation.x;
+	local.y += transform.localTranslation.y;
+	local.z += transform.localTranslation.z;
+
+	const float c = std::cos(transform.yawRadians);
+	const float s = std::sin(transform.yawRadians);
+	Vec3f world = {
+		local.x * c - local.z * s + transform.translation.x,
+		local.y + transform.translation.y,
+		local.x * s + local.z * c + transform.translation.z
+	};
+	return world;
+}
+
 static float cross2D(float ax, float az, float bx, float bz) {
 	return ax * bz - az * bx;
 }
@@ -3012,7 +3063,8 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 		return applyPendingCamera();
 	};
 
-	auto updateDynamicCamera = [&]() -> bool {
+	auto updateDynamicCamera = [&](const Common::String &cameraAnimationSource,
+	                               float cameraAnimationFrame) -> bool {
 		if (_cameraMode == 0) {
 			_dynamicCameraInitialized = false;
 			return false;
@@ -3031,14 +3083,31 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 		}
 
 		if (_cameraMode == 1) {
-			// Retail Subjective mode obtains an attachment/head point from the live
-			// character, offsets source by 0.125 m (12.5 world units) along forward,
-			// then aims another 40 world units forward. When the head attachment is
-			// unavailable, Zero Comico.exe uses a distinct 0.52 m fallback height,
-			// not SpotHeight. The native actor runtime does not expose that attachment
-			// yet, so use the measured retail fallback here.
+			// The retail Subjective camera follows the live character's *_testa
+			// hierarchy node. The shipped playable roots resolve to gio_giotesta,
+			// ald_aldtesta and gia_giatesta. Sample that animated attachment in
+			// actor-local space and apply exactly the same root/yaw/world placement
+			// used by the gameplay renderer. Keep the measured 0.52 m fallback for
+			// malformed/custom bodies that do not expose the attachment.
 			Vec3f source = _playerPosition;
 			source.y += kSubjectiveFallbackEyeHeight;
+
+			const Common::String playerRoot = !_playerSequences.bodyName.empty()
+				? _playerSequences.bodyName : _playerCharacterScript.initialBodyName;
+			const Common::String headNode = subjectiveHeadNodeName(playerRoot);
+			Vec3f headLocal;
+			RenderTransform actorTransform;
+			actorTransform.translation = _playerPosition;
+			actorTransform.yawRadians = std::atan2(forward.x, forward.z);
+			if (!headNode.empty() &&
+			    _playerScene.sampleHierarchyPoint(playerRoot, headNode,
+			                                      cameraAnimationSource,
+			                                      cameraAnimationFrame, headLocal) &&
+			    sampleRootTransform(_playerScene, playerRoot, cameraAnimationSource,
+			                        cameraAnimationFrame, actorTransform)) {
+				source = transformActorLocalPoint(headLocal, actorTransform);
+			}
+
 			source.x += forward.x * 12.5f;
 			source.z += forward.z * 12.5f;
 
@@ -3125,7 +3194,7 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 		warning("Zero Comico: main-place runtime block did not complete cleanly");
 	applyPendingCamera();
 	updateAutoCamera();
-	updateDynamicCamera();
+	updateDynamicCamera("Stay", 0.0f);
 	if (!_pendingMainPlace.empty())
 		return true;
 
@@ -3390,7 +3459,7 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 
 		rebuildInteractionMeshes();
 		updateAutoCamera();
-		updateDynamicCamera();
+		updateDynamicCamera("Stay", 0.0f);
 		debug(1, "Zero Comico: changed place to %s at nav node %d",
 		      room->name.c_str(), _playerNavNode);
 		renderGameplayFrame(renderCamera, sceneDirectory, playerDirectory,
@@ -3798,7 +3867,7 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 					}
 
 					updateAutoCamera();
-					updateDynamicCamera();
+					updateDynamicCamera(animationSource, animationFrame);
 
 					if (!renderGameplayFrame(renderCamera, sceneDirectory, playerDirectory,
 					                         animationSource, animationFrame, frame)) {
@@ -3855,7 +3924,7 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 				if (animationClipRange(_playerScene, _playerSequences.bodyName, stopSource,
 				                       stopFrame, stopEnd)) {
 					while (stopFrame <= stopEnd && !done && !shouldQuit()) {
-						updateDynamicCamera();
+						updateDynamicCamera(stopSource, stopFrame);
 						if (!renderGameplayFrame(renderCamera, sceneDirectory, playerDirectory,
 						                         stopSource, stopFrame, frame)) {
 							done = true;
@@ -3870,7 +3939,7 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 					float stayFrame = 0.0f;
 					float stayEnd = 0.0f;
 					animationClipRange(_playerScene, _playerSequences.bodyName, "Stay", stayFrame, stayEnd);
-					updateDynamicCamera();
+					updateDynamicCamera("Stay", stayFrame);
 					renderGameplayFrame(renderCamera, sceneDirectory, playerDirectory,
 					                    "Stay", stayFrame, frame);
 				}
@@ -3885,7 +3954,6 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 			lastIdleRender = idleNow;
 		}
 		if (!done && !shouldQuit() && idleNow - lastIdleRender >= 40U) {
-			updateDynamicCamera();
 			float stayStart = 0.0f;
 			float stayEnd = 0.0f;
 			float stayFrame = 0.0f;
@@ -3896,6 +3964,7 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 					(float)(idleNow - idleAnimationStart) * 25.0f / 1000.0f;
 				stayFrame = stayStart + std::fmod(elapsedFrames, stayCount);
 			}
+			updateDynamicCamera("Stay", stayFrame);
 			renderGameplayFrame(renderCamera, sceneDirectory, playerDirectory,
 			                    "Stay", stayFrame, frame);
 			lastIdleRender = idleNow;
