@@ -347,6 +347,47 @@ static void applyFadeToBlack(Graphics::ManagedSurface &surface, float amount) {
 	}
 }
 
+#ifdef USE_MAD
+static bool playNamedMp3(Audio::Mixer *mixer, Audio::Mixer::SoundType type,
+                         const Common::String &name, Audio::SoundHandle *handle = nullptr) {
+	if (!mixer || name.empty())
+		return false;
+
+	Common::String fileName = name;
+	if (!fileName.hasSuffixIgnoreCase(".mp3"))
+		fileName += ".mp3";
+
+	const char *const directories[] = {
+		"Sound",
+		"Sound/Interface",
+		"Sound/Inventory",
+		"Sound/steps"
+	};
+
+	for (uint32 directoryIndex = 0; directoryIndex < ARRAYSIZE(directories); ++directoryIndex) {
+		Common::File *file = new Common::File();
+		const Common::Path path =
+			Common::Path(directories[directoryIndex]).appendComponent(fileName);
+		if (!file->open(path)) {
+			delete file;
+			continue;
+		}
+
+		Audio::SeekableAudioStream *stream =
+			Audio::makeMP3Stream(file, DisposeAfterUse::YES);
+		if (!stream) {
+			delete file;
+			return false;
+		}
+
+		mixer->playStream(type, handle, stream);
+		return true;
+	}
+
+	return false;
+}
+#endif
+
 
 
 } // namespace
@@ -606,20 +647,8 @@ bool ZeroComicoEngine::playCutscene(const Common::String &name) {
 						debug(1, "Zero Comico: cutscene %s sample %s at frame %u",
 						      name.c_str(), event.args[0].c_str(), event.frame);
 #ifdef USE_MAD
-						Common::File *sampleFile = new Common::File();
-						const Common::Path samplePath(
-							Common::String("Sound/") + event.args[0] + ".mp3");
-						if (sampleFile->open(samplePath)) {
-							Audio::SeekableAudioStream *stream =
-								Audio::makeMP3Stream(sampleFile, DisposeAfterUse::YES);
-							if (stream)
-								_mixer->playStream(Audio::Mixer::kSFXSoundType,
-								                   &cutsceneSfxHandle, stream);
-							else
-								delete sampleFile;
-						} else {
-							delete sampleFile;
-						}
+						playNamedMp3(_mixer, Audio::Mixer::kSFXSoundType,
+						             event.args[0], &cutsceneSfxHandle);
 #endif
 					}
 					break;
@@ -1122,6 +1151,40 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 		return true;
 	}
 
+	if (op.equalsIgnoreCase("PlaySample")) {
+		if (instruction.args.empty())
+			return false;
+#ifdef USE_MAD
+		return playNamedMp3(_mixer, Audio::Mixer::kSFXSoundType,
+		                    instruction.args[0], nullptr);
+#else
+		return true;
+#endif
+	}
+
+	if (op.equalsIgnoreCase("wait_frames")) {
+		if (instruction.args.empty())
+			return false;
+		int32 frames = 0;
+		if (!_scriptVM.resolveValue(instruction.args[0], frames) || frames < 0)
+			return false;
+
+		const uint32 duration = (uint32)frames * 40U;
+		const uint32 start = _system->getMillis();
+		while (!shouldQuit() && _system->getMillis() - start < duration) {
+			Common::Event event;
+			while (_system->getEventManager()->pollEvent(event)) {
+				if (event.type == Common::EVENT_QUIT ||
+				    event.type == Common::EVENT_RETURN_TO_LAUNCHER) {
+					quitGame();
+					break;
+				}
+			}
+			_system->delayMillis(10);
+		}
+		return !shouldQuit();
+	}
+
 	if (op.equalsIgnoreCase("play") ||
 	    op.equalsIgnoreCase("wait_say") ||
 	    op.equalsIgnoreCase("cwait_say") ||
@@ -1129,8 +1192,6 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 	    op.equalsIgnoreCase("SetNoCameraReset") ||
 	    op.equalsIgnoreCase("SetCamera") ||
 	    op.equalsIgnoreCase("envsound_state") ||
-	    op.equalsIgnoreCase("PlaySample") ||
-	    op.equalsIgnoreCase("wait_frames") ||
 	    op.equalsIgnoreCase("BreakLifeToChar"))
 		return true;
 
