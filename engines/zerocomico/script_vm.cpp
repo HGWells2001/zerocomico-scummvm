@@ -17,7 +17,8 @@ static bool isConditionalOpcode(const Common::String &op) {
 	       op.equalsIgnoreCase("if_l") || op.equalsIgnoreCase("if_le") ||
 	       op.equalsIgnoreCase("if_z") || op.equalsIgnoreCase("if_nz") ||
 	       op.equalsIgnoreCase("ifobjselected") ||
-	       op.equalsIgnoreCase("ifallobjnoselected");
+	       op.equalsIgnoreCase("ifallobjnoselected") ||
+	       op.equalsIgnoreCase("ifcombine");
 }
 
 } // namespace
@@ -189,7 +190,8 @@ bool ScriptVM::executeRandom(const ScriptInstruction &instruction) {
 
 bool ScriptVM::evaluateComparison(const ScriptInstruction &instruction, bool &result) const {
 	if (instruction.opcode.equalsIgnoreCase("ifobjselected") ||
-	    instruction.opcode.equalsIgnoreCase("ifallobjnoselected"))
+	    instruction.opcode.equalsIgnoreCase("ifallobjnoselected") ||
+	    instruction.opcode.equalsIgnoreCase("ifcombine"))
 		return _host && _host->evaluateScriptCondition(instruction, result);
 
 	if (instruction.args.empty())
