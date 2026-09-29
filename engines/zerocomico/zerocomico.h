@@ -124,6 +124,13 @@ private:
 	bool _interfaceDisabled;
 	bool _3dEnabled;
 	bool _portalsEnabled;
+	int _cameraMode;
+	bool _cameraModeLocked;
+	float _spotHeight;
+	float _spotMaxDeltaY;
+	float _spotDistance;
+	float _spotMinDistance;
+	float _spotSmooth;
 };
 
 } // namespace ZeroComico

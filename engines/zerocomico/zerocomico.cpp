@@ -483,7 +483,10 @@ ZeroComicoEngine::ZeroComicoEngine(OSystem *syst, const ADGameDescription *desc)
 	: Engine(syst), _gameDescription(desc), _havePlayerStart(false), _playerHatVisible(true),
 	  _playerNavNode(-1), _lastDialogueChoice(-1), _scriptDialogueContextActive(false),
 	  _scriptDialogueFrame(nullptr), _scriptVM(this),
-	  _interfaceDisabled(false), _3dEnabled(true), _portalsEnabled(true) {
+	  _interfaceDisabled(false), _3dEnabled(true), _portalsEnabled(true),
+	  _cameraMode(0), _cameraModeLocked(false),
+	  _spotHeight(85.0f), _spotMaxDeltaY(30.0f), _spotDistance(350.0f),
+	  _spotMinDistance(25.0f), _spotSmooth(30.0f) {
 	_playerPosition.x = _playerPosition.y = _playerPosition.z = 0.0f;
 	_playerFacingTarget.x = _playerFacingTarget.y = _playerFacingTarget.z = 0.0f;
 }
@@ -1393,7 +1396,72 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 	    op.equalsIgnoreCase("BreakLifeToChar"))
 		return true;
 
-	if (op.equalsIgnoreCase("e3d_Parse") || op.equalsIgnoreCase("setcameramode"))
+	if (op.equalsIgnoreCase("SetCameraMode") || op.equalsIgnoreCase("setcameramode")) {
+		if (instruction.args.empty())
+			return false;
+		int32 requested = 0;
+		if (!_scriptVM.resolveValue(instruction.args[0], requested) ||
+		    requested < 1 || requested > 3)
+			return false;
+
+		// The original callback maps script values 1/2/3 to internal camera
+		// modes 0/1/2: Placed, Subjective and Spot respectively.
+		if (!_cameraModeLocked)
+			_cameraMode = (int)requested - 1;
+		debug(1, "Zero Comico: camera mode request %d -> %s%s",
+		      (int)requested,
+		      _cameraMode == 0 ? "Placed" : (_cameraMode == 1 ? "Subjective" : "Spot"),
+		      _cameraModeLocked ? " (locked)" : "");
+		return true;
+	}
+
+	if (op.equalsIgnoreCase("LockCameraMode")) {
+		_cameraModeLocked = true;
+		debug(1, "Zero Comico: camera mode locked");
+		return true;
+	}
+
+	if (op.equalsIgnoreCase("UnLockCameraMode")) {
+		_cameraModeLocked = false;
+		debug(1, "Zero Comico: camera mode unlocked");
+		return true;
+	}
+
+	if (op.equalsIgnoreCase("SetSpotCameraParameters")) {
+		if (instruction.args.size() < 5)
+			return false;
+		char *end = nullptr;
+		const double p0 = strtod(instruction.args[0].c_str(), &end);
+		if (!end || end == instruction.args[0].c_str() || *end != 0)
+			return false;
+		const double p1 = strtod(instruction.args[1].c_str(), &end);
+		if (!end || end == instruction.args[1].c_str() || *end != 0)
+			return false;
+		const double p2 = strtod(instruction.args[2].c_str(), &end);
+		if (!end || end == instruction.args[2].c_str() || *end != 0)
+			return false;
+		const double p3 = strtod(instruction.args[3].c_str(), &end);
+		if (!end || end == instruction.args[3].c_str() || *end != 0)
+			return false;
+		const double p4 = strtod(instruction.args[4].c_str(), &end);
+		if (!end || end == instruction.args[4].c_str() || *end != 0)
+			return false;
+
+		// Original Zero Comico.exe runs the first four values through its
+		// world-unit conversion: value * 100 * GlobalScaling. Config.gsc for the
+		// retail build declares GlobalScaling 1.
+		_spotHeight = (float)(p0 * 100.0);
+		_spotMaxDeltaY = (float)(p1 * 100.0);
+		_spotDistance = (float)(p2 * 100.0);
+		_spotMinDistance = (float)(p3 * 100.0);
+		_spotSmooth = (float)p4;
+		debug(1, "Zero Comico: spot camera parameters %.3f %.3f %.3f %.3f %.3f",
+		      _spotHeight, _spotMaxDeltaY, _spotDistance,
+		      _spotMinDistance, _spotSmooth);
+		return true;
+	}
+
+	if (op.equalsIgnoreCase("e3d_Parse"))
 		return true;
 
 	if (op.equalsIgnoreCase("csay")) {
@@ -1937,6 +2005,13 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 	_activeRoomCameraMaps.clear();
 	_activeAutoCameraTrigger.clear();
 	_portalsEnabled = true;
+	_cameraMode = 0;
+	_cameraModeLocked = false;
+	_spotHeight = 85.0f;
+	_spotMaxDeltaY = 30.0f;
+	_spotDistance = 350.0f;
+	_spotMinDistance = 25.0f;
+	_spotSmooth = 30.0f;
 	_playerHatVisible = true;
 	_pendingSaySpeaker.clear();
 	_pendingSayText.clear();
