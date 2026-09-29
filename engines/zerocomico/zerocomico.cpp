@@ -1252,6 +1252,22 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 		return !shouldQuit();
 	}
 
+	if (op.equalsIgnoreCase("SetEnvSound") || op.equalsIgnoreCase("set_envsound")) {
+		if (instruction.args.empty())
+			return false;
+		const Common::String &soundName = instruction.args[0];
+		const bool enable = !soundName.equalsIgnoreCase("none") &&
+		                    !soundName.equalsIgnoreCase("off") &&
+		                    soundName != "0";
+		setEnvironmentSound(soundName, enable);
+		return true;
+	}
+
+	if (op.equalsIgnoreCase("StopEnvSound") || op.equalsIgnoreCase("stop_envsound")) {
+		setEnvironmentSound(_environmentSoundName, false);
+		return true;
+	}
+
 	if (op.equalsIgnoreCase("envsound_state")) {
 		if (instruction.args.empty())
 			return false;
