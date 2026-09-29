@@ -30,6 +30,7 @@ struct DialogLine {
 struct DialogChoice {
 	Common::String text;
 	Common::String targetDialog;
+	bool enabled;
 };
 
 struct DialogDefinition {
@@ -44,6 +45,7 @@ public:
 	bool parse(const ScriptProgram &program);
 
 	const DialogDefinition *findDialog(const Common::String &name) const;
+	DialogDefinition *findDialogMutable(const Common::String &name);
 	const DialogSpeaker *findSpeakerByKey(const Common::String &key) const;
 
 	Common::Array<DialogSpeaker> speakers;
