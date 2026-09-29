@@ -1312,9 +1312,19 @@ void ZeroComicoEngine::startRoomMusic(const Common::String &fileName, float volu
 		return;
 	}
 
+	float clampedVolume = volume;
+	if (clampedVolume < 0.0f)
+		clampedVolume = 0.0f;
+	if (clampedVolume > 100.0f)
+		clampedVolume = 100.0f;
+	const byte mixerVolume =
+		(byte)(clampedVolume * Audio::Mixer::kMaxChannelVolume / 100.0f + 0.5f);
+
 	if (_currentMusicName.equalsIgnoreCase(fileName) &&
-	    _mixer->isSoundHandleActive(_musicHandle))
+	    _mixer->isSoundHandleActive(_musicHandle)) {
+		_mixer->setChannelVolume(_musicHandle, mixerVolume);
 		return;
+	}
 
 	if (_mixer->isSoundHandleActive(_musicHandle))
 		_mixer->stopHandle(_musicHandle);
@@ -1337,13 +1347,6 @@ void ZeroComicoEngine::startRoomMusic(const Common::String &fileName, float volu
 		warning("Zero Comico: cannot decode room music %s", musicPath.toString().c_str());
 		return;
 	}
-
-	float clampedVolume = volume;
-	if (clampedVolume < 0.0f)
-		clampedVolume = 0.0f;
-	if (clampedVolume > 100.0f)
-		clampedVolume = 100.0f;
-	const byte mixerVolume = (byte)(clampedVolume * Audio::Mixer::kMaxChannelVolume / 100.0f + 0.5f);
 
 	Audio::AudioStream *loop =
 		Audio::makeLoopingAudioStream(decoded, 0);
