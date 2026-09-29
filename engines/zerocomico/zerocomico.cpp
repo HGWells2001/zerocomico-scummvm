@@ -1107,25 +1107,40 @@ bool ZeroComicoEngine::renderGameplayFrame(const RenderCamera &camera,
 	bool rendered = false;
 
 	if (!_playerScene.meshes.empty() && _havePlayerStart) {
-		if (!_playerScene.poseSkinnedGeometry("gio_giovanni", "Stay", animationSource, animationFrame))
-			warning("Zero Comico: could not evaluate Giovanni skeletal pose %s at %.2f",
+		const Common::String playerRoot = !_playerSequences.bodyName.empty()
+			? _playerSequences.bodyName : _playerCharacterScript.initialBodyName;
+		if (!_playerScene.poseSkinnedGeometry(playerRoot, "Stay", animationSource, animationFrame))
+			warning("Zero Comico: could not evaluate player skeletal pose %s at %.2f",
 			        animationSource.c_str(), animationFrame);
 
 		Common::Array<Common::String> playerVisible;
-		playerVisible.push_back("gio_gioc");
-		playerVisible.push_back("gio_giob");
-		playerVisible.push_back("gio_gioa");
-		playerVisible.push_back("gio_giotesta");
-		if (_playerHatVisible)
-			playerVisible.push_back("gio_CAPPELLO");
+		for (uint32 meshIndex = 0; meshIndex < _playerScene.meshes.size(); ++meshIndex) {
+			const NamedMesh &mesh = _playerScene.meshes[meshIndex];
+			if (mesh.data.isFlesh())
+				continue;
+			if (mesh.data.isSkinnedParent()) {
+				playerVisible.push_back(mesh.name);
+				continue;
+			}
+
+			Common::String lowerName = mesh.name;
+			lowerName.toLowercase();
+			if (lowerName.hasSuffix("01") || lowerName.hasSuffix("02"))
+				continue;
+
+			const bool isHead = lowerName.find("testa") != Common::String::npos;
+			const bool isHat = lowerName.find("cappello") != Common::String::npos;
+			if (isHead || (isHat && _playerHatVisible))
+				playerVisible.push_back(mesh.name);
+		}
 
 		RenderTransform playerTransform;
 		playerTransform.translation = _playerPosition;
 		const float faceX = _playerFacingTarget.x - _playerPosition.x;
 		const float faceZ = _playerFacingTarget.z - _playerPosition.z;
 		playerTransform.yawRadians = std::atan2(faceX, faceZ);
-		if (!sampleRootTransform(_playerScene, "gio_giovanni", animationSource, animationFrame, playerTransform))
-			warning("Zero Comico: Giovanni %s root transform missing; using identity root pose",
+		if (!sampleRootTransform(_playerScene, playerRoot, animationSource, animationFrame, playerTransform))
+			warning("Zero Comico: player %s root transform missing; using identity root pose",
 			        animationSource.c_str());
 
 		rendered = _gameplayRenderer.renderWithActor(_activeScene, camera, sceneDirectory, visibleMeshes,
@@ -1738,7 +1753,7 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 						if (!shouldQuit()) {
 							float stayStart = 0.0f;
 							float stayEnd = 0.0f;
-							animationClipRange(_playerScene, "gio_giovanni", "Stay",
+							animationClipRange(_playerScene, _playerSequences.bodyName, "Stay",
 							                   stayStart, stayEnd);
 							renderGameplayFrame(renderCamera, sceneDirectory, playerDirectory,
 							                    "Stay", stayStart, frame);
@@ -1985,7 +2000,7 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 			uint32 measuredWalkClips = 0;
 			for (uint32 speedIndex = 0; speedIndex < loopClips.size(); ++speedIndex) {
 				const float clipSpeed = animationHorizontalSpeed(
-					_playerScene, "gio_giovanni", loopClips[speedIndex], frameRate);
+					_playerScene, _playerSequences.bodyName, loopClips[speedIndex], frameRate);
 				if (clipSpeed > 0.01f) {
 					walkSpeed += clipSpeed;
 					++measuredWalkClips;
@@ -2004,11 +2019,11 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 			Common::String animationSource = startClips[0];
 			float animationFrame = 0.0f;
 			float animationEnd = 0.0f;
-			if (!animationClipRange(_playerScene, "gio_giovanni", animationSource,
+			if (!animationClipRange(_playerScene, _playerSequences.bodyName, animationSource,
 			                        animationFrame, animationEnd)) {
 				starting = false;
 				animationSource = loopClips[0];
-				animationClipRange(_playerScene, "gio_giovanni", animationSource,
+				animationClipRange(_playerScene, _playerSequences.bodyName, animationSource,
 				                   animationFrame, animationEnd);
 			}
 
@@ -2046,7 +2061,7 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 							animationClipIndex = (animationClipIndex + 1) % loopClips.size();
 						}
 						animationSource = loopClips[animationClipIndex];
-						if (!animationClipRange(_playerScene, "gio_giovanni", animationSource,
+						if (!animationClipRange(_playerScene, _playerSequences.bodyName, animationSource,
 						                        animationFrame, animationEnd)) {
 							animationFrame = 0.0f;
 							animationEnd = 30.0f;
@@ -2081,7 +2096,7 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 					stopClips[animationClipIndex % stopClips.size()];
 				float stopFrame = 0.0f;
 				float stopEnd = 0.0f;
-				if (animationClipRange(_playerScene, "gio_giovanni", stopSource,
+				if (animationClipRange(_playerScene, _playerSequences.bodyName, stopSource,
 				                       stopFrame, stopEnd)) {
 					while (stopFrame <= stopEnd && !done && !shouldQuit()) {
 						if (!renderGameplayFrame(renderCamera, sceneDirectory, playerDirectory,
@@ -2097,7 +2112,7 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 				if (!done && !shouldQuit()) {
 					float stayFrame = 0.0f;
 					float stayEnd = 0.0f;
-					animationClipRange(_playerScene, "gio_giovanni", "Stay", stayFrame, stayEnd);
+					animationClipRange(_playerScene, _playerSequences.bodyName, "Stay", stayFrame, stayEnd);
 					renderGameplayFrame(renderCamera, sceneDirectory, playerDirectory,
 					                    "Stay", stayFrame, frame);
 				}
@@ -2109,7 +2124,7 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 			float stayStart = 0.0f;
 			float stayEnd = 0.0f;
 			float stayFrame = 0.0f;
-			if (animationClipRange(_playerScene, "gio_giovanni", "Stay", stayStart, stayEnd)) {
+			if (animationClipRange(_playerScene, _playerSequences.bodyName, "Stay", stayStart, stayEnd)) {
 				const float stayCount = stayEnd >= stayStart
 					? stayEnd - stayStart + 1.0f : 1.0f;
 				const float elapsedFrames =
