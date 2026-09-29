@@ -1132,6 +1132,99 @@ bool ZeroComicoEngine::setSceneEntityVectorTransform(const Common::String &name,
 	return changed;
 }
 
+CpuCharacterRuntime *ZeroComicoEngine::findCpuCharacter(const Common::String &name) {
+	for (uint32 i = 0; i < _cpuCharacters.size(); ++i)
+		if (_cpuCharacters[i].name.equalsIgnoreCase(name))
+			return &_cpuCharacters[i];
+	return nullptr;
+}
+
+void ZeroComicoEngine::installCpuCharactersForRoom(const Common::String &roomName) {
+	for (uint32 i = 0; i < _cpuCharacters.size(); ++i) {
+		CpuCharacterRuntime &character = _cpuCharacters[i];
+		if (!character.alive || !character.roomName.equalsIgnoreCase(roomName))
+			continue;
+
+		if (!character.positioned && !character.initialEntity.empty()) {
+			const NamedMesh *spawn = _activeScene.findMesh(character.initialEntity);
+			if (spawn) {
+				const Vec3f position = spawn->data.transform.translation;
+				if (character.scene.translateHierarchy(character.bodyRoot, position))
+					character.positioned = true;
+			}
+		}
+
+		_activeScene.mergeFrom(character.scene);
+	}
+}
+
+bool ZeroComicoEngine::giveLifeToCharacter(const Common::String &name) {
+	if (name.equalsIgnoreCase("MainPlayer") ||
+	    name.equalsIgnoreCase(_playerCharacterScript.playerName))
+		return true;
+
+	CpuCharacterRuntime *existing = findCpuCharacter(name);
+	if (existing) {
+		existing->alive = true;
+		if (_activeRoomName.equalsIgnoreCase(existing->roomName))
+			installCpuCharactersForRoom(existing->roomName);
+		return true;
+	}
+
+	const CharacterDefinition *definition = _playerCharacterScript.findCharacter(name);
+	if (!definition || !definition->cpuPlayer || definition->initialBodyName.empty()) {
+		warning("Zero Comico: GiveLifeToChar cannot resolve CPU character %s",
+		        name.c_str());
+		return false;
+	}
+
+	Common::String assetStem = definition->initialBodyName;
+	const uint32 separator = assetStem.find('_');
+	if (separator != Common::String::npos && separator + 1 < assetStem.size())
+		assetStem = assetStem.substr(separator + 1);
+
+	Common::String lowerStem = assetStem;
+	lowerStem.toLowercase();
+	const Common::Path bodyDirectory =
+		Common::Path(_currentMainPlace + "/bodies").appendComponent(lowerStem);
+
+	SceneModel body;
+	bool loaded = body.loadPair(
+		bodyDirectory.appendComponent(assetStem + ".p3d"),
+		bodyDirectory.appendComponent(assetStem + ".anj"));
+	if (!loaded) {
+		loaded = body.loadPair(
+			bodyDirectory.appendComponent(lowerStem + ".p3d"),
+			bodyDirectory.appendComponent(lowerStem + ".anj"));
+	}
+	if (!loaded) {
+		warning("Zero Comico: cannot load CPU body %s for %s",
+		        definition->initialBodyName.c_str(), name.c_str());
+		return false;
+	}
+
+	body.resolveSkinnedGeometry();
+
+	CpuCharacterRuntime runtime;
+	runtime.name = definition->name;
+	runtime.roomName = definition->roomName;
+	runtime.bodyRoot = definition->initialBodyName;
+	runtime.initialEntity = definition->initialEntity;
+	runtime.scene = body;
+	runtime.alive = true;
+	runtime.lifeBroken = definition->breakLifeOnInitialize;
+	runtime.positioned = false;
+	_cpuCharacters.push_back(runtime);
+
+	debug(1, "Zero Comico: GiveLifeToChar activated %s using %s in %s%s",
+	      runtime.name.c_str(), runtime.bodyRoot.c_str(), runtime.roomName.c_str(),
+	      runtime.lifeBroken ? " (life immediately broken by initialize block)" : "");
+
+	if (_activeRoomName.equalsIgnoreCase(runtime.roomName))
+		installCpuCharactersForRoom(runtime.roomName);
+	return true;
+}
+
 bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction) {
 	const Common::String &op = instruction.opcode;
 
@@ -1517,8 +1610,22 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 		return true;
 	}
 
-	if (op.equalsIgnoreCase("GiveLifeToChar") ||
-	    op.equalsIgnoreCase("dcue_all"))
+	if (op.equalsIgnoreCase("GiveLifeToChar")) {
+		if (instruction.args.empty())
+			return false;
+		return giveLifeToCharacter(instruction.args[0]);
+	}
+
+	if (op.equalsIgnoreCase("BreakLifeToChar")) {
+		if (instruction.args.empty())
+			return false;
+		CpuCharacterRuntime *character = findCpuCharacter(instruction.args[0]);
+		if (character)
+			character->lifeBroken = true;
+		return true;
+	}
+
+	if (op.equalsIgnoreCase("dcue_all"))
 		return true;
 
 	if (op.equalsIgnoreCase("portals_off")) {
@@ -2562,6 +2669,7 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 	_setpControllerNames.clear();
 	_setpControllerPositions.clear();
 	_dynamicSceneEntities.clear();
+	_cpuCharacters.clear();
 
 	const Common::Path roomScript(level + "/gameplay/room.isc");
 	ScriptProgram roomProgram;
@@ -3190,6 +3298,7 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 			                                _setpControllerPositions[controllerIndex]);
 
 		installDynamicBackgroundForRoom(room->name);
+		installCpuCharactersForRoom(room->name);
 
 		_activeWalkMap = BspMap();
 		_activeCameraMap = BspMap();

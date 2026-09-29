@@ -33,6 +33,17 @@ struct DynamicSceneEntity {
 	Common::Array<NamedMaterial> materials;
 };
 
+struct CpuCharacterRuntime {
+	Common::String name;
+	Common::String roomName;
+	Common::String bodyRoot;
+	Common::String initialEntity;
+	SceneModel scene;
+	bool alive;
+	bool lifeBroken;
+	bool positioned;
+};
+
 class ZeroComicoEngine : public Engine, public ScriptVMHost {
 public:
 	ZeroComicoEngine(OSystem *syst, const ADGameDescription *desc);
@@ -80,6 +91,9 @@ private:
 	void installDynamicBackgroundForRoom(const Common::String &roomName);
 	bool setSceneEntityTranslation(const Common::String &name, const Vec3f &position);
 	bool setSceneEntityVectorTransform(const Common::String &name, const ShapeMarker &marker);
+	CpuCharacterRuntime *findCpuCharacter(const Common::String &name);
+	bool giveLifeToCharacter(const Common::String &name);
+	void installCpuCharactersForRoom(const Common::String &roomName);
 
 	const ADGameDescription *_gameDescription;
 	SceneModel _menuScene;
@@ -141,6 +155,7 @@ private:
 	Common::Array<Common::String> _setpControllerNames;
 	Common::Array<Vec3f> _setpControllerPositions;
 	Common::Array<DynamicSceneEntity> _dynamicSceneEntities;
+	Common::Array<CpuCharacterRuntime> _cpuCharacters;
 	ScriptVM _scriptVM;
 	bool _interfaceDisabled;
 	bool _3dEnabled;
