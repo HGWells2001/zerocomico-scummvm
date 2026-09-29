@@ -552,6 +552,8 @@ bool ZeroComicoEngine::playCutscene(const Common::String &name) {
 	int32 fadeStartFrame = -1;
 	uint32 fadeDurationFrames = 0;
 	bool skip = false;
+	const uint32 cutsceneStartMillis = _system->getMillis();
+	uint32 presentedFrames = 0;
 
 	for (float frame = startFrame; frame <= endFrame && !shouldQuit() && !skip; frame += 1.0f) {
 		if (!scene.poseCutsceneGeometry(assetStem, frame))
@@ -575,6 +577,7 @@ bool ZeroComicoEngine::playCutscene(const Common::String &name) {
 				// as the P3D camera record. Roll is parsed but the software camera
 				// basis does not apply it yet.
 				renderCamera.focalPixels = focalLength * 800.0f / 36.0f;
+				renderCamera.rollRadians = roll;
 				haveCamera = true;
 			}
 		}
@@ -712,8 +715,14 @@ bool ZeroComicoEngine::playCutscene(const Common::String &name) {
 			}
 		}
 
-		// Retail cutscene timelines are frame-indexed at 25 fps.
-		_system->delayMillis(40);
+		// Retail cutscene timelines are frame-indexed at 25 fps. Sleep to the
+		// absolute frame deadline rather than adding 40 ms after rendering, so
+		// CPU render cost does not progressively slow audio/subtitle sync.
+		++presentedFrames;
+		const uint32 deadline = cutsceneStartMillis + presentedFrames * 40U;
+		const uint32 now = _system->getMillis();
+		if (now < deadline)
+			_system->delayMillis(deadline - now);
 	}
 
 	if (_mixer->isSoundHandleActive(cutsceneSfxHandle))
