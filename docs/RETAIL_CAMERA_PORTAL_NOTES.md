@@ -203,8 +203,24 @@ SetMap   <destination room> <destination map>
 ```
 
 Therefore `SetMap` cannot be validated only against the currently loaded
-room. The reimplementation queues a destination-room map and applies it when
-that room is committed, pairing the corresponding `MapCam` when declared.
+room. The reimplementation queues a destination-room walk map and applies it
+when that room is committed.
+
+A complete census of `Mp1..Mp5/gameplay/room.isc` shows that every gameplay
+room declares **exactly one `cameramap:`**, including rooms with several
+selectable `map:` entries. For example, `Room2_1` declares four walk maps but
+only `r21_MapCam00.bsp`; `Room2_4` declares four walk maps but only
+`r24_MapCam.bsp`; and `Room2_5` declares five walk maps but only
+`r25_MapCam.bsp`.
+
+Accordingly, `SetMap` changes only the walk/navigation BSP. The room-declared
+MapCam remains active until the room itself changes. Filename pairing such as
+`r24_Map00.bsp -> r24_MapCam00.bsp` is not a retail rule.
+
+This also explains the two zero-byte files shipped on disc,
+`r21_MapCam.bsp` and `r24_MapCam00.bsp`: neither is referenced by a retail
+room declaration. They are orphaned editor artifacts, not empty camera maps
+that the runtime must accept as valid active MapCam data.
 
 ## Mp5 portals
 

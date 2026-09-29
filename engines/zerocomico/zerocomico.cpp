@@ -145,19 +145,6 @@ static bool parseScriptFloat(const Common::String &token, float &value) {
 	return true;
 }
 
-static Common::String pairedCameraMapName(const Common::String &walkMap) {
-	Common::String lower = walkMap;
-	lower.toLowercase();
-	const uint32 marker = lower.find("_map");
-	if (marker == Common::String::npos)
-		return Common::String();
-
-	Common::String cameraMap = walkMap.substr(0, marker + 4);
-	cameraMap += "Cam";
-	cameraMap += walkMap.substr(marker + 4);
-	return cameraMap;
-}
-
 static bool removeIgnoreCase(Common::Array<Common::String> &values,
                              const Common::String &value) {
 	for (uint32 i = 0; i < values.size(); ++i) {
@@ -1390,30 +1377,14 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 		if (!replacement.load(mapPath))
 			return false;
 
-		BspMap cameraReplacement;
-		bool replaceCameraMap = false;
-		const Common::String expectedCameraMap = pairedCameraMapName(requestedMap);
-		if (!expectedCameraMap.empty()) {
-			for (uint32 i = 0; i < _activeRoomCameraMaps.size(); ++i) {
-				if (!_activeRoomCameraMaps[i].equalsIgnoreCase(expectedCameraMap))
-					continue;
-				const Common::Path cameraMapPath =
-					gameplayDirectory.appendComponent(_activeRoomCameraMaps[i]);
-				if (!cameraReplacement.load(cameraMapPath))
-					return false;
-				replaceCameraMap = true;
-				break;
-			}
-		}
-
+		// Retail room.isc declares exactly one camera map for each gameplay room,
+		// even when that room exposes several selectable walk maps. SetMap changes
+		// only the character-navigation map; the room's MapCam remains active.
 		_activeWalkMap = replacement;
-		if (replaceCameraMap)
-			_activeCameraMap = cameraReplacement;
 		_playerNavNode = _activeWalkMap.graph.empty()
 			? -1 : _activeWalkMap.nearestGraphNode(_playerPosition.x, _playerPosition.z);
-		debug(1, "Zero Comico: switched walk map to %s%s at node %d",
-		      requestedMap.c_str(), replaceCameraMap ? " with paired camera map" : "",
-		      _playerNavNode);
+		debug(1, "Zero Comico: switched walk map to %s at node %d",
+		      requestedMap.c_str(), _playerNavNode);
 		return true;
 	}
 
@@ -3414,12 +3385,8 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 		_pendingRoomMapName.clear();
 
 		if (!room->cameraMaps.empty()) {
-			Common::String cameraMapName = room->cameraMaps[0];
-			const Common::String paired = pairedCameraMapName(destinationMap);
-			if (!paired.empty() && containsIgnoreCase(room->cameraMaps, paired))
-				cameraMapName = paired;
 			const Common::Path nextCameraMap = Common::Path(level + "/gameplay")
-				.appendComponent(cameraMapName);
+				.appendComponent(room->cameraMaps[0]);
 			if (!_activeCameraMap.load(nextCameraMap))
 				warning("Zero Comico: cannot load destination camera map %s",
 				        nextCameraMap.toString().c_str());
