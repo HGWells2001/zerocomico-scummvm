@@ -980,12 +980,36 @@ bool ZeroComicoEngine::cloneSceneEntity(const Common::String &sourceName,
 	if (findDynamicSceneEntity(cloneName) || _activeScene.findMesh(cloneName))
 		return true;
 
+	SceneModel helperScene;
+	const SceneModel *sourceScene = &_activeScene;
 	const NamedMesh *source = _activeScene.findMesh(sourceName);
 	if (!source) {
 		const DynamicSceneEntity *dynamicSource = findDynamicSceneEntity(sourceName);
 		if (dynamicSource)
 			source = &dynamicSource->mesh;
 	}
+
+	// Retail CloneEntity arguments of entity type are resolved before the
+	// callback. Mp2's Star_Star template lives under bodies/helpers/star rather
+	// than in the active room, so reproduce that resolver fallback explicitly.
+	if (!source && !_currentMainPlace.empty()) {
+		Common::String helperStem = sourceName;
+		const uint32 separator = helperStem.find('_');
+		if (separator != Common::String::npos)
+			helperStem = helperStem.substr(0, separator);
+		helperStem.toLowercase();
+
+		const Common::Path helperDirectory =
+			Common::Path(_currentMainPlace + "/bodies/helpers").appendComponent(helperStem);
+		if (helperScene.loadPair(
+				helperDirectory.appendComponent(helperStem + ".p3d"),
+				helperDirectory.appendComponent(helperStem + ".anj"))) {
+			source = helperScene.findMesh(sourceName);
+			if (source)
+				sourceScene = &helperScene;
+		}
+	}
+
 	if (!source) {
 		warning("Zero Comico: CloneEntity source %s is not available", sourceName.c_str());
 		return false;
@@ -1008,7 +1032,9 @@ bool ZeroComicoEngine::cloneSceneEntity(const Common::String &sourceName,
 		if (duplicate)
 			continue;
 
-		const NamedMaterial *material = _activeScene.findMaterial(materialName);
+		const NamedMaterial *material = sourceScene->findMaterial(materialName);
+		if (!material)
+			material = _activeScene.findMaterial(materialName);
 		if (!material) {
 			for (uint32 j = 0; j < _dynamicSceneEntities.size() && !material; ++j)
 				for (uint32 k = 0; k < _dynamicSceneEntities[j].materials.size(); ++k)
