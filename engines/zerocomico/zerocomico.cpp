@@ -1005,11 +1005,48 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 		return true;
 	}
 
+	if (op.equalsIgnoreCase("e3d_hide") || op.equalsIgnoreCase("e3d_unhide")) {
+		if (instruction.args.empty())
+			return false;
+		const Common::String entity = resolveSceneEntity(
+			_activeScene, instruction.args[0], _activeRoomPrefix);
+		if (op.equalsIgnoreCase("e3d_hide")) {
+			if (!containsIgnoreCase(_hiddenSceneMeshes, entity))
+				_hiddenSceneMeshes.push_back(entity);
+		} else {
+			removeIgnoreCase(_hiddenSceneMeshes, entity);
+		}
+		return true;
+	}
+
+	if (op.equalsIgnoreCase("setY_Vector")) {
+		if (instruction.args.size() < 2)
+			return false;
+		const ShapeMarker *marker = _activeShapes.find(instruction.args[1]);
+		if (!marker)
+			return false;
+		_playerPosition.y = marker->a.y;
+		return true;
+	}
+
+	if (op.equalsIgnoreCase("hide3d")) {
+		_3dEnabled = false;
+		return true;
+	}
+	if (op.equalsIgnoreCase("show3d")) {
+		_3dEnabled = true;
+		return true;
+	}
+
 	if (op.equalsIgnoreCase("play") ||
 	    op.equalsIgnoreCase("wait_say") ||
+	    op.equalsIgnoreCase("cwait_say") ||
 	    op.equalsIgnoreCase("SetDialogCameras") ||
-	    op.equalsIgnoreCase("e3d_hide") ||
-	    op.equalsIgnoreCase("e3d_unhide") ||
+	    op.equalsIgnoreCase("SetNoCameraReset") ||
+	    op.equalsIgnoreCase("SetCamera") ||
+	    op.equalsIgnoreCase("envsound_state") ||
+	    op.equalsIgnoreCase("PlaySample") ||
+	    op.equalsIgnoreCase("wait_frames") ||
 	    op.equalsIgnoreCase("BreakLifeToChar"))
 		return true;
 
