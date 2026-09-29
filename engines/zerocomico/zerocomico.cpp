@@ -1406,12 +1406,14 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 
 		// The original callback maps script values 1/2/3 to internal camera
 		// modes 0/1/2: Placed, Subjective and Spot respectively.
-		if (!_cameraModeLocked)
-			_cameraMode = (int)requested - 1;
+		// LockCameraMode is a separate global flag in the retail executable; the
+		// SetCameraMode callback does not test it, so script-driven changes remain
+		// authoritative even while manual camera-mode controls are locked.
+		_cameraMode = (int)requested - 1;
 		debug(1, "Zero Comico: camera mode request %d -> %s%s",
 		      (int)requested,
 		      _cameraMode == 0 ? "Placed" : (_cameraMode == 1 ? "Subjective" : "Spot"),
-		      _cameraModeLocked ? " (locked)" : "");
+		      _cameraModeLocked ? " (manual switching locked)" : "");
 		return true;
 	}
 
