@@ -279,7 +279,8 @@ static void drawCutsceneSubtitle(Graphics::ManagedSurface &surface,
 
 static void drawInventoryOverlay(Graphics::ManagedSurface &surface,
                                  const Common::Array<Common::String> &inventory,
-                                 const Common::String &selected) {
+                                 const Common::String &selected,
+                                 const Common::String &combineFirst) {
 	if (inventory.empty())
 		return;
 
@@ -292,6 +293,11 @@ static void drawInventoryOverlay(Graphics::ManagedSurface &surface,
 		text += "(nessun oggetto selezionato)";
 	else
 		text += selected;
+	if (!combineFirst.empty()) {
+		text += "   Combina [C]: ";
+		text += combineFirst;
+		text += " + ...";
+	}
 
 	const uint32 shadow = surface.format.RGBToColor(0, 0, 0);
 	const uint32 color = surface.format.RGBToColor(255, 255, 255);
@@ -1096,7 +1102,8 @@ bool ZeroComicoEngine::renderGameplayFrame(const RenderCamera &camera,
 	if (!rendered)
 		return false;
 
-	drawInventoryOverlay(frame, _inventoryObjects, _selectedInventoryObject);
+	drawInventoryOverlay(frame, _inventoryObjects, _selectedInventoryObject,
+	                     _combineInventoryFirst);
 	_system->copyRectToScreen(frame.getPixels(), frame.pitch, 0, 0, frame.w, frame.h);
 	_system->updateScreen();
 	return true;
@@ -1230,6 +1237,8 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 	_pendingRoomName.clear();
 	_pendingRoomCutscene.clear();
 	_selectedInventoryObject.clear();
+	_combineInventoryFirst.clear();
+	_combineInventorySecond.clear();
 	_inventoryObjects.clear();
 	_hiddenSceneMeshes.clear();
 	_sceneLoopTargets.clear();
@@ -1338,6 +1347,17 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 		debug(1, "Zero Comico: JACS body %s exposes %u sequences (walk=%s, run=%s)",
 		      _playerSequences.bodyName.c_str(), (uint)_playerSequences.sequences.size(),
 		      walkSequence ? "yes" : "no", runSequence ? "yes" : "no");
+	}
+
+	const Common::Path characterPath(level + "/gameplay/char.isc");
+	if (!_playerCharacterScript.load(characterPath)) {
+		warning("Zero Comico: cannot parse playable character metadata %s",
+		        characterPath.toString().c_str());
+	} else {
+		debug(1, "Zero Comico: main player %s uses %s, combine block=%s",
+		      _playerCharacterScript.playerName.c_str(),
+		      _playerCharacterScript.initialBodyName.c_str(),
+		      _playerCharacterScript.hasCombineBlock() ? "yes" : "no");
 	}
 
 	const Common::Path puzzlePath(level + "/gameplay/puzzle.isc");
