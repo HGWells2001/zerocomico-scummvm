@@ -3,6 +3,7 @@ MODULE := engines/zerocomico
 MODULE_OBJS := \
 	bsp.o \
 	camera_script.o \
+	character_script.o \
 	chapter.o \
 	cutscene_script.o \
 	dialog_script.o \
