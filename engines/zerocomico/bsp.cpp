@@ -129,6 +129,7 @@ bool BspMap::load(Common::SeekableReadStream &stream) {
 	tree.clear();
 	graph.clear();
 	support.clear();
+	_treeRoot = -1;
 
 	stream.seek(0);
 	if (stream.size() == 0)
@@ -201,8 +202,9 @@ bool BspMap::load(Common::SeekableReadStream &stream) {
 
 	if (!ok || !r.expect("bsp_tree"))
 		return false;
-	parseTree(r, ok);
-	if (!ok || !r.expect("bsp_end") || !r.expect("pathfinding") || !r.expect("graph"))
+	_treeRoot = parseTree(r, ok);
+	if (!ok || _treeRoot < 0 ||
+	    !r.expect("bsp_end") || !r.expect("pathfinding") || !r.expect("graph"))
 		return false;
 
 	count = r.integer(ok);
@@ -315,6 +317,39 @@ bool BspMap::containsWalkablePoint(float x, float y) const {
 		if (pointInPolygon(polygons[i], x, y))
 			return false;
 	return true;
+}
+
+int BspMap::containingCell(float x, float y) const {
+	int nodeIndex = _treeRoot;
+	while (nodeIndex >= 0) {
+		if ((uint32)nodeIndex >= tree.size())
+			return -1;
+		const BspTreeNode &node = tree[(uint32)nodeIndex];
+		if (node.edge < 0 || (uint32)node.edge >= edges.size())
+			return -1;
+
+		const BspEdge &edge = edges[(uint32)node.edge];
+		if (edge.p0 < 0 || edge.p1 < 0 ||
+		    (uint32)edge.p0 >= points.size() || (uint32)edge.p1 >= points.size())
+			return -1;
+
+		const Vec2 &a = points[(uint32)edge.p0];
+		const Vec2 &b = points[(uint32)edge.p1];
+		const float cross = (b.x - a.x) * (y - a.y) -
+		                    (b.y - a.y) * (x - a.x);
+
+		// Across every non-empty retail BSP, the front side of the node edge is
+		// the right branch. When the node owns a leaf, that front side is the
+		// convex cell itself; the back side continues through the left branch.
+		if (cross >= -1.0e-5f) {
+			if (node.leaf >= 0)
+				return node.leaf;
+			nodeIndex = node.right;
+		} else {
+			nodeIndex = node.left;
+		}
+	}
+	return -1;
 }
 
 static Vec2 closestPointOnSegment(const Vec2 &a, const Vec2 &b, float x, float y) {
@@ -448,7 +483,8 @@ static bool segmentIntersectionParameter(const Vec2 &from, const Vec2 &to,
 bool BspMap::clipWalkableSegment(float fromX, float fromY,
                                  float toX, float toY,
                                  Vec2 &result) const {
-	if (polygons.empty() || !containsWalkablePoint(fromX, fromY))
+	if (_treeRoot < 0 || edges.empty() || points.empty() ||
+	    containingCell(fromX, fromY) < 0)
 		return false;
 
 	const Vec2 from = { fromX, fromY };
@@ -461,40 +497,41 @@ bool BspMap::clipWalkableSegment(float fromX, float fromY,
 		return true;
 	}
 
-	// The retail Spot camera does not project its desired point to the
-	// Euclidean-nearest MapCam boundary. Zero Comico.exe gives the BSP a 2D
-	// segment made from desired camera position and player focus. The endpoint
-	// is clipped at the first boundary crossed by that boom.
-	const float probeT = 1.0e-4f;
-	if (!containsWalkablePoint(from.x + dx * probeT, from.y + dy * probeT)) {
-		result = from;
-		return true;
-	}
-
+	// The retail BSP partitions legal space into convex cells. Edges with a
+	// valid cell only on the front side are the actual solid MapCam boundary;
+	// front+back edges are portals between convex cells and must not shorten the
+	// camera boom. Find the first solid edge that the focus->camera segment
+	// truly exits through.
 	bool clipped = false;
 	float bestT = 1.0f;
-	for (uint32 polygonIndex = 0; polygonIndex < polygons.size(); ++polygonIndex) {
-		const Common::Array<Vec2> &polygon = polygons[polygonIndex];
-		if (polygon.size() < 2)
+	const float length = std::sqrt(length2);
+	const float probeStep = length > 0.0001f ? 0.05f / length : 1.0e-4f;
+
+	for (uint32 edgeIndex = 0; edgeIndex < edges.size(); ++edgeIndex) {
+		const BspEdge &edge = edges[edgeIndex];
+		if (edge.front < 0 || edge.back >= 0 ||
+		    edge.p0 < 0 || edge.p1 < 0 ||
+		    (uint32)edge.p0 >= points.size() || (uint32)edge.p1 >= points.size())
 			continue;
 
-		for (uint32 i = 0, j = polygon.size() - 1; i < polygon.size(); j = i) {
-			float t = 0.0f;
-			if (!segmentIntersectionParameter(from, to, polygon[j], polygon[i], t) ||
-			    t <= 1.0e-5f || t >= bestT)
-				continue;
+		float t = 0.0f;
+		if (!segmentIntersectionParameter(from, to,
+		                                  points[(uint32)edge.p0],
+		                                  points[(uint32)edge.p1], t) ||
+		    t <= 1.0e-5f || t >= bestT)
+			continue;
 
-			// Ignore tangent/vertex contacts that leave the following part of the
-			// boom inside the legal region. What matters is the first true exit.
-			const float afterT = t + 1.0e-4f < 1.0f ? t + 1.0e-4f : 1.0f;
-			if (afterT > t &&
-			    containsWalkablePoint(from.x + dx * afterT,
-			                          from.y + dy * afterT))
-				continue;
+		// Vertex/tangent contacts can touch a solid edge without leaving the
+		// legal BSP. Probe a tiny fixed world distance past the hit and accept the
+		// edge only when the BSP tree says the boom is now outside every cell.
+		const float afterT = t + probeStep < 1.0f ? t + probeStep : 1.0f;
+		if (afterT > t &&
+		    containingCell(from.x + dx * afterT,
+		                   from.y + dy * afterT) >= 0)
+			continue;
 
-			bestT = t;
-			clipped = true;
-		}
+		bestT = t;
+		clipped = true;
 	}
 
 	result.x = from.x + dx * (clipped ? bestT : 1.0f);

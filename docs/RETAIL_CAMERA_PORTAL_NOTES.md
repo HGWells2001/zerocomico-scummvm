@@ -115,6 +115,29 @@ camera maps contain holes and most outer outlines are concave, making
 direction-preserving segment clipping materially different from nearest-edge
 projection.
 
+### Verified BSP tree semantics
+
+Session 4 checked the actual BSP trees from all 40 non-empty retail MapCam
+files. They contain **901 convex cells / leaf labels** in total. For every
+single cell, a point formed from its boundary geometry is classified back to
+the same cell with this rule:
+
+```text
+edge front side -> node leaf, when present; otherwise right child
+edge back side  -> left child
+null branch     -> outside the legal map
+```
+
+All 901 leaf-bearing nodes also refer to an edge whose `front` is that exact
+leaf/cell and whose `back` is `-1`. This makes those edges the solid
+MapCam boundary. Edges with both `front` and `back` set are internal portals
+between convex cells and must not clip the Spot-camera boom.
+
+The runtime therefore now validates the focus through the retail BSP tree and
+clips the focus-to-camera segment against the first **solid `bsp_edge`** that
+actually exits BSP space. Polygon outlines remain useful for general
+walkability helpers, but Spot camera constraint no longer depends on them.
+
 ## SetPlace followed by SetMap
 
 Retail scripts can request a room first and its map immediately afterwards,

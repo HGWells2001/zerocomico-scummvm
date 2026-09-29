@@ -69,6 +69,7 @@ public:
 	Common::Array<BspSupport> support;
 
 	bool containsWalkablePoint(float x, float y) const;
+	int containingCell(float x, float y) const;
 	bool nearestWalkablePoint(float x, float y, Vec2 &result) const;
 	bool clipWalkableSegment(float fromX, float fromY, float toX, float toY,
 	                         Vec2 &result) const;
@@ -77,6 +78,7 @@ public:
 
 private:
 	int parseTree(class LineReader &reader, bool &ok);
+	int _treeRoot = -1;
 };
 
 } // namespace ZeroComico
