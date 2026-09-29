@@ -43,6 +43,7 @@ private:
 	bool playCutscene(const Common::String &name);
 	void playFilmIfPresent(const Common::Path &path);
 	void startRoomMusic(const Common::String &fileName, float volume);
+	void setEnvironmentSound(const Common::String &fileName, bool enabled);
 	bool loadMenuScene();
 	bool renderMenuFrame(int selection);
 	bool runMainPlacePreview(const Common::String &mainPlace);
@@ -101,6 +102,8 @@ private:
 	Common::String _defaultRoomCameraName;
 	Common::String _currentMusicName;
 	Audio::SoundHandle _musicHandle;
+	Common::String _environmentSoundName;
+	Audio::SoundHandle _environmentSoundHandle;
 	Common::String _selectedInventoryObject;
 	Common::String _combineInventoryFirst;
 	Common::String _combineInventorySecond;
