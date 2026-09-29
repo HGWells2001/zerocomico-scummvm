@@ -54,6 +54,12 @@ static bool containsIgnoreCase(const Common::Array<Common::String> &values,
 	return false;
 }
 
+static bool startsWithIgnoreCase(const Common::String &value,
+                                const Common::String &prefix) {
+	return prefix.size() <= value.size() &&
+	       value.substr(0, prefix.size()).equalsIgnoreCase(prefix);
+}
+
 static Common::String pairedCameraMapName(const Common::String &walkMap) {
 	Common::String lower = walkMap;
 	lower.toLowercase();
@@ -1871,6 +1877,7 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 	_activeRoomPrefix.clear();
 	_activeRoomMaps.clear();
 	_activeRoomCameraMaps.clear();
+	_activeAutoCameraTrigger.clear();
 	_playerHatVisible = true;
 	_pendingSaySpeaker.clear();
 	_pendingSayText.clear();
@@ -2035,6 +2042,22 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 	else
 		debug(1, "Zero Comico: loaded %u puzzle objects", (uint)_activePuzzle.objects.size());
 
+	_activeCameraTriggers = PuzzleScript();
+	_activeCameraShapes = ShapeScript();
+	const Common::Path cameraTriggerPath(level + "/gameplay/camera.gsc");
+	const Common::Path cameraShapePath(level + "/gameplay/camera.shp");
+	const bool haveCameraTriggers = _activeCameraTriggers.load(cameraTriggerPath);
+	const bool haveCameraShapes = _activeCameraShapes.load(cameraShapePath);
+	if (haveCameraTriggers && haveCameraShapes) {
+		debug(1, "Zero Comico: loaded %u automatic camera triggers, %u polygons and %u range shapes",
+		      (uint)_activeCameraTriggers.objects.size(),
+		      (uint)_activeCameraShapes.polygons().size(),
+		      (uint)_activeCameraShapes.shapes().size());
+	} else if (level != "Mp0") {
+		warning("Zero Comico: automatic camera trigger data is incomplete for %s",
+		        level.c_str());
+	}
+
 	const Common::Path dialogPath(level + "/gameplay/dialog.isc");
 	if (!_activeDialog.load(dialogPath))
 		warning("Zero Comico: cannot parse dialogue file %s", dialogPath.toString().c_str());
@@ -2152,9 +2175,57 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 		return false;
 	};
 
+	auto updateAutoCamera = [&]() -> bool {
+		const PuzzleObject *activeTrigger = nullptr;
+		for (uint32 i = 0; i < _activeCameraTriggers.objects.size(); ++i) {
+			const PuzzleObject &candidate = _activeCameraTriggers.objects[i];
+			if (!candidate.enabled || !candidate.autoCamera ||
+			    !startsWithIgnoreCase(candidate.name, _activeRoomPrefix))
+				continue;
+
+			const Common::String &region = candidate.polygon.empty()
+				? candidate.rangeShape : candidate.polygon;
+			if (region.empty() ||
+			    !_activeCameraShapes.containsRegion(region, _playerPosition.x, _playerPosition.z))
+				continue;
+
+			activeTrigger = &candidate;
+			break;
+		}
+
+		if (!activeTrigger) {
+			_activeAutoCameraTrigger.clear();
+			return false;
+		}
+		if (_activeAutoCameraTrigger.equalsIgnoreCase(activeTrigger->name))
+			return false;
+
+		_activeAutoCameraTrigger = activeTrigger->name;
+		debug(1, "Zero Comico: entered automatic camera region %s",
+		      activeTrigger->name.c_str());
+
+		if (activeTrigger->enterStart != 0xffffffffU &&
+		    activeTrigger->enterEnd != 0xffffffffU &&
+		    activeTrigger->enterStart < activeTrigger->enterEnd) {
+			if (!_scriptVM.run(_activeCameraTriggers.program(),
+			                   activeTrigger->enterStart, activeTrigger->enterEnd, 64)) {
+				warning("Zero Comico: automatic camera trigger %s failed",
+				        activeTrigger->name.c_str());
+				return false;
+			}
+		} else {
+			// All retail camera.gsc triggers currently use an in: SetFocus block,
+			// but keep a safe data-driven fallback for malformed/custom data.
+			_pendingCameraName = activeTrigger->name;
+		}
+
+		return applyPendingCamera();
+	};
+
 	if (!runMainPlaceRuntime(roomProgram))
 		warning("Zero Comico: main-place runtime block did not complete cleanly");
 	applyPendingCamera();
+	updateAutoCamera();
 	if (!_pendingMainPlace.empty())
 		return true;
 
@@ -2524,6 +2595,7 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 									_playerPosition.x, _playerPosition.z);
 
 							_pendingCameraName.clear();
+							_activeAutoCameraTrigger.clear();
 							_defaultRoomCameraName = room->camera;
 							startRoomMusic(room->music, room->musicVolume);
 							cameraName = room->camera;
@@ -2578,6 +2650,7 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 									operateMeshes.push_back(nextEntity);
 							}
 
+							updateAutoCamera();
 							debug(1, "Zero Comico: changed place to %s at nav node %d",
 							      room->name.c_str(), _playerNavNode);
 							renderGameplayFrame(renderCamera, sceneDirectory, playerDirectory,
@@ -2723,6 +2796,8 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 					_playerPosition.x += dx * advance;
 					_playerPosition.z += dz * advance;
 					distance -= advance;
+
+					updateAutoCamera();
 
 					if (!renderGameplayFrame(renderCamera, sceneDirectory, playerDirectory,
 					                         animationSource, animationFrame, frame)) {

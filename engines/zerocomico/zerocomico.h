@@ -73,9 +73,11 @@ private:
 	Common::Path _playerAssetDirectory;
 	CharacterScript _playerCharacterScript;
 	PuzzleScript _activePuzzle;
+	PuzzleScript _activeCameraTriggers;
 	DialogScript _activeDialog;
 	TextTableScript _activeTextTables;
 	ShapeScript _activeShapes;
+	ShapeScript _activeCameraShapes;
 	SoftwareRenderer _gameplayRenderer;
 	BspMap _activeWalkMap;
 	BspMap _activeCameraMap;
@@ -103,6 +105,7 @@ private:
 	Common::String _pendingRoomCutscene;
 	Common::String _pendingCameraName;
 	Common::String _defaultRoomCameraName;
+	Common::String _activeAutoCameraTrigger;
 	Common::String _currentMusicName;
 	Audio::SoundHandle _musicHandle;
 	Common::String _environmentSoundName;
