@@ -9,6 +9,8 @@
 #include "common/str.h"
 #include "common/tokenizer.h"
 
+#include <cmath>
+
 namespace ZeroComico {
 
 class LineReader {
@@ -254,6 +256,46 @@ bool BspMap::load(Common::SeekableReadStream &stream) {
 	}
 
 	return ok && r.expect("pathfinding_end");
+}
+
+static bool pointInPolygon(const Common::Array<Vec2> &polygon, float x, float y) {
+	if (polygon.size() < 3)
+		return false;
+
+	bool inside = false;
+	for (uint32 i = 0, j = polygon.size() - 1; i < polygon.size(); j = i++) {
+		const Vec2 &a = polygon[i];
+		const Vec2 &b = polygon[j];
+
+		// Treat points on an edge as inside so exact clicks on the retail floor
+		// boundary are not rejected before graph snapping.
+		const float edgeX = b.x - a.x;
+		const float edgeY = b.y - a.y;
+		const float pointX = x - a.x;
+		const float pointY = y - a.y;
+		const float cross = edgeX * pointY - edgeY * pointX;
+		const float dot = pointX * edgeX + pointY * edgeY;
+		const float edgeLength2 = edgeX * edgeX + edgeY * edgeY;
+		if (std::fabs(cross) <= 0.001f && dot >= -0.001f && dot <= edgeLength2 + 0.001f)
+			return true;
+
+		const bool crosses = ((a.y > y) != (b.y > y)) &&
+			(x < (b.x - a.x) * (y - a.y) / (b.y - a.y) + a.x);
+		if (crosses)
+			inside = !inside;
+	}
+	return inside;
+}
+
+bool BspMap::containsWalkablePoint(float x, float y) const {
+	if (polygons.empty() || !pointInPolygon(polygons[0], x, y))
+		return false;
+
+	// polygons[0] is the room floor boundary; the following polygons are holes.
+	for (uint32 i = 1; i < polygons.size(); ++i)
+		if (pointInPolygon(polygons[i], x, y))
+			return false;
+	return true;
 }
 
 int BspMap::nearestGraphNode(float x, float y) const {
