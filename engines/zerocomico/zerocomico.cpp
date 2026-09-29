@@ -1092,8 +1092,34 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 	// engine, so these can advance the retail startup script without inventing
 	// state we do not render yet. Clone placement is deliberately left as a
 	// boundary until dynamic scene instances are represented natively.
+	if (op.equalsIgnoreCase("Setp")) {
+		if (instruction.args.size() < 2 || _currentMainPlace.empty())
+			return false;
+
+		const Common::String &entityName = instruction.args[0];
+		const Common::String &assetStem = instruction.args[1];
+		if (!containsIgnoreCase(_loadedSetpAssets, assetStem)) {
+			const Common::Path assetDirectory(_currentMainPlace + "/backgrd");
+			SceneModel asset;
+			if (!asset.loadPair(assetDirectory.appendComponent(assetStem + ".p3d"),
+			                    assetDirectory.appendComponent(assetStem + ".anj"))) {
+				warning("Zero Comico: Setp cannot load asset %s for %s",
+				        assetStem.c_str(), entityName.c_str());
+				return false;
+			}
+			_activeScene.mergeFrom(asset);
+			_loadedSetpAssets.push_back(assetStem);
+			debug(1, "Zero Comico: Setp merged asset %s (%u meshes, %u clips)",
+			      assetStem.c_str(), (uint)asset.meshes.size(), (uint)asset.clips.size());
+		}
+
+		// A Setp target can be a hierarchy/controller rather than a visible mesh
+		// (r23_dummyossa in acqua.anj is one such retail example). Loading the
+		// pair is therefore the meaningful success condition.
+		return true;
+	}
+
 	if (op.equalsIgnoreCase("GiveLifeToChar") ||
-	    op.equalsIgnoreCase("Setp") ||
 	    op.equalsIgnoreCase("setpos_x") ||
 	    op.equalsIgnoreCase("setpos_y") ||
 	    op.equalsIgnoreCase("setpos_z") ||
@@ -2140,6 +2166,7 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 	_sceneLoopTargets.clear();
 	_sceneLoopSources.clear();
 	_sceneLoopStartMillis.clear();
+	_loadedSetpAssets.clear();
 
 	const Common::Path roomScript(level + "/gameplay/room.isc");
 	ScriptProgram roomProgram;

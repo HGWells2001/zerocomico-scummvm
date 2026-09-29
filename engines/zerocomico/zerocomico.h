@@ -123,6 +123,7 @@ private:
 	Common::Array<Common::String> _sceneLoopTargets;
 	Common::Array<Common::String> _sceneLoopSources;
 	Common::Array<uint32> _sceneLoopStartMillis;
+	Common::Array<Common::String> _loadedSetpAssets;
 	ScriptVM _scriptVM;
 	bool _interfaceDisabled;
 	bool _3dEnabled;

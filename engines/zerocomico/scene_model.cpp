@@ -699,11 +699,53 @@ const NamedLight *SceneModel::findLight(const Common::String &name) const {
 	return nullptr;
 }
 
+NamedMesh *SceneModel::findMesh(const Common::String &name) {
+	for (uint32 i = 0; i < meshes.size(); ++i)
+		if (meshes[i].name.equalsIgnoreCase(name))
+			return &meshes[i];
+	return nullptr;
+}
+
 const NamedMesh *SceneModel::findMesh(const Common::String &name) const {
 	for (uint32 i = 0; i < meshes.size(); ++i)
 		if (meshes[i].name.equalsIgnoreCase(name))
 			return &meshes[i];
 	return nullptr;
+}
+
+void SceneModel::mergeFrom(const SceneModel &other) {
+	for (uint32 i = 0; i < other.materials.size(); ++i) {
+		if (!findMaterial(other.materials[i].name))
+			materials.push_back(other.materials[i]);
+	}
+	for (uint32 i = 0; i < other.cameras.size(); ++i) {
+		if (!findCamera(other.cameras[i].name))
+			cameras.push_back(other.cameras[i]);
+	}
+	for (uint32 i = 0; i < other.lights.size(); ++i) {
+		if (!findLight(other.lights[i].name))
+			lights.push_back(other.lights[i]);
+	}
+	for (uint32 i = 0; i < other.meshes.size(); ++i) {
+		if (!findMesh(other.meshes[i].name))
+			meshes.push_back(other.meshes[i]);
+	}
+	for (uint32 i = 0; i < other.hierarchies.size(); ++i) {
+		bool duplicate = false;
+		for (uint32 j = 0; j < hierarchies.size(); ++j) {
+			if (hierarchies[j].recordType == other.hierarchies[i].recordType &&
+			    hierarchies[j].name.equalsIgnoreCase(other.hierarchies[i].name)) {
+				duplicate = true;
+				break;
+			}
+		}
+		if (!duplicate)
+			hierarchies.push_back(other.hierarchies[i]);
+	}
+	for (uint32 i = 0; i < other.clips.size(); ++i) {
+		if (!findClipBySource(other.clips[i].name, other.clips[i].data.sourceName))
+			clips.push_back(other.clips[i]);
+	}
 }
 
 const NamedAnimationClip *SceneModel::findClip(const Common::String &name) const {

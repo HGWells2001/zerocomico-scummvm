@@ -60,8 +60,14 @@ public:
 	const NamedMaterial *findMaterial(const Common::String &name) const;
 	const NamedCamera *findCamera(const Common::String &name) const;
 	const NamedLight *findLight(const Common::String &name) const;
+	NamedMesh *findMesh(const Common::String &name);
 	const NamedMesh *findMesh(const Common::String &name) const;
 	const NamedAnimationClip *findClip(const Common::String &name) const;
+
+	// Adds records from a secondary retail P3D/ANJ pair (Setp assets such as
+	// tubi, acqua and pulsanti) without replacing the currently loaded room.
+	// Duplicate named records are kept from the destination scene.
+	void mergeFrom(const SceneModel &other);
 	const NamedAnimationClip *findClipBySource(const Common::String &targetName,
 	                                           const Common::String &sourceName) const;
 
