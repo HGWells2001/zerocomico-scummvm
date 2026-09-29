@@ -980,11 +980,28 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 		return _scriptVM.setVariable(instruction.args[0], _lastDialogueChoice);
 	}
 
-	// The current dialogue UI keeps the retail choice ordering. These mutation
-	// opcodes are accepted as state-machine boundaries until per-choice enable
-	// masks and text-table substitution are represented explicitly.
-	if (op.equalsIgnoreCase("SetChoise") ||
-	    op.equalsIgnoreCase("ModifySentence") ||
+	if (op.equalsIgnoreCase("SetChoise")) {
+		if (instruction.args.size() < 4)
+			return false;
+		DialogDefinition *dialog = _activeDialog.findDialogMutable(instruction.args[1]);
+		if (!dialog)
+			return false;
+
+		int32 choiceIndex = 0;
+		int32 enabled = 0;
+		if (!_scriptVM.resolveValue(instruction.args[2], choiceIndex) ||
+		    !_scriptVM.resolveValue(instruction.args[3], enabled) ||
+		    choiceIndex < 0 || (uint32)choiceIndex >= dialog->choices.size())
+			return false;
+
+		dialog->choices[(uint32)choiceIndex].enabled = enabled != 0;
+		return true;
+	}
+
+	// Text-table substitution is the remaining part of the retail dynamic
+	// dialogue system. Preserve the script flow until those text tables are
+	// decoded into mutable line content.
+	if (op.equalsIgnoreCase("ModifySentence") ||
 	    op.equalsIgnoreCase("csay_FromTextable"))
 		return true;
 
@@ -1396,12 +1413,23 @@ bool ZeroComicoEngine::playDialogue(const Common::String &name,
 	if (shouldQuit() || dialog->choices.empty())
 		return !shouldQuit();
 
+	Common::Array<DialogChoice> activeChoices;
+	Common::Array<uint32> activeChoiceIndices;
+	for (uint32 choiceIndex = 0; choiceIndex < activeChoices.size(); ++choiceIndex) {
+		if (!dialog->choices[choiceIndex].enabled)
+			continue;
+		activeChoices.push_back(dialog->choices[choiceIndex]);
+		activeChoiceIndices.push_back(choiceIndex);
+	}
+	if (activeChoices.empty())
+		return true;
+
 	uint32 selected = 0;
 	bool chosen = false;
 	while (!shouldQuit() && !chosen) {
 		if (!renderGameplayFrame(camera, sceneDirectory, playerDirectory, "Stay", 0.0f, frame))
 			return false;
-		drawDialogueChoices(frame, dialog->choices, selected);
+		drawDialogueChoices(frame, activeChoices, selected);
 		_system->copyRectToScreen(frame.getPixels(), frame.pitch, 0, 0, frame.w, frame.h);
 		_system->updateScreen();
 
@@ -1416,17 +1444,17 @@ bool ZeroComicoEngine::playDialogue(const Common::String &name,
 				continue;
 
 			if (event.kbd.keycode == Common::KEYCODE_UP) {
-				selected = (selected + dialog->choices.size() - 1) % dialog->choices.size();
+				selected = (selected + activeChoices.size() - 1) % activeChoices.size();
 				break;
 			}
 			if (event.kbd.keycode == Common::KEYCODE_DOWN) {
-				selected = (selected + 1) % dialog->choices.size();
+				selected = (selected + 1) % activeChoices.size();
 				break;
 			}
 			if (event.kbd.keycode >= Common::KEYCODE_1 &&
 			    event.kbd.keycode <= Common::KEYCODE_9) {
 				const uint32 direct = (uint32)(event.kbd.keycode - Common::KEYCODE_1);
-				if (direct < dialog->choices.size()) {
+				if (direct < activeChoices.size()) {
 					selected = direct;
 					chosen = true;
 				}
@@ -1447,11 +1475,12 @@ bool ZeroComicoEngine::playDialogue(const Common::String &name,
 	if (shouldQuit())
 		return false;
 
-	_lastDialogueChoice = (int32)selected;
-	if (dialog->choices[selected].targetDialog.empty())
+	const uint32 originalChoice = activeChoiceIndices[selected];
+	_lastDialogueChoice = (int32)originalChoice;
+	if (dialog->choices[originalChoice].targetDialog.empty())
 		return true;
 
-	return playDialogue(dialog->choices[selected].targetDialog, camera,
+	return playDialogue(dialog->choices[originalChoice].targetDialog, camera,
 	                    sceneDirectory, playerDirectory, frame, depth + 1);
 }
 
