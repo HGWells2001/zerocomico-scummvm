@@ -103,6 +103,8 @@ private:
 	Common::String _pendingMainPlace;
 	Common::String _pendingRoomName;
 	Common::String _pendingRoomCutscene;
+	Common::String _pendingRoomMapRoomName;
+	Common::String _pendingRoomMapName;
 	Common::String _pendingCameraName;
 	Common::String _defaultRoomCameraName;
 	Common::String _activeAutoCameraTrigger;

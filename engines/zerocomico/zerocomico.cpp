@@ -898,6 +898,8 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 			return false;
 		_pendingRoomName = instruction.args[0];
 		_pendingRoomCutscene.clear();
+		_pendingRoomMapRoomName.clear();
+		_pendingRoomMapName.clear();
 		if (instruction.args.size() >= 2)
 			_pendingRoomCutscene = instruction.args[1];
 		return true;
@@ -907,7 +909,20 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 		if (instruction.args.size() < 2 || _currentMainPlace.empty())
 			return false;
 
+		const Common::String &targetRoom = instruction.args[0];
 		const Common::String &requestedMap = instruction.args[1];
+
+		// Retail scripts commonly issue SetPlace <room> followed immediately by
+		// SetMap <same room> <map>. The destination room is not active yet, so
+		// defer that map selection until the room transition is committed.
+		if (!targetRoom.equalsIgnoreCase(_activeRoomName)) {
+			_pendingRoomMapRoomName = targetRoom;
+			_pendingRoomMapName = requestedMap;
+			debug(1, "Zero Comico: queued map %s for destination room %s",
+			      requestedMap.c_str(), targetRoom.c_str());
+			return true;
+		}
+
 		if (!_activeRoomMaps.empty() && !containsIgnoreCase(_activeRoomMaps, requestedMap)) {
 			warning("Zero Comico: map %s is not declared for room %s",
 			        requestedMap.c_str(), _activeRoomName.c_str());
@@ -953,6 +968,8 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 		_pendingMainPlace = instruction.args[0];
 		_pendingRoomName.clear();
 		_pendingRoomCutscene.clear();
+		_pendingRoomMapRoomName.clear();
+		_pendingRoomMapName.clear();
 		debug(1, "Zero Comico: requested main-place transition to %s",
 		      _pendingMainPlace.c_str());
 		return true;
@@ -963,6 +980,8 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 			return false;
 		_pendingRoomName = instruction.args[0];
 		_pendingRoomCutscene.clear();
+		_pendingRoomMapRoomName.clear();
+		_pendingRoomMapName.clear();
 		return true;
 	}
 
@@ -973,6 +992,8 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 			return false;
 		_pendingRoomName = instruction.args[1];
 		_pendingRoomCutscene.clear();
+		_pendingRoomMapRoomName.clear();
+		_pendingRoomMapName.clear();
 		return true;
 	}
 
@@ -1885,6 +1906,8 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 	_lastDialogueChoice = -1;
 	_pendingRoomName.clear();
 	_pendingRoomCutscene.clear();
+	_pendingRoomMapRoomName.clear();
+	_pendingRoomMapName.clear();
 	_selectedInventoryObject.clear();
 	_combineInventoryFirst.clear();
 	_combineInventorySecond.clear();
@@ -2574,13 +2597,26 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 
 							_activeWalkMap = BspMap();
 							_activeCameraMap = BspMap();
-							if (!room->maps.empty()) {
+							Common::String destinationMap;
+							if (!room->maps.empty())
+								destinationMap = room->maps[0];
+							if (_pendingRoomMapRoomName.equalsIgnoreCase(room->name) &&
+							    !_pendingRoomMapName.empty()) {
+								if (containsIgnoreCase(room->maps, _pendingRoomMapName))
+								destinationMap = _pendingRoomMapName;
+								else
+									warning("Zero Comico: queued map %s is not declared for destination room %s",
+									        _pendingRoomMapName.c_str(), room->name.c_str());
+							}
+							if (!destinationMap.empty()) {
 								const Common::Path nextMap = Common::Path(level + "/gameplay")
-									.appendComponent(room->maps[0]);
+									.appendComponent(destinationMap);
 								if (!_activeWalkMap.load(nextMap))
 									warning("Zero Comico: cannot load destination walk map %s",
 									        nextMap.toString().c_str());
 							}
+							_pendingRoomMapRoomName.clear();
+							_pendingRoomMapName.clear();
 							if (!room->cameraMaps.empty()) {
 								const Common::Path nextCameraMap = Common::Path(level + "/gameplay")
 									.appendComponent(room->cameraMaps[0]);
