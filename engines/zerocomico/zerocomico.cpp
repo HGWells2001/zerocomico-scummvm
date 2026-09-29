@@ -456,7 +456,7 @@ ZeroComicoEngine::ZeroComicoEngine(OSystem *syst, const ADGameDescription *desc)
 	: Engine(syst), _gameDescription(desc), _havePlayerStart(false), _playerHatVisible(true),
 	  _playerNavNode(-1), _lastDialogueChoice(-1), _scriptDialogueContextActive(false),
 	  _scriptDialogueFrame(nullptr), _scriptVM(this),
-	  _interfaceDisabled(false), _3dEnabled(true) {
+	  _interfaceDisabled(false), _3dEnabled(true), _portalsEnabled(true) {
 	_playerPosition.x = _playerPosition.y = _playerPosition.z = 0.0f;
 	_playerFacingTarget.x = _playerFacingTarget.y = _playerFacingTarget.z = 0.0f;
 }
@@ -1011,10 +1011,20 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 	    op.equalsIgnoreCase("SetEntityPos_Vector") ||
 	    op.equalsIgnoreCase("InsertInBackground") ||
 	    op.equalsIgnoreCase("swap_entity_pos_byindex") ||
-	    op.equalsIgnoreCase("portals_off") ||
-	    op.equalsIgnoreCase("portals_on") ||
 	    op.equalsIgnoreCase("dcue_all"))
 		return true;
+
+	if (op.equalsIgnoreCase("portals_off")) {
+		_portalsEnabled = false;
+		debug(1, "Zero Comico: portal traversal disabled");
+		return true;
+	}
+
+	if (op.equalsIgnoreCase("portals_on")) {
+		_portalsEnabled = true;
+		debug(1, "Zero Comico: portal traversal enabled");
+		return true;
+	}
 
 	if (op.equalsIgnoreCase("SetFocus") || op.equalsIgnoreCase("SetCamera")) {
 		if (instruction.args.empty())
@@ -1899,6 +1909,7 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 	_activeRoomMaps.clear();
 	_activeRoomCameraMaps.clear();
 	_activeAutoCameraTrigger.clear();
+	_portalsEnabled = true;
 	_playerHatVisible = true;
 	_pendingSaySpeaker.clear();
 	_pendingSayText.clear();

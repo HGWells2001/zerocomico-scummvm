@@ -123,6 +123,7 @@ private:
 	ScriptVM _scriptVM;
 	bool _interfaceDisabled;
 	bool _3dEnabled;
+	bool _portalsEnabled;
 };
 
 } // namespace ZeroComico
