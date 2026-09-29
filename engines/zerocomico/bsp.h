@@ -50,6 +50,11 @@ struct NavNode {
 	Common::Array<NavArc> arcs;
 };
 
+struct BspSupport {
+	Common::Array<int> insideNodes;
+	Common::Array<NavArc> weightedNodes;
+};
+
 class BspMap {
 public:
 	bool load(const Common::Path &path);
@@ -61,6 +66,7 @@ public:
 	Common::Array<BspCell> cells;
 	Common::Array<BspTreeNode> tree;
 	Common::Array<NavNode> graph;
+	Common::Array<BspSupport> support;
 
 	bool containsWalkablePoint(float x, float y) const;
 	int nearestGraphNode(float x, float y) const;

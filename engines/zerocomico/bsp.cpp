@@ -128,6 +128,7 @@ bool BspMap::load(Common::SeekableReadStream &stream) {
 	cells.clear();
 	tree.clear();
 	graph.clear();
+	support.clear();
 
 	stream.seek(0);
 	if (stream.size() == 0)
@@ -234,15 +235,23 @@ bool BspMap::load(Common::SeekableReadStream &stream) {
 		graph.push_back(node);
 	}
 
-	// Parse and validate the support block even though this first engine stage
-	// does not retain it yet. This keeps the reader synchronized to EOF.
+	// The retail support block is stored once per BSP convex cell. Preserve it
+	// instead of merely consuming it: camera maps and later traversal logic need
+	// the same cell-to-navigation relationships that the original runtime had.
 	if (!ok || !r.expect("support"))
 		return false;
 	count = r.integer(ok);
 	for (int i = 0; ok && i < count; ++i) {
+		BspSupport entry;
+
 		int n = r.integer(ok);
-		for (int j = 0; ok && j < n; ++j)
-			(void)r.integer(ok);
+		for (int j = 0; ok && j < n; ++j) {
+			const int index = r.integer(ok);
+			if (index < 0 || (uint32)index >= graph.size())
+				ok = false;
+			else
+				entry.insideNodes.push_back(index);
+		}
 
 		n = r.integer(ok);
 		for (int j = 0; ok && j < n; ++j) {
@@ -250,9 +259,19 @@ bool BspMap::load(Common::SeekableReadStream &stream) {
 			int index = 0;
 			float weight = 0.0f;
 			if (tok.empty() || !tokenInt(tok.nextToken(), index) ||
-			    tok.empty() || !tokenFloat(tok.nextToken(), weight) || !tok.empty())
+			    tok.empty() || !tokenFloat(tok.nextToken(), weight) || !tok.empty() ||
+			    index < 0 || (uint32)index >= graph.size()) {
 				ok = false;
+				continue;
+			}
+
+			NavArc weighted;
+			weighted.target = index;
+			weighted.weight = weight;
+			entry.weightedNodes.push_back(weighted);
 		}
+
+		support.push_back(entry);
 	}
 
 	return ok && r.expect("pathfinding_end");
