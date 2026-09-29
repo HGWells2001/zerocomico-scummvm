@@ -982,6 +982,11 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 		return true;
 	}
 
+	if (op.equalsIgnoreCase("quit_game")) {
+		quitGame();
+		return true;
+	}
+
 	if (op.equalsIgnoreCase("disable3d")) {
 		_3dEnabled = false;
 		return true;
@@ -1021,6 +1026,24 @@ bool ZeroComicoEngine::evaluateScriptCondition(const ScriptInstruction &instruct
 		if (instruction.args.size() < 2)
 			return false;
 		result = _selectedInventoryObject.equalsIgnoreCase(instruction.args[1]);
+		return true;
+	}
+
+	if (instruction.opcode.equalsIgnoreCase("ifobjininv")) {
+		if (instruction.args.size() < 2)
+			return false;
+		result = containsIgnoreCase(_inventoryObjects, instruction.args[1]);
+		return true;
+	}
+
+	// Cutscenes are synchronous in this runtime, and the menu interface is not
+	// open while a gameplay script is executing.
+	if (instruction.opcode.equalsIgnoreCase("if_is_playingcut")) {
+		result = false;
+		return true;
+	}
+	if (instruction.opcode.equalsIgnoreCase("if_is_openmenuinterface")) {
+		result = false;
 		return true;
 	}
 
