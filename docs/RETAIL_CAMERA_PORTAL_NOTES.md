@@ -89,9 +89,31 @@ SpotMinDistance  25
 SpotSmooth       30
 ```
 
-The fifth value is stored directly. These values are now retained by the
-runtime. Exact Subjective/Spot motion and `MapCam` constraint behavior still
-need to be reproduced before those modes are considered complete.
+The fifth value is stored directly. These values are retained by the runtime.
+
+### Spot / MapCam clipping
+
+The Spot update in the retail executable first builds the focus at character
+Y + `SpotHeight`, then the desired camera point at `SpotDistance` in the
+actor-relative camera direction. If a camera map is active, the focus point is
+tested against that `MapCam`.
+
+When the focus is legal, the executable constructs a **2D segment between the
+desired camera point and the focus** and passes that segment through the BSP
+camera-map clipping routine. The resulting camera point therefore stays on the
+same boom/ray from the character and stops at the first MapCam boundary it
+crosses. It is not an Euclidean nearest-point projection to an arbitrary edge.
+
+If the focus itself is outside the active MapCam, the retail code does not
+search for a nearest legal boundary. It collapses the boom to the same
+actor-relative direction at **10 world units**. The runtime now mirrors both
+behaviors before applying the existing distance-dependent vertical correction,
+Spot smoothing, `SpotMinDistance` padding, and 150-unit look-ahead.
+
+The supplied archive contains 42 MapCam files, 40 non-empty. Eighteen non-empty
+camera maps contain holes and most outer outlines are concave, making
+direction-preserving segment clipping materially different from nearest-edge
+projection.
 
 ## SetPlace followed by SetMap
 

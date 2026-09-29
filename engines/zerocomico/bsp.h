@@ -70,6 +70,8 @@ public:
 
 	bool containsWalkablePoint(float x, float y) const;
 	bool nearestWalkablePoint(float x, float y, Vec2 &result) const;
+	bool clipWalkableSegment(float fromX, float fromY, float toX, float toY,
+	                         Vec2 &result) const;
 	int nearestGraphNode(float x, float y) const;
 	bool shortestPath(int startNode, int endNode, Common::Array<int> &path) const;
 

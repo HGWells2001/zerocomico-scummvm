@@ -418,6 +418,90 @@ bool BspMap::nearestWalkablePoint(float x, float y, Vec2 &result) const {
 	return true;
 }
 
+static float cross2D(float ax, float ay, float bx, float by) {
+	return ax * by - ay * bx;
+}
+
+static bool segmentIntersectionParameter(const Vec2 &from, const Vec2 &to,
+                                         const Vec2 &a, const Vec2 &b,
+                                         float &t) {
+	const float rx = to.x - from.x;
+	const float ry = to.y - from.y;
+	const float sx = b.x - a.x;
+	const float sy = b.y - a.y;
+	const float denominator = cross2D(rx, ry, sx, sy);
+	if (std::fabs(denominator) <= 1.0e-7f)
+		return false;
+
+	const float qpx = a.x - from.x;
+	const float qpy = a.y - from.y;
+	const float candidateT = cross2D(qpx, qpy, sx, sy) / denominator;
+	const float u = cross2D(qpx, qpy, rx, ry) / denominator;
+	if (candidateT < 0.0f || candidateT > 1.0f ||
+	    u < -1.0e-5f || u > 1.0f + 1.0e-5f)
+		return false;
+
+	t = candidateT;
+	return true;
+}
+
+bool BspMap::clipWalkableSegment(float fromX, float fromY,
+                                 float toX, float toY,
+                                 Vec2 &result) const {
+	if (polygons.empty() || !containsWalkablePoint(fromX, fromY))
+		return false;
+
+	const Vec2 from = { fromX, fromY };
+	const Vec2 to = { toX, toY };
+	const float dx = to.x - from.x;
+	const float dy = to.y - from.y;
+	const float length2 = dx * dx + dy * dy;
+	if (length2 <= 1.0e-12f) {
+		result = from;
+		return true;
+	}
+
+	// The retail Spot camera does not project its desired point to the
+	// Euclidean-nearest MapCam boundary. Zero Comico.exe gives the BSP a 2D
+	// segment made from desired camera position and player focus. The endpoint
+	// is clipped at the first boundary crossed by that boom.
+	const float probeT = 1.0e-4f;
+	if (!containsWalkablePoint(from.x + dx * probeT, from.y + dy * probeT)) {
+		result = from;
+		return true;
+	}
+
+	bool clipped = false;
+	float bestT = 1.0f;
+	for (uint32 polygonIndex = 0; polygonIndex < polygons.size(); ++polygonIndex) {
+		const Common::Array<Vec2> &polygon = polygons[polygonIndex];
+		if (polygon.size() < 2)
+			continue;
+
+		for (uint32 i = 0, j = polygon.size() - 1; i < polygon.size(); j = i) {
+			float t = 0.0f;
+			if (!segmentIntersectionParameter(from, to, polygon[j], polygon[i], t) ||
+			    t <= 1.0e-5f || t >= bestT)
+				continue;
+
+			// Ignore tangent/vertex contacts that leave the following part of the
+			// boom inside the legal region. What matters is the first true exit.
+			const float afterT = t + 1.0e-4f < 1.0f ? t + 1.0e-4f : 1.0f;
+			if (afterT > t &&
+			    containsWalkablePoint(from.x + dx * afterT,
+			                          from.y + dy * afterT))
+				continue;
+
+			bestT = t;
+			clipped = true;
+		}
+	}
+
+	result.x = from.x + dx * (clipped ? bestT : 1.0f);
+	result.y = from.y + dy * (clipped ? bestT : 1.0f);
+	return true;
+}
+
 int BspMap::nearestGraphNode(float x, float y) const {
 	if (graph.empty())
 		return -1;

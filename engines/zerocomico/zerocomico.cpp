@@ -3141,10 +3141,21 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 		desired.z -= forward.z * _spotDistance;
 
 		if (!_activeCameraMap.polygons.empty()) {
-			Vec2 constrained;
-			if (_activeCameraMap.nearestWalkablePoint(desired.x, desired.z, constrained)) {
-				desired.x = constrained.x;
-				desired.z = constrained.y;
+			if (_activeCameraMap.containsWalkablePoint(focus.x, focus.z)) {
+				Vec2 constrained;
+				if (_activeCameraMap.clipWalkableSegment(
+						focus.x, focus.z, desired.x, desired.z, constrained)) {
+					desired.x = constrained.x;
+					desired.z = constrained.y;
+				}
+			} else {
+				// The retail update checks the focus against MapCam before clipping.
+				// If the focus itself is outside, it collapses the boom to the same
+				// actor-relative direction at 10 world units instead of snapping to
+				// an unrelated nearest boundary point.
+				desired = focus;
+				desired.x -= forward.x * 10.0f;
+				desired.z -= forward.z * 10.0f;
 			}
 		}
 
