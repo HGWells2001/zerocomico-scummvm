@@ -1415,7 +1415,7 @@ bool ZeroComicoEngine::playDialogue(const Common::String &name,
 
 	Common::Array<DialogChoice> activeChoices;
 	Common::Array<uint32> activeChoiceIndices;
-	for (uint32 choiceIndex = 0; choiceIndex < activeChoices.size(); ++choiceIndex) {
+	for (uint32 choiceIndex = 0; choiceIndex < dialog->choices.size(); ++choiceIndex) {
 		if (!dialog->choices[choiceIndex].enabled)
 			continue;
 		activeChoices.push_back(dialog->choices[choiceIndex]);
