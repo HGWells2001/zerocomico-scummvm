@@ -894,11 +894,19 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 	    op.equalsIgnoreCase("SetEntityPos_Vector") ||
 	    op.equalsIgnoreCase("InsertInBackground") ||
 	    op.equalsIgnoreCase("swap_entity_pos_byindex") ||
-	    op.equalsIgnoreCase("SetFocus") ||
 	    op.equalsIgnoreCase("portals_off") ||
 	    op.equalsIgnoreCase("portals_on") ||
 	    op.equalsIgnoreCase("dcue_all"))
 		return true;
+
+	if (op.equalsIgnoreCase("SetFocus") || op.equalsIgnoreCase("SetCamera")) {
+		if (instruction.args.empty())
+			return false;
+		_pendingCameraName = instruction.args[0];
+		debug(1, "Zero Comico: script requested camera %s",
+		      _pendingCameraName.c_str());
+		return true;
+	}
 
 	if (op.equalsIgnoreCase("say")) {
 		if (instruction.args.empty())
@@ -1190,7 +1198,6 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 	    op.equalsIgnoreCase("cwait_say") ||
 	    op.equalsIgnoreCase("SetDialogCameras") ||
 	    op.equalsIgnoreCase("SetNoCameraReset") ||
-	    op.equalsIgnoreCase("SetCamera") ||
 	    op.equalsIgnoreCase("envsound_state") ||
 	    op.equalsIgnoreCase("BreakLifeToChar"))
 		return true;
@@ -1885,8 +1892,48 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 		renderCamera.focalPixels = embedded->data.fov * 800.0f / 36.0f;
 	}
 
+	auto applyPendingCamera = [&]() -> bool {
+		if (_pendingCameraName.empty())
+			return false;
+
+		const Common::String requested = _pendingCameraName;
+		_pendingCameraName.clear();
+
+		const ScriptCamera *scriptCamera = cameraScript.findCamera(requested);
+		if (scriptCamera) {
+			const float radians = scriptCamera->horizontalFovDegrees *
+				3.14159265358979323846f / 180.0f;
+			const float halfTan = std::tan(radians * 0.5f);
+			if (halfTan > 0.0001f) {
+				cameraName = requested;
+				renderCamera.position = scriptCamera->source;
+				renderCamera.target = scriptCamera->target;
+				renderCamera.focalPixels = 400.0f / halfTan;
+				renderCamera.rollRadians = 0.0f;
+				debug(1, "Zero Comico: applied scripted camera %s", requested.c_str());
+				return true;
+			}
+		}
+
+		const NamedCamera *embedded = _activeScene.findCamera(requested);
+		if (embedded && embedded->data.fov > 0.0f) {
+			cameraName = requested;
+			renderCamera.position = embedded->data.position;
+			renderCamera.target = embedded->data.target;
+			renderCamera.focalPixels = embedded->data.fov * 800.0f / 36.0f;
+			renderCamera.rollRadians = 0.0f;
+			debug(1, "Zero Comico: applied embedded camera %s", requested.c_str());
+			return true;
+		}
+
+		warning("Zero Comico: requested camera %s is not available in the active room",
+		        requested.c_str());
+		return false;
+	};
+
 	if (!runMainPlaceRuntime(roomProgram))
 		warning("Zero Comico: main-place runtime block did not complete cleanly");
+	applyPendingCamera();
 	if (!_pendingMainPlace.empty())
 		return true;
 
@@ -2252,6 +2299,7 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 								_playerNavNode = _activeWalkMap.nearestGraphNode(
 									_playerPosition.x, _playerPosition.z);
 
+							_pendingCameraName.clear();
 							cameraName = room->camera;
 							bool nextCameraReady = false;
 							const ScriptCamera *nextScriptCamera = cameraScript.findCamera(cameraName);
@@ -2518,7 +2566,13 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 			}
 		}
 
+		const bool cameraChanged = applyPendingCamera();
 		const uint32 idleNow = _system->getMillis();
+		if (cameraChanged && !done && !shouldQuit()) {
+			renderGameplayFrame(renderCamera, sceneDirectory, playerDirectory,
+			                    "Stay", 0.0f, frame);
+			lastIdleRender = idleNow;
+		}
 		if (!done && !shouldQuit() && idleNow - lastIdleRender >= 40U) {
 			float stayStart = 0.0f;
 			float stayEnd = 0.0f;
