@@ -17,8 +17,11 @@ static bool isConditionalOpcode(const Common::String &op) {
 	       op.equalsIgnoreCase("if_l") || op.equalsIgnoreCase("if_le") ||
 	       op.equalsIgnoreCase("if_z") || op.equalsIgnoreCase("if_nz") ||
 	       op.equalsIgnoreCase("ifobjselected") ||
+	       op.equalsIgnoreCase("ifobjininv") ||
 	       op.equalsIgnoreCase("ifallobjnoselected") ||
-	       op.equalsIgnoreCase("ifcombine");
+	       op.equalsIgnoreCase("ifcombine") ||
+	       op.equalsIgnoreCase("if_is_playingcut") ||
+	       op.equalsIgnoreCase("if_is_openmenuinterface");
 }
 
 } // namespace
@@ -190,8 +193,11 @@ bool ScriptVM::executeRandom(const ScriptInstruction &instruction) {
 
 bool ScriptVM::evaluateComparison(const ScriptInstruction &instruction, bool &result) const {
 	if (instruction.opcode.equalsIgnoreCase("ifobjselected") ||
+	    instruction.opcode.equalsIgnoreCase("ifobjininv") ||
 	    instruction.opcode.equalsIgnoreCase("ifallobjnoselected") ||
-	    instruction.opcode.equalsIgnoreCase("ifcombine"))
+	    instruction.opcode.equalsIgnoreCase("ifcombine") ||
+	    instruction.opcode.equalsIgnoreCase("if_is_playingcut") ||
+	    instruction.opcode.equalsIgnoreCase("if_is_openmenuinterface"))
 		return _host && _host->evaluateScriptCondition(instruction, result);
 
 	if (instruction.args.empty())
