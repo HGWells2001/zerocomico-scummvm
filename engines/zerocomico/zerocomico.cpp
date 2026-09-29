@@ -1671,6 +1671,16 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 		return true;
 	}
 
+	if (op.equalsIgnoreCase("SetDialogCameras")) {
+		if (instruction.args.size() < 2)
+			return false;
+		_dialogCameraFirstName = instruction.args[0];
+		_dialogCameraSecondName = instruction.args[1];
+		debug(1, "Zero Comico: dialogue cameras %s / %s",
+		      _dialogCameraFirstName.c_str(), _dialogCameraSecondName.c_str());
+		return true;
+	}
+
 	if (op.equalsIgnoreCase("SetFocus") || op.equalsIgnoreCase("SetCamera")) {
 		if (instruction.args.empty())
 			return false;
@@ -2007,7 +2017,6 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 	if (op.equalsIgnoreCase("play") ||
 	    op.equalsIgnoreCase("wait_say") ||
 	    op.equalsIgnoreCase("cwait_say") ||
-	    op.equalsIgnoreCase("SetDialogCameras") ||
 	    op.equalsIgnoreCase("BreakLifeToChar"))
 		return true;
 
@@ -2553,12 +2562,65 @@ bool ZeroComicoEngine::playDialogue(const Common::String &name,
 		return false;
 	}
 
+	RenderCamera dialogueCamera = camera;
+	const ScriptCamera *dialogFirst = _dialogCameraFirstName.empty()
+		? nullptr : _activeCameraScript.findCamera(_dialogCameraFirstName);
+	const ScriptCamera *dialogSecond = _dialogCameraSecondName.empty()
+		? nullptr : _activeCameraScript.findCamera(_dialogCameraSecondName);
+
+	auto applyDialogScriptCamera = [&](const ScriptCamera *scriptCamera) {
+		if (!scriptCamera || scriptCamera->horizontalFovDegrees <= 0.0f)
+			return false;
+		const float radians = scriptCamera->horizontalFovDegrees *
+			3.14159265358979323846f / 180.0f;
+		const float halfTan = std::tan(radians * 0.5f);
+		if (halfTan <= 0.0001f)
+			return false;
+		dialogueCamera.position = scriptCamera->source;
+		dialogueCamera.target = scriptCamera->target;
+		dialogueCamera.focalPixels = 400.0f / halfTan;
+		dialogueCamera.rollRadians = 0.0f;
+		return true;
+	};
+
+	// SetDialogCameras stores a left/right pair, not player/NPC slots. The
+	// original executable chooses between them from actor-side geometry. The
+	// exported fixed cameras encode the same distinction in their targets, so
+	// classify the pair against the live MainPlayer position. This naturally
+	// handles the retail dx/sx reversals and same-camera pairs.
+	const ScriptCamera *playerDialogCamera = nullptr;
+	const ScriptCamera *otherDialogCamera = nullptr;
+	if (dialogFirst && dialogSecond) {
+		const float firstDx = dialogFirst->target.x - _playerPosition.x;
+		const float firstDz = dialogFirst->target.z - _playerPosition.z;
+		const float secondDx = dialogSecond->target.x - _playerPosition.x;
+		const float secondDz = dialogSecond->target.z - _playerPosition.z;
+		const float firstDistance2 = firstDx * firstDx + firstDz * firstDz;
+		const float secondDistance2 = secondDx * secondDx + secondDz * secondDz;
+		if (firstDistance2 <= secondDistance2) {
+			playerDialogCamera = dialogFirst;
+			otherDialogCamera = dialogSecond;
+		} else {
+			playerDialogCamera = dialogSecond;
+			otherDialogCamera = dialogFirst;
+		}
+	} else {
+		playerDialogCamera = dialogFirst ? dialogFirst : dialogSecond;
+		otherDialogCamera = playerDialogCamera;
+	}
+	applyDialogScriptCamera(playerDialogCamera);
+
 	for (uint32 lineIndex = 0; lineIndex < dialog->lines.size() && !shouldQuit(); ++lineIndex) {
 		const DialogLine &line = dialog->lines[lineIndex];
 		const DialogSpeaker *speaker = _activeDialog.findSpeakerByKey(line.speakerKey);
 		const Common::String speakerName = speaker ? speaker->name : line.speakerKey;
+		const bool speakerIsPlayer =
+			speakerName.equalsIgnoreCase("MainPlayer") ||
+			(!_playerCharacterScript.playerName.empty() &&
+			 speakerName.equalsIgnoreCase(_playerCharacterScript.playerName));
+		applyDialogScriptCamera(speakerIsPlayer ? playerDialogCamera : otherDialogCamera);
 
-		if (!renderGameplayFrame(camera, sceneDirectory, playerDirectory, "Stay", 0.0f, frame))
+		if (!renderGameplayFrame(dialogueCamera, sceneDirectory, playerDirectory, "Stay", 0.0f, frame))
 			return false;
 		drawCutsceneSubtitle(frame, speakerName, line.text);
 		_system->copyRectToScreen(frame.getPixels(), frame.pitch, 0, 0, frame.w, frame.h);
@@ -2621,7 +2683,7 @@ bool ZeroComicoEngine::playDialogue(const Common::String &name,
 	uint32 selected = 0;
 	bool chosen = false;
 	while (!shouldQuit() && !chosen) {
-		if (!renderGameplayFrame(camera, sceneDirectory, playerDirectory, "Stay", 0.0f, frame))
+		if (!renderGameplayFrame(dialogueCamera, sceneDirectory, playerDirectory, "Stay", 0.0f, frame))
 			return false;
 		drawDialogueChoices(frame, activeChoices, selected);
 		_system->copyRectToScreen(frame.getPixels(), frame.pitch, 0, 0, frame.w, frame.h);
@@ -2715,6 +2777,8 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 	_pendingRoomCutscene.clear();
 	_pendingRoomMapRoomName.clear();
 	_pendingRoomMapName.clear();
+	_dialogCameraFirstName.clear();
+	_dialogCameraSecondName.clear();
 	_selectedInventoryObject.clear();
 	_combineInventoryFirst.clear();
 	_combineInventorySecond.clear();
@@ -2940,10 +3004,10 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 	// room.isc points at an alias whose source/target/FOV live in Camera.scr.
 	// Using that script camera fixes the start-room viewpoint instead of
 	// falling back to the unrelated exported editor camera.
-	CameraScript cameraScript;
+	_activeCameraScript = CameraScript();
 	const Common::Path cameraScriptPath(level + "/gameplay/Camera.scr");
-	if (cameraScript.load(cameraScriptPath)) {
-		const ScriptCamera *scriptCamera = cameraScript.findCamera(cameraName);
+	if (_activeCameraScript.load(cameraScriptPath)) {
+		const ScriptCamera *scriptCamera = _activeCameraScript.findCamera(cameraName);
 		if (scriptCamera) {
 			const float radians = scriptCamera->horizontalFovDegrees * 3.14159265358979323846f / 180.0f;
 			const float halfTan = std::tan(radians * 0.5f);
@@ -2979,7 +3043,7 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 		const Common::String requested = _pendingCameraName;
 		_pendingCameraName.clear();
 
-		const ScriptCamera *scriptCamera = cameraScript.findCamera(requested);
+		const ScriptCamera *scriptCamera = _activeCameraScript.findCamera(requested);
 		if (scriptCamera) {
 			const float radians = scriptCamera->horizontalFovDegrees *
 				3.14159265358979323846f / 180.0f;
@@ -3433,7 +3497,7 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 		cameraName = room->camera;
 
 		bool nextCameraReady = false;
-		const ScriptCamera *nextScriptCamera = cameraScript.findCamera(cameraName);
+		const ScriptCamera *nextScriptCamera = _activeCameraScript.findCamera(cameraName);
 		if (nextScriptCamera) {
 			const float radians = nextScriptCamera->horizontalFovDegrees *
 				3.14159265358979323846f / 180.0f;

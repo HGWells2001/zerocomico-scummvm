@@ -10,6 +10,7 @@
 #include "common/events.h"
 
 #include "zerocomico/bsp.h"
+#include "zerocomico/camera_script.h"
 #include "zerocomico/cutscene_script.h"
 #include "zerocomico/character_script.h"
 #include "zerocomico/dialog_script.h"
@@ -104,6 +105,7 @@ private:
 	CharacterScript _playerCharacterScript;
 	PuzzleScript _activePuzzle;
 	PuzzleScript _activeCameraTriggers;
+	CameraScript _activeCameraScript;
 	DialogScript _activeDialog;
 	TextTableScript _activeTextTables;
 	ShapeScript _activeShapes;
@@ -137,6 +139,8 @@ private:
 	Common::String _pendingRoomMapName;
 	Common::String _pendingCameraName;
 	Common::String _defaultRoomCameraName;
+	Common::String _dialogCameraFirstName;
+	Common::String _dialogCameraSecondName;
 	Common::String _activeAutoCameraTrigger;
 	Common::String _currentMusicName;
 	Audio::SoundHandle _musicHandle;

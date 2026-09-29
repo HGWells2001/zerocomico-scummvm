@@ -222,6 +222,29 @@ This also explains the two zero-byte files shipped on disc,
 room declaration. They are orphaned editor artifacts, not empty camera maps
 that the runtime must accept as valid active MapCam data.
 
+## SetDialogCameras
+
+The retail corpus contains **59** `SetDialogCameras` calls across Mp1..Mp5.
+The callback stores its two camera-object arguments directly in globals used
+by the dialogue renderer. They are not fixed "player camera" and "NPC camera"
+slots: the executable runs a left/right actor-geometry test and then chooses
+the first or second camera. This matches the scripts, where Mp2 deliberately
+passes several pairs as `*_dx *_sx` while other levels commonly use
+`*_sx *_dx`; nine calls intentionally pass the same camera twice.
+
+The reimplementation now retains the two requested camera names and switches
+the rendered dialogue view per spoken line. Camera.scr exports the corresponding
+fixed cameras with distinct targets, so the runtime classifies which member of
+the pair frames the live MainPlayer by horizontal target distance to the
+current player position; the other member frames the interlocutor. This is a
+data-driven equivalent for the exported retail camera pair and automatically
+preserves reversed and identical pairs. Dialogue choice lists keep the most
+recent dialogue view, with the player-side camera selected initially.
+
+The underlying executable side-test at `0x420a2e` has also been isolated for
+future bit-level fidelity: it compares actor orientation vectors on the XZ
+plane and selects global camera A/B from the sign of the resulting side vector.
+
 ## Dialogue do blocks and SetNoCameraReset
 
 The retail dialogue files contain eight `do ... end` post-dialog blocks:
