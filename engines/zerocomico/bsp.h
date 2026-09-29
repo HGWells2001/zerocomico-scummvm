@@ -62,6 +62,7 @@ public:
 	Common::Array<BspTreeNode> tree;
 	Common::Array<NavNode> graph;
 
+	bool containsWalkablePoint(float x, float y) const;
 	int nearestGraphNode(float x, float y) const;
 	bool shortestPath(int startNode, int endNode, Common::Array<int> &path) const;
 
