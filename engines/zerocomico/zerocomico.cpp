@@ -1528,6 +1528,24 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 		return stopLoopCutscene(instruction.args[0]);
 	}
 
+	if (op.equalsIgnoreCase("play")) {
+		if (instruction.args.size() < 2)
+			return false;
+
+		for (uint32 i = 0; i < _sceneOneShotTargets.size(); ++i) {
+			if (_sceneOneShotTargets[i].equalsIgnoreCase(instruction.args[0])) {
+				_sceneOneShotSources[i] = instruction.args[1];
+				_sceneOneShotStartMillis[i] = _system->getMillis();
+				return true;
+			}
+		}
+
+		_sceneOneShotTargets.push_back(instruction.args[0]);
+		_sceneOneShotSources.push_back(instruction.args[1]);
+		_sceneOneShotStartMillis.push_back(_system->getMillis());
+		return true;
+	}
+
 	if (op.equalsIgnoreCase("playl")) {
 		if (instruction.args.size() < 2)
 			return false;
@@ -2306,8 +2324,7 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 		return true;
 	}
 
-	if (op.equalsIgnoreCase("play") ||
-	    op.equalsIgnoreCase("wait_say") ||
+	if (op.equalsIgnoreCase("wait_say") ||
 	    op.equalsIgnoreCase("cwait_say"))
 		return true;
 
@@ -2745,8 +2762,33 @@ bool ZeroComicoEngine::renderGameplayFrame(const RenderCamera &camera,
 		const float elapsedFrames =
 			(float)(now - _sceneLoopStartMillis[loopIndex]) * 25.0f / 1000.0f;
 		const float loopFrame = firstFrame + std::fmod(elapsedFrames, frameCount);
-		_activeScene.poseRigidAnimation(_sceneLoopTargets[loopIndex],
-		                                _sceneLoopSources[loopIndex], loopFrame);
+		if (!_activeScene.poseSkinnedGeometry(_sceneLoopTargets[loopIndex], "Stay",
+		                                     _sceneLoopSources[loopIndex], loopFrame))
+			_activeScene.poseRigidAnimation(_sceneLoopTargets[loopIndex],
+			                                _sceneLoopSources[loopIndex], loopFrame);
+	}
+
+	// Non-looping play commands advance at the same 25 fps cadence, clamp at
+	// their final frame, and retain that final pose until another play targets
+	// the same entity. This matches doors/actors that change persistent state.
+	for (uint32 shotIndex = 0; shotIndex < _sceneOneShotTargets.size(); ++shotIndex) {
+		const NamedAnimationClip *clip = _activeScene.findClipBySource(
+			_sceneOneShotTargets[shotIndex], _sceneOneShotSources[shotIndex]);
+		if (!clip)
+			continue;
+
+		const float firstFrame = (float)clip->data.startFrame;
+		const float lastFrame = (float)clip->data.endFrame;
+		const float elapsedFrames =
+			(float)(now - _sceneOneShotStartMillis[shotIndex]) * 25.0f / 1000.0f;
+		float shotFrame = firstFrame + elapsedFrames;
+		if (shotFrame > lastFrame)
+			shotFrame = lastFrame;
+
+		if (!_activeScene.poseSkinnedGeometry(_sceneOneShotTargets[shotIndex], "Stay",
+		                                     _sceneOneShotSources[shotIndex], shotFrame))
+			_activeScene.poseRigidAnimation(_sceneOneShotTargets[shotIndex],
+			                                _sceneOneShotSources[shotIndex], shotFrame);
 	}
 
 	Common::Array<Common::String> visibleMeshes;
@@ -3139,6 +3181,9 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 	_sceneLoopTargets.clear();
 	_sceneLoopSources.clear();
 	_sceneLoopStartMillis.clear();
+	_sceneOneShotTargets.clear();
+	_sceneOneShotSources.clear();
+	_sceneOneShotStartMillis.clear();
 	_loopCutScene.clear();
 	_loopCutName.clear();
 	_loopCutAssetStem.clear();

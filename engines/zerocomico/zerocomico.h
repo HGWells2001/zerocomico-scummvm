@@ -169,6 +169,9 @@ private:
 	Common::Array<Common::String> _sceneLoopTargets;
 	Common::Array<Common::String> _sceneLoopSources;
 	Common::Array<uint32> _sceneLoopStartMillis;
+	Common::Array<Common::String> _sceneOneShotTargets;
+	Common::Array<Common::String> _sceneOneShotSources;
+	Common::Array<uint32> _sceneOneShotStartMillis;
 	Common::Array<Common::String> _loadedSetpAssets;
 	Common::Array<SceneModel> _loadedSetpScenes;
 	Common::Array<Common::String> _setpControllerNames;
