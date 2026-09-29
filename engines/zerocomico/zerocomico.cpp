@@ -353,7 +353,8 @@ static void applyFadeToBlack(Graphics::ManagedSurface &surface, float amount) {
 
 ZeroComicoEngine::ZeroComicoEngine(OSystem *syst, const ADGameDescription *desc)
 	: Engine(syst), _gameDescription(desc), _havePlayerStart(false), _playerHatVisible(true),
-	  _playerNavNode(-1), _scriptVM(this), _interfaceDisabled(false), _3dEnabled(true) {
+	  _playerNavNode(-1), _lastDialogueChoice(-1), _scriptVM(this),
+	  _interfaceDisabled(false), _3dEnabled(true) {
 	_playerPosition.x = _playerPosition.y = _playerPosition.z = 0.0f;
 	_playerFacingTarget.x = _playerFacingTarget.y = _playerFacingTarget.z = 0.0f;
 }
