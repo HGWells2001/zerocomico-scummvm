@@ -853,6 +853,7 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 	    op.equalsIgnoreCase("CloneEntity") ||
 	    op.equalsIgnoreCase("SetEntityPos_Vector") ||
 	    op.equalsIgnoreCase("InsertInBackground") ||
+	    op.equalsIgnoreCase("swap_entity_pos_byindex") ||
 	    op.equalsIgnoreCase("SetFocus") ||
 	    op.equalsIgnoreCase("portals_off") ||
 	    op.equalsIgnoreCase("portals_on") ||
