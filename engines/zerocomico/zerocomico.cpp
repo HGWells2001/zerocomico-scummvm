@@ -794,6 +794,34 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 		return true;
 	}
 
+	if (op.equalsIgnoreCase("setmap")) {
+		if (instruction.args.size() < 2 || _currentMainPlace.empty())
+			return false;
+
+		const Common::Path mapPath =
+			Common::Path(_currentMainPlace + "/gameplay").appendComponent(instruction.args[1]);
+		BspMap replacement;
+		if (!replacement.load(mapPath))
+			return false;
+		_activeWalkMap = replacement;
+		_playerNavNode = _activeWalkMap.graph.empty()
+			? -1 : _activeWalkMap.nearestGraphNode(_playerPosition.x, _playerPosition.z);
+		debug(1, "Zero Comico: switched walk map to %s at node %d",
+		      instruction.args[1].c_str(), _playerNavNode);
+		return true;
+	}
+
+	if (op.equalsIgnoreCase("ChangeMainplace")) {
+		if (instruction.args.empty())
+			return false;
+		_pendingMainPlace = instruction.args[0];
+		_pendingRoomName.clear();
+		_pendingRoomCutscene.clear();
+		debug(1, "Zero Comico: requested main-place transition to %s",
+		      _pendingMainPlace.c_str());
+		return true;
+	}
+
 	if (op.equalsIgnoreCase("SetPlace")) {
 		if (instruction.args.empty())
 			return false;
@@ -1510,6 +1538,8 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 
 	if (!runMainPlaceRuntime(roomProgram))
 		warning("Zero Comico: main-place runtime block did not complete cleanly");
+	if (!_pendingMainPlace.empty())
+		return true;
 
 	Graphics::ManagedSurface frame;
 	if (!renderGameplayFrame(renderCamera, sceneDirectory, playerDirectory, "Stay", 0.0f, frame)) {
@@ -1783,6 +1813,11 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 					                   object->operateEnd, 4096)) {
 						warning("Zero Comico: object operation %s stopped on an unsupported opcode",
 						        object->name.c_str());
+					}
+
+					if (!_pendingMainPlace.empty()) {
+						done = true;
+						break;
 					}
 
 					examineMeshes.clear();
@@ -2204,10 +2239,18 @@ void ZeroComicoEngine::runMenu() {
 				continue;
 
 			switch (selection) {
-			case 0: // NUOVO -> ChangeMainPlace mp1 in Interface.isc
-				if (runMainPlacePreview("Mp1") && !shouldQuit())
+			case 0: { // NUOVO -> ChangeMainPlace mp1 in Interface.isc
+				Common::String nextMainPlace("Mp1");
+				while (!nextMainPlace.empty() && !shouldQuit()) {
+					_pendingMainPlace.clear();
+					if (!runMainPlacePreview(nextMainPlace))
+						break;
+					nextMainPlace = _pendingMainPlace;
+				}
+				if (!shouldQuit())
 					renderMenuFrame(selection);
 				break;
+			}
 			case 1: // AIUTI
 				showImageModal(Common::Path("images/help.tga"));
 				if (!shouldQuit())
