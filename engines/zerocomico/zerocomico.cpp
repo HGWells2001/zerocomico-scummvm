@@ -605,14 +605,14 @@ static bool playNamedMp3Looped(Audio::Mixer *mixer, Audio::Mixer::SoundType type
 ZeroComicoEngine::ZeroComicoEngine(OSystem *syst, const ADGameDescription *desc)
 	: Engine(syst), _gameDescription(desc), _havePlayerStart(false), _playerHatVisible(true),
 	  _playerNavNode(-1), _lastDialogueChoice(-1), _scriptDialogueContextActive(false),
-	  _scriptDialogueFrame(nullptr), _scriptVM(this),
+	  _scriptDialogueFrame(nullptr),
+	  _loopCutStartFrame(0.0f), _loopCutEndFrame(0.0f), _loopCutStartMillis(0),
+	  _loopCutActive(false), _scriptVM(this),
 	  _interfaceDisabled(false), _3dEnabled(true), _portalsEnabled(true),
 	  _cameraMode(0), _cameraModeLocked(false), _playerNoCameraReset(false),
 	  _spotHeight(85.0f), _spotMaxDeltaY(30.0f), _spotDistance(350.0f),
 	  _spotMinDistance(25.0f), _spotSmooth(30.0f),
-	  _spotCameraInitialized(false), _dynamicCameraInitialized(false),
-	  _loopCutStartFrame(0.0f), _loopCutEndFrame(0.0f), _loopCutStartMillis(0),
-	  _loopCutActive(false), _scriptKeyMask(0) {
+	  _spotCameraInitialized(false), _dynamicCameraInitialized(false), _scriptKeyMask(0) {
 	_playerPosition.x = _playerPosition.y = _playerPosition.z = 0.0f;
 	_spotCameraPosition.x = _spotCameraPosition.y = _spotCameraPosition.z = 0.0f;
 	_dynamicCameraPosition.x = _dynamicCameraPosition.y = _dynamicCameraPosition.z = 0.0f;
