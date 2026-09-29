@@ -13,6 +13,14 @@ namespace ZeroComico {
 
 class ScriptProgram;
 
+struct RoomPortal {
+	Common::String name;
+	Common::String destinationRoom;
+	Common::String marker;
+	Common::String backgroundPattern;
+	Common::String destinationPortal;
+};
+
 struct RoomDefinition {
 	Common::String name;
 	Common::String prefix;
@@ -22,6 +30,7 @@ struct RoomDefinition {
 	Common::String music;
 	Common::Array<Common::String> maps;
 	Common::Array<Common::String> cameraMaps;
+	Common::Array<RoomPortal> portals;
 };
 
 class ChapterDefinition {
