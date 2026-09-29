@@ -21,6 +21,7 @@ MODULE_OBJS := \
 	script_vm.o \
 	shape_script.o \
 	software_renderer.o \
+	text_table_script.o \
 	wrapped_flic.o \
 	zerocomico.o
 
