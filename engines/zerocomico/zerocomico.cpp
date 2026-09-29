@@ -387,6 +387,46 @@ static bool playNamedMp3(Audio::Mixer *mixer, Audio::Mixer::SoundType type,
 
 	return false;
 }
+
+static bool playNamedMp3Looped(Audio::Mixer *mixer, Audio::Mixer::SoundType type,
+                               const Common::String &name, Audio::SoundHandle &handle) {
+	if (!mixer || name.empty())
+		return false;
+
+	Common::String fileName = name;
+	if (!fileName.hasSuffixIgnoreCase(".mp3"))
+		fileName += ".mp3";
+
+	const char *const directories[] = {
+		"Sound",
+		"Sound/Interface",
+		"Sound/Inventory",
+		"Sound/steps"
+	};
+
+	for (uint32 directoryIndex = 0; directoryIndex < ARRAYSIZE(directories); ++directoryIndex) {
+		Common::File *file = new Common::File();
+		const Common::Path path =
+			Common::Path(directories[directoryIndex]).appendComponent(fileName);
+		if (!file->open(path)) {
+			delete file;
+			continue;
+		}
+
+		Audio::SeekableAudioStream *stream =
+			Audio::makeMP3Stream(file, DisposeAfterUse::YES);
+		if (!stream) {
+			delete file;
+			return false;
+		}
+
+		Audio::AudioStream *loop = Audio::makeLoopingAudioStream(stream, 0, 0, 0);
+		mixer->playStream(type, &handle, loop);
+		return true;
+	}
+
+	return false;
+}
 #endif
 
 
@@ -715,6 +755,15 @@ bool ZeroComicoEngine::playCutscene(const Common::String &name) {
 					      name.c_str(), event.frame, fadeDurationFrames);
 					break;
 				case kCutsceneSetEnvSound:
+					if (event.args.empty()) {
+						setEnvironmentSound(Common::String(), false);
+					} else {
+						const Common::String &soundName = event.args[0];
+						const bool enable = !soundName.equalsIgnoreCase("none") &&
+						                    !soundName.equalsIgnoreCase("off") &&
+						                    soundName != "0";
+						setEnvironmentSound(soundName, enable);
+					}
 					debug(1, "Zero Comico: cutscene %s environment-sound event at frame %u",
 					      name.c_str(), event.frame);
 					break;
@@ -1203,12 +1252,24 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 		return !shouldQuit();
 	}
 
+	if (op.equalsIgnoreCase("envsound_state")) {
+		if (instruction.args.empty())
+			return false;
+		int32 state = 0;
+		if (!_scriptVM.resolveValue(instruction.args[0], state))
+			return false;
+		if (state == 0)
+			setEnvironmentSound(_environmentSoundName, false);
+		else if (!_environmentSoundName.empty())
+			setEnvironmentSound(_environmentSoundName, true);
+		return true;
+	}
+
 	if (op.equalsIgnoreCase("play") ||
 	    op.equalsIgnoreCase("wait_say") ||
 	    op.equalsIgnoreCase("cwait_say") ||
 	    op.equalsIgnoreCase("SetDialogCameras") ||
 	    op.equalsIgnoreCase("SetNoCameraReset") ||
-	    op.equalsIgnoreCase("envsound_state") ||
 	    op.equalsIgnoreCase("BreakLifeToChar"))
 		return true;
 
@@ -1397,6 +1458,35 @@ void ZeroComicoEngine::playFilmIfPresent(const Common::Path &path) {
 		}
 		_system->delayMillis(10);
 	}
+}
+
+void ZeroComicoEngine::setEnvironmentSound(const Common::String &fileName, bool enabled) {
+#ifdef USE_MAD
+	if (!enabled || fileName.empty() || fileName.equalsIgnoreCase("none") ||
+	    fileName.equalsIgnoreCase("off") || fileName == "0") {
+		if (_mixer->isSoundHandleActive(_environmentSoundHandle))
+			_mixer->stopHandle(_environmentSoundHandle);
+		if (!fileName.empty() && !fileName.equalsIgnoreCase("none") &&
+		    !fileName.equalsIgnoreCase("off") && fileName != "0")
+			_environmentSoundName = fileName;
+		return;
+	}
+
+	if (_environmentSoundName.equalsIgnoreCase(fileName) &&
+	    _mixer->isSoundHandleActive(_environmentSoundHandle))
+		return;
+
+	if (_mixer->isSoundHandleActive(_environmentSoundHandle))
+		_mixer->stopHandle(_environmentSoundHandle);
+
+	_environmentSoundName = fileName;
+	if (!playNamedMp3Looped(_mixer, Audio::Mixer::kSFXSoundType,
+	                       _environmentSoundName, _environmentSoundHandle))
+		warning("Zero Comico: cannot start environment sound %s",
+		        _environmentSoundName.c_str());
+#else
+	_environmentSoundName = enabled ? fileName : Common::String();
+#endif
 }
 
 bool ZeroComicoEngine::loadMenuScene() {
