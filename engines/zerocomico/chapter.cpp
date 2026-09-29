@@ -5,6 +5,8 @@
 #include "zerocomico/chapter.h"
 #include "zerocomico/script_program.h"
 
+#include <cstdlib>
+
 namespace ZeroComico {
 
 bool ChapterDefinition::load(const Common::Path &roomScript) {
@@ -36,6 +38,7 @@ bool ChapterDefinition::parse(const ScriptProgram &program) {
 		if (inst.opcode.equalsIgnoreCase("Room") && !inst.args.empty()) {
 			RoomDefinition room;
 			room.name = inst.args[0];
+			room.musicVolume = 100.0f;
 			rooms.push_back(room);
 			currentRoom = (int)rooms.size() - 1;
 			roomDepth = inst.depth;
@@ -64,6 +67,12 @@ bool ChapterDefinition::parse(const ScriptProgram &program) {
 			room.cameraSpot = inst.args[0];
 		} else if (inst.opcode.equalsIgnoreCase("Music") && !inst.args.empty()) {
 			room.music = inst.args[0];
+			if (inst.args.size() >= 2) {
+				char *end = nullptr;
+				const double parsed = strtod(inst.args[1].c_str(), &end);
+				if (end && *end == 0 && parsed >= 0.0)
+					room.musicVolume = (float)parsed;
+			}
 		} else if (inst.opcode.equalsIgnoreCase("map") && !inst.args.empty()) {
 			room.maps.push_back(inst.args[0]);
 		} else if (inst.opcode.equalsIgnoreCase("cameramap") && !inst.args.empty()) {
