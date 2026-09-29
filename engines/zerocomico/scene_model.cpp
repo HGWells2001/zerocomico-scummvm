@@ -227,6 +227,7 @@ bool SceneModel::loadGeometry(const Common::Path &p3dPath) {
 		case 0xf000: {
 			NamedMaterial value;
 			value.name = record.name;
+			value.sourceDirectory = p3dPath.getParent();
 			if (!ModelDataDecoder::decodeMaterial(archive, record, value.data))
 				return false;
 			materials.push_back(value);

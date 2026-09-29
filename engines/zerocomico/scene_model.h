@@ -17,6 +17,7 @@ namespace ZeroComico {
 struct NamedMaterial {
 	Common::String name;
 	MaterialData data;
+	Common::Path sourceDirectory;
 };
 
 struct NamedCamera {

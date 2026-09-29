@@ -370,7 +370,9 @@ static void renderFaceRange(const SceneModel &scene, const MeshData &mesh,
 		const NamedMaterial *named = scene.findMaterial(range->name);
 		if (named) {
 			material = &named->data;
-			texturePtr = loadTextureCached(named->data, textureDirectory,
+			const Common::Path &materialDirectory =
+				named->sourceDirectory.empty() ? textureDirectory : named->sourceDirectory;
+			texturePtr = loadTextureCached(named->data, materialDirectory,
 			                               textureCacheKeys, textureCache);
 		}
 	}
