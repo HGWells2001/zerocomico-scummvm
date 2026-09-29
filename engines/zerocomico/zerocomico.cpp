@@ -1195,24 +1195,14 @@ bool ZeroComicoEngine::renderGameplayFrame(const RenderCamera &camera,
 			        animationSource.c_str(), animationFrame);
 
 		Common::Array<Common::String> playerVisible;
-		for (uint32 meshIndex = 0; meshIndex < _playerScene.meshes.size(); ++meshIndex) {
-			const NamedMesh &mesh = _playerScene.meshes[meshIndex];
-			if (mesh.data.isFlesh())
-				continue;
-			if (mesh.data.isSkinnedParent()) {
-				playerVisible.push_back(mesh.name);
-				continue;
+		_playerScene.visibleMeshesForSource(animationSource, animationFrame, playerVisible);
+		if (!_playerHatVisible) {
+			for (uint32 visibleIndex = playerVisible.size(); visibleIndex > 0; --visibleIndex) {
+				Common::String lowerName = playerVisible[visibleIndex - 1];
+				lowerName.toLowercase();
+				if (lowerName.find("cappello") != Common::String::npos)
+					playerVisible.remove_at(visibleIndex - 1);
 			}
-
-			Common::String lowerName = mesh.name;
-			lowerName.toLowercase();
-			if (lowerName.hasSuffix("01") || lowerName.hasSuffix("02"))
-				continue;
-
-			const bool isHead = lowerName.find("testa") != Common::String::npos;
-			const bool isHat = lowerName.find("cappello") != Common::String::npos;
-			if (isHead || (isHat && _playerHatVisible))
-				playerVisible.push_back(mesh.name);
 		}
 
 		RenderTransform playerTransform;
