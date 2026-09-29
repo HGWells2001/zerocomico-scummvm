@@ -29,6 +29,7 @@ public:
 		return combineStart != 0xffffffffU && combineEnd != 0xffffffffU &&
 		       combineStart < combineEnd;
 	}
+	const CharacterAnimSet *findAnimSet(const Common::String &name) const;
 	const ScriptProgram &program() const { return _program; }
 
 	Common::String playerName;
