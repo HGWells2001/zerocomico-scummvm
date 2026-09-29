@@ -83,6 +83,7 @@ private:
 	Common::String _pendingSaySpeaker;
 	Common::String _pendingSayText;
 	Common::String _pendingDialogName;
+	int32 _lastDialogueChoice;
 	Common::String _pendingMainPlace;
 	Common::String _pendingRoomName;
 	Common::String _pendingRoomCutscene;
