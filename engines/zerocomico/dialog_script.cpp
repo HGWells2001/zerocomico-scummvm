@@ -30,10 +30,9 @@ static float parseFloat(const Common::String &value, float fallback) {
 } // namespace
 
 bool DialogScript::load(const Common::Path &path) {
-	ScriptProgram program;
-	if (!program.load(path))
+	if (!_program.load(path))
 		return false;
-	return parse(program);
+	return parse(_program);
 }
 
 bool DialogScript::parse(const ScriptProgram &program) {
@@ -61,6 +60,7 @@ bool DialogScript::parse(const ScriptProgram &program) {
 
 		DialogDefinition dialog;
 		dialog.name = inst.args[0];
+		dialog.doStart = dialog.doEnd = 0xffffffffU;
 		const int dialogDepth = inst.depth;
 		bool inChoices = false;
 
@@ -70,6 +70,20 @@ bool DialogScript::parse(const ScriptProgram &program) {
 				break;
 			if (child.depth < dialogDepth)
 				break;
+
+			if (child.opcode.equalsIgnoreCase("do")) {
+				dialog.doStart = j + 1;
+				for (uint32 k = j + 1; k < instructions.size(); ++k) {
+					if (instructions[k].opcode.equalsIgnoreCase("end")) {
+						dialog.doEnd = k;
+						break;
+					}
+					if (instructions[k].opcode.equalsIgnoreCase("Dialog") &&
+					    instructions[k].depth <= dialogDepth)
+						break;
+				}
+				continue;
+			}
 
 			if (child.opcode.equalsIgnoreCase("BEGIN")) {
 				inChoices = true;

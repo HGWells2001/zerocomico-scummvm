@@ -222,6 +222,25 @@ This also explains the two zero-byte files shipped on disc,
 room declaration. They are orphaned editor artifacts, not empty camera maps
 that the runtime must accept as valid active MapCam data.
 
+## Dialogue do blocks and SetNoCameraReset
+
+The retail dialogue files contain eight `do ... end` post-dialog blocks:
+seven in Mp3 and one in Mp5. None of the eight coexists with a dialogue choice
+list. Their payloads are small but gameplay-critical: they set variables such
+as `prima_combat`, `Insulti`, `First_time` and `Dare_occhio`, and four
+Mp3 blocks also issue `SetNoCameraReset MainPlayer 1`.
+
+The dialogue parser now preserves those instruction ranges and `playDialogue`
+executes them through the same ScriptVM used by puzzle/room logic. This restores
+the variable mutations that hand control from dialogue into the corresponding
+combat/minigame branches.
+
+Direct executable analysis of `SetNoCameraReset` shows a boolean-like value
+stored on the addressed runtime character. All retail occurrences address
+`MainPlayer`; the engine now preserves that state as `_playerNoCameraReset`.
+The later automatic dialogue-camera reset policy is still a separate fidelity
+task, because `SetDialogCameras` itself is not yet fully implemented.
+
 ## Mp5 portals
 
 Mp5 declares ten directed logical room links but stores only five physical

@@ -607,7 +607,7 @@ ZeroComicoEngine::ZeroComicoEngine(OSystem *syst, const ADGameDescription *desc)
 	  _playerNavNode(-1), _lastDialogueChoice(-1), _scriptDialogueContextActive(false),
 	  _scriptDialogueFrame(nullptr), _scriptVM(this),
 	  _interfaceDisabled(false), _3dEnabled(true), _portalsEnabled(true),
-	  _cameraMode(0), _cameraModeLocked(false),
+	  _cameraMode(0), _cameraModeLocked(false), _playerNoCameraReset(false),
 	  _spotHeight(85.0f), _spotMaxDeltaY(30.0f), _spotDistance(350.0f),
 	  _spotMinDistance(25.0f), _spotSmooth(30.0f),
 	  _spotCameraInitialized(false), _dynamicCameraInitialized(false), _scriptKeyMask(0) {
@@ -2008,9 +2008,22 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 	    op.equalsIgnoreCase("wait_say") ||
 	    op.equalsIgnoreCase("cwait_say") ||
 	    op.equalsIgnoreCase("SetDialogCameras") ||
-	    op.equalsIgnoreCase("SetNoCameraReset") ||
 	    op.equalsIgnoreCase("BreakLifeToChar"))
 		return true;
+
+	if (op.equalsIgnoreCase("SetNoCameraReset")) {
+		if (instruction.args.size() < 2 ||
+		    !instruction.args[0].equalsIgnoreCase("MainPlayer"))
+			return false;
+
+		int32 value = 0;
+		if (!_scriptVM.resolveValue(instruction.args[1], value))
+			return false;
+		_playerNoCameraReset = value != 0;
+		debug(1, "Zero Comico: MainPlayer no-camera-reset %s",
+		      _playerNoCameraReset ? "enabled" : "disabled");
+		return true;
+	}
 
 	if (op.equalsIgnoreCase("SetCameraMode") || op.equalsIgnoreCase("setcameramode")) {
 		if (instruction.args.empty())
@@ -2578,8 +2591,21 @@ bool ZeroComicoEngine::playDialogue(const Common::String &name,
 		}
 	}
 
-	if (shouldQuit() || dialog->choices.empty())
-		return !shouldQuit();
+	if (shouldQuit())
+		return false;
+
+	if (dialog->doStart != 0xffffffffU && dialog->doEnd != 0xffffffffU &&
+	    dialog->doStart < dialog->doEnd) {
+		if (!_scriptVM.run(_activeDialog.program(), dialog->doStart,
+		                   dialog->doEnd, 256)) {
+			warning("Zero Comico: dialogue %s do-block stopped on an unsupported opcode",
+			        dialog->name.c_str());
+			return false;
+		}
+	}
+
+	if (dialog->choices.empty())
+		return true;
 
 	Common::Array<DialogChoice> activeChoices;
 	Common::Array<uint32> activeChoiceIndices;
@@ -2672,6 +2698,7 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 	_portalsEnabled = true;
 	_cameraMode = 0;
 	_cameraModeLocked = false;
+	_playerNoCameraReset = false;
 	_spotCameraInitialized = false;
 	_dynamicCameraInitialized = false;
 	_spotHeight = 85.0f;

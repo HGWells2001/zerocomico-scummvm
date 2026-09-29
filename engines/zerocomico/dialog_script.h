@@ -9,9 +9,9 @@
 #include "common/path.h"
 #include "common/str.h"
 
-namespace ZeroComico {
+#include "zerocomico/script_program.h"
 
-class ScriptProgram;
+namespace ZeroComico {
 
 struct DialogSpeaker {
 	Common::String name;
@@ -37,6 +37,8 @@ struct DialogDefinition {
 	Common::String name;
 	Common::Array<DialogLine> lines;
 	Common::Array<DialogChoice> choices;
+	uint32 doStart;
+	uint32 doEnd;
 };
 
 class DialogScript {
@@ -44,12 +46,16 @@ public:
 	bool load(const Common::Path &path);
 	bool parse(const ScriptProgram &program);
 
+	const ScriptProgram &program() const { return _program; }
 	const DialogDefinition *findDialog(const Common::String &name) const;
 	DialogDefinition *findDialogMutable(const Common::String &name);
 	const DialogSpeaker *findSpeakerByKey(const Common::String &key) const;
 
 	Common::Array<DialogSpeaker> speakers;
 	Common::Array<DialogDefinition> dialogs;
+
+private:
+	ScriptProgram _program;
 };
 
 } // namespace ZeroComico

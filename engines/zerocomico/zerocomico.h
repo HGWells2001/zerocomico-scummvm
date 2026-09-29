@@ -162,6 +162,7 @@ private:
 	bool _portalsEnabled;
 	int _cameraMode;
 	bool _cameraModeLocked;
+	bool _playerNoCameraReset;
 	float _spotHeight;
 	float _spotMaxDeltaY;
 	float _spotDistance;
