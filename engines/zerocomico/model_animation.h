@@ -73,10 +73,10 @@ public:
 	                            float frame, float translation[3], float scale[3],
 	                            float rotation[4]);
 
-	// Camera clips carry position, angular FOV and roll channels, while the
+	// Camera clips carry position, focal length and roll channels, while the
 	// companion *.target record carries the animated look-at point.
 	static bool sampleCamera(const AnimationClip &clip, const Common::String &targetName,
-	                         float frame, float position[3], float &fovDegrees, float &roll);
+	                         float frame, float position[3], float &focalLength, float &roll);
 	static bool sampleTarget(const AnimationClip &clip, const Common::String &targetName,
 	                         float frame, float target[3]);
 };
