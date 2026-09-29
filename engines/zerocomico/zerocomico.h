@@ -6,6 +6,7 @@
 #define ZEROCOMICO_H
 
 #include "engines/engine.h"
+#include "audio/mixer.h"
 
 #include "zerocomico/bsp.h"
 #include "zerocomico/cutscene_script.h"
@@ -41,6 +42,7 @@ private:
 	bool runMainPlaceRuntime(const ScriptProgram &program);
 	bool playCutscene(const Common::String &name);
 	void playFilmIfPresent(const Common::Path &path);
+	void startRoomMusic(const Common::String &fileName, float volume);
 	bool loadMenuScene();
 	bool renderMenuFrame(int selection);
 	bool runMainPlacePreview(const Common::String &mainPlace);
@@ -97,6 +99,8 @@ private:
 	Common::String _pendingRoomCutscene;
 	Common::String _pendingCameraName;
 	Common::String _defaultRoomCameraName;
+	Common::String _currentMusicName;
+	Audio::SoundHandle _musicHandle;
 	Common::String _selectedInventoryObject;
 	Common::String _combineInventoryFirst;
 	Common::String _combineInventorySecond;
