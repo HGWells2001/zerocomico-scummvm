@@ -353,7 +353,8 @@ static void applyFadeToBlack(Graphics::ManagedSurface &surface, float amount) {
 
 ZeroComicoEngine::ZeroComicoEngine(OSystem *syst, const ADGameDescription *desc)
 	: Engine(syst), _gameDescription(desc), _havePlayerStart(false), _playerHatVisible(true),
-	  _playerNavNode(-1), _lastDialogueChoice(-1), _scriptVM(this),
+	  _playerNavNode(-1), _lastDialogueChoice(-1), _scriptDialogueContextActive(false),
+	  _scriptDialogueFrame(nullptr), _scriptVM(this),
 	  _interfaceDisabled(false), _3dEnabled(true) {
 	_playerPosition.x = _playerPosition.y = _playerPosition.z = 0.0f;
 	_playerFacingTarget.x = _playerFacingTarget.y = _playerFacingTarget.z = 0.0f;
@@ -872,7 +873,18 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 	if (op.equalsIgnoreCase("start_dialog")) {
 		if (instruction.args.size() < 2)
 			return false;
-		_pendingDialogName = instruction.args[1];
+
+		const Common::String &dialogName = instruction.args[1];
+		if (_scriptDialogueContextActive && _scriptDialogueFrame) {
+			_pendingDialogName.clear();
+			_lastDialogueChoice = -1;
+			return playDialogue(dialogName, _scriptDialogueCamera,
+			                    _scriptDialogueSceneDirectory,
+			                    _scriptDialoguePlayerDirectory,
+			                    *_scriptDialogueFrame);
+		}
+
+		_pendingDialogName = dialogName;
 		return true;
 	}
 
@@ -1832,11 +1844,18 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 				debug(1, "Zero Comico: trying inventory combine %s + %s",
 				      _combineInventoryFirst.c_str(), _combineInventorySecond.c_str());
 
-				if (!_scriptVM.run(_playerCharacterScript.program(),
-				                   _playerCharacterScript.combineStart,
-				                   _playerCharacterScript.combineEnd, 4096)) {
+				_scriptDialogueContextActive = true;
+				_scriptDialogueCamera = renderCamera;
+				_scriptDialogueSceneDirectory = sceneDirectory;
+				_scriptDialoguePlayerDirectory = playerDirectory;
+				_scriptDialogueFrame = &frame;
+				const bool combineOk = _scriptVM.run(_playerCharacterScript.program(),
+				                                     _playerCharacterScript.combineStart,
+				                                     _playerCharacterScript.combineEnd, 4096);
+				_scriptDialogueContextActive = false;
+				_scriptDialogueFrame = nullptr;
+				if (!combineOk)
 					warning("Zero Comico: inventory combine block stopped on an unsupported opcode");
-				}
 
 				_combineInventoryFirst.clear();
 				_combineInventorySecond.clear();
@@ -1956,8 +1975,16 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 					_pendingSayText.clear();
 					_pendingDialogName.clear();
 
-					if (!_scriptVM.run(_activePuzzle.program(), object->operateStart,
-					                   object->operateEnd, 4096)) {
+					_scriptDialogueContextActive = true;
+					_scriptDialogueCamera = renderCamera;
+					_scriptDialogueSceneDirectory = sceneDirectory;
+					_scriptDialoguePlayerDirectory = playerDirectory;
+					_scriptDialogueFrame = &frame;
+					const bool operateOk = _scriptVM.run(
+						_activePuzzle.program(), object->operateStart, object->operateEnd, 4096);
+					_scriptDialogueContextActive = false;
+					_scriptDialogueFrame = nullptr;
+					if (!operateOk) {
 						warning("Zero Comico: object operation %s stopped on an unsupported opcode",
 						        object->name.c_str());
 					}
