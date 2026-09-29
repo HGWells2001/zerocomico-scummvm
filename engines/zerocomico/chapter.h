@@ -28,6 +28,7 @@ struct RoomDefinition {
 	Common::String camera;
 	Common::String cameraSpot;
 	Common::String music;
+	float musicVolume;
 	Common::Array<Common::String> maps;
 	Common::Array<Common::String> cameraMaps;
 	Common::Array<RoomPortal> portals;
