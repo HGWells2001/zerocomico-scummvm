@@ -65,6 +65,9 @@ private:
 	bool runStartupScript(const Common::String &mainPlace);
 	bool runMainPlaceRuntime(const ScriptProgram &program);
 	bool playCutscene(const Common::String &name);
+	bool startLoopCutscene(const Common::String &name);
+	bool renderLoopCutsceneFrame(const Common::String &name);
+	bool stopLoopCutscene(const Common::String &name);
 	void playFilmIfPresent(const Common::Path &path);
 	void startRoomMusic(const Common::String &fileName, float volume);
 	void setEnvironmentSound(const Common::String &fileName, bool enabled);
@@ -103,6 +106,7 @@ private:
 	SceneModel _menuScene;
 	SceneModel _activeScene;
 	SceneModel _playerScene;
+	SceneModel _loopCutScene;
 	SequenceScript _playerSequences;
 	Common::Path _playerAssetDirectory;
 	CharacterScript _playerCharacterScript;
@@ -150,6 +154,12 @@ private:
 	Audio::SoundHandle _musicHandle;
 	Common::String _environmentSoundName;
 	Audio::SoundHandle _environmentSoundHandle;
+	Common::String _loopCutName;
+	Common::String _loopCutAssetStem;
+	float _loopCutStartFrame;
+	float _loopCutEndFrame;
+	uint32 _loopCutStartMillis;
+	bool _loopCutActive;
 	Common::String _selectedInventoryObject;
 	Common::String _combineInventoryFirst;
 	Common::String _combineInventorySecond;

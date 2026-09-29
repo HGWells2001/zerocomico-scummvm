@@ -610,7 +610,9 @@ ZeroComicoEngine::ZeroComicoEngine(OSystem *syst, const ADGameDescription *desc)
 	  _cameraMode(0), _cameraModeLocked(false), _playerNoCameraReset(false),
 	  _spotHeight(85.0f), _spotMaxDeltaY(30.0f), _spotDistance(350.0f),
 	  _spotMinDistance(25.0f), _spotSmooth(30.0f),
-	  _spotCameraInitialized(false), _dynamicCameraInitialized(false), _scriptKeyMask(0) {
+	  _spotCameraInitialized(false), _dynamicCameraInitialized(false),
+	  _loopCutStartFrame(0.0f), _loopCutEndFrame(0.0f), _loopCutStartMillis(0),
+	  _loopCutActive(false), _scriptKeyMask(0) {
 	_playerPosition.x = _playerPosition.y = _playerPosition.z = 0.0f;
 	_spotCameraPosition.x = _spotCameraPosition.y = _spotCameraPosition.z = 0.0f;
 	_dynamicCameraPosition.x = _dynamicCameraPosition.y = _dynamicCameraPosition.z = 0.0f;
@@ -986,6 +988,167 @@ bool ZeroComicoEngine::playCutscene(const Common::String &name) {
 	return !shouldQuit();
 }
 
+bool ZeroComicoEngine::startLoopCutscene(const Common::String &name) {
+	if (_currentMainPlace.empty() || name.empty())
+		return false;
+
+	_loopCutScene.clear();
+	_loopCutName.clear();
+	_loopCutAssetStem.clear();
+	_loopCutActive = false;
+
+	Common::String assetStem = name;
+	const Common::Path videoDirectory(_currentMainPlace + "/videos");
+	bool loaded = _loopCutScene.loadPair(
+		videoDirectory.appendComponent(assetStem + ".p3d"),
+		videoDirectory.appendComponent(assetStem + ".anj"));
+
+	if (!loaded && !assetStem.empty() && assetStem[0] == 'c') {
+		assetStem = Common::String("C") + assetStem.substr(1);
+		loaded = _loopCutScene.loadPair(
+			videoDirectory.appendComponent(assetStem + ".p3d"),
+			videoDirectory.appendComponent(assetStem + ".anj"));
+	}
+	if (!loaded) {
+		warning("Zero Comico: cannot load loop cutscene %s", name.c_str());
+		return false;
+	}
+
+	bool haveRange = false;
+	float startFrame = 0.0f;
+	float endFrame = 0.0f;
+	for (uint32 clipIndex = 0; clipIndex < _loopCutScene.clips.size(); ++clipIndex) {
+		const NamedAnimationClip &clip = _loopCutScene.clips[clipIndex];
+		if (!clip.data.sourceName.equalsIgnoreCase(assetStem))
+			continue;
+		if (!haveRange) {
+			startFrame = (float)clip.data.startFrame;
+			endFrame = (float)clip.data.endFrame;
+			haveRange = true;
+		} else {
+			if ((float)clip.data.startFrame < startFrame)
+				startFrame = (float)clip.data.startFrame;
+			if ((float)clip.data.endFrame > endFrame)
+				endFrame = (float)clip.data.endFrame;
+		}
+	}
+	if (!haveRange) {
+		warning("Zero Comico: loop cutscene %s has no animation range", name.c_str());
+		_loopCutScene.clear();
+		return false;
+	}
+
+	_loopCutName = name;
+	_loopCutAssetStem = assetStem;
+	_loopCutStartFrame = startFrame;
+	_loopCutEndFrame = endFrame;
+	_loopCutStartMillis = _system->getMillis();
+	_loopCutActive = true;
+	debug(1, "Zero Comico: started loop cutscene %s frames %.0f..%.0f",
+	      name.c_str(), startFrame, endFrame);
+	return true;
+}
+
+bool ZeroComicoEngine::renderLoopCutsceneFrame(const Common::String &name) {
+	if (!_loopCutActive || !_loopCutName.equalsIgnoreCase(name))
+		return false;
+
+	const float frameCount = _loopCutEndFrame - _loopCutStartFrame + 1.0f;
+	if (frameCount <= 0.0f)
+		return false;
+
+	const uint32 elapsedMillis = _system->getMillis() - _loopCutStartMillis;
+	const float elapsedFrames = (float)elapsedMillis * 25.0f / 1000.0f;
+	const float frame = _loopCutStartFrame + std::fmod(elapsedFrames, frameCount);
+
+	if (!_loopCutScene.poseCutsceneGeometry(_loopCutAssetStem, frame))
+		warning("Zero Comico: loop cutscene %s pose failed at %.2f", name.c_str(), frame);
+
+	Common::Array<Common::String> visibleMeshes;
+	_loopCutScene.visibleMeshesForSource(_loopCutAssetStem, frame, visibleMeshes);
+
+	const NamedAnimationClip *cameraClip = nullptr;
+	const NamedAnimationClip *targetClip = nullptr;
+	Common::String cameraName;
+	for (uint32 clipIndex = 0; clipIndex < _loopCutScene.clips.size() && !cameraClip; ++clipIndex) {
+		const NamedAnimationClip &clip = _loopCutScene.clips[clipIndex];
+		if (!clip.data.sourceName.equalsIgnoreCase(_loopCutAssetStem))
+			continue;
+		for (uint32 trackIndex = 0; trackIndex < clip.data.tracks.size(); ++trackIndex) {
+			if (clip.data.tracks[trackIndex].kind == kAnimCamera) {
+				cameraClip = &clip;
+				cameraName = clip.data.tracks[trackIndex].targetName;
+				break;
+			}
+		}
+	}
+
+	if (!cameraName.empty())
+		targetClip = _loopCutScene.findClipBySource(cameraName + ".target", _loopCutAssetStem);
+
+	RenderCamera renderCamera;
+	bool haveCamera = false;
+	if (cameraClip && targetClip && !cameraName.empty()) {
+		float position[3];
+		float target[3];
+		float focalLength = 0.0f;
+		float roll = 0.0f;
+		if (AnimationSampler::sampleCamera(cameraClip->data, cameraName, frame,
+		                                  position, focalLength, roll) &&
+		    AnimationSampler::sampleTarget(targetClip->data, cameraName + ".target",
+		                                  frame, target) &&
+		    focalLength > 0.0f) {
+			renderCamera.position = { position[0], position[1], position[2] };
+			renderCamera.target = { target[0], target[1], target[2] };
+			renderCamera.focalPixels = focalLength * 800.0f / 36.0f;
+			renderCamera.rollRadians = roll;
+			haveCamera = true;
+		}
+	}
+
+	const NamedCamera *embeddedCamera =
+		cameraName.empty() ? nullptr : _loopCutScene.findCamera(cameraName);
+	if (!embeddedCamera && !_loopCutScene.cameras.empty())
+		embeddedCamera = &_loopCutScene.cameras[0];
+	if (!haveCamera && embeddedCamera && embeddedCamera->data.fov > 0.0f) {
+		renderCamera.position = embeddedCamera->data.position;
+		renderCamera.target = embeddedCamera->data.target;
+		renderCamera.focalPixels = embeddedCamera->data.fov * 800.0f / 36.0f;
+		renderCamera.rollRadians = 0.0f;
+		haveCamera = true;
+	}
+	if (!haveCamera)
+		return false;
+
+	Graphics::ManagedSurface frameSurface;
+	const Common::Path videoDirectory(_currentMainPlace + "/videos");
+	if (!_gameplayRenderer.render(_loopCutScene, renderCamera, videoDirectory,
+	                              visibleMeshes, frameSurface, 800, 600))
+		return false;
+
+	_system->copyRectToScreen(frameSurface.getPixels(), frameSurface.pitch,
+	                          0, 0, frameSurface.w, frameSurface.h);
+	_system->updateScreen();
+	return true;
+}
+
+bool ZeroComicoEngine::stopLoopCutscene(const Common::String &name) {
+	if (!_loopCutActive)
+		return true;
+	if (!name.empty() && !_loopCutName.equalsIgnoreCase(name))
+		return false;
+
+	debug(1, "Zero Comico: stopped loop cutscene %s", _loopCutName.c_str());
+	_loopCutActive = false;
+	_loopCutName.clear();
+	_loopCutAssetStem.clear();
+	_loopCutStartFrame = 0.0f;
+	_loopCutEndFrame = 0.0f;
+	_loopCutStartMillis = 0;
+	_loopCutScene.clear();
+	return true;
+}
+
 DynamicSceneEntity *ZeroComicoEngine::findDynamicSceneEntity(const Common::String &name) {
 	for (uint32 i = 0; i < _dynamicSceneEntities.size(); ++i)
 		if (_dynamicSceneEntities[i].name.equalsIgnoreCase(name))
@@ -1323,9 +1486,28 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 		return playCutscene(instruction.args[0]);
 	}
 
-	// Cutscene playback is synchronous in this first runtime.
+	// Ordinary play_cut is synchronous. The retail water puzzle additionally
+	// uses loop_cut/run_cut/stop_cut as a persistent 25 fps cutscene object.
 	if (op.equalsIgnoreCase("wait_cut"))
 		return true;
+
+	if (op.equalsIgnoreCase("loop_cut")) {
+		if (instruction.args.empty())
+			return false;
+		return startLoopCutscene(instruction.args[0]);
+	}
+
+	if (op.equalsIgnoreCase("run_cut")) {
+		if (instruction.args.empty())
+			return false;
+		return renderLoopCutsceneFrame(instruction.args[0]);
+	}
+
+	if (op.equalsIgnoreCase("stop_cut")) {
+		if (instruction.args.empty())
+			return false;
+		return stopLoopCutscene(instruction.args[0]);
+	}
 
 	if (op.equalsIgnoreCase("playl")) {
 		if (instruction.args.size() < 2)
@@ -2253,10 +2435,10 @@ bool ZeroComicoEngine::evaluateScriptCondition(const ScriptInstruction &instruct
 		return true;
 	}
 
-	// Cutscenes are synchronous in this runtime, and the menu interface is not
-	// open while a gameplay script is executing.
+	// Ordinary play_cut is synchronous, but loop_cut keeps a persistent retail
+	// cut object alive between ScriptVM scheduler boundaries.
 	if (instruction.opcode.equalsIgnoreCase("if_is_playingcut")) {
-		result = false;
+		result = _loopCutActive;
 		return true;
 	}
 	if (instruction.opcode.equalsIgnoreCase("if_is_openmenuinterface")) {
@@ -2893,6 +3075,13 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 	_sceneLoopTargets.clear();
 	_sceneLoopSources.clear();
 	_sceneLoopStartMillis.clear();
+	_loopCutScene.clear();
+	_loopCutName.clear();
+	_loopCutAssetStem.clear();
+	_loopCutStartFrame = 0.0f;
+	_loopCutEndFrame = 0.0f;
+	_loopCutStartMillis = 0;
+	_loopCutActive = false;
 	_loadedSetpAssets.clear();
 	_loadedSetpScenes.clear();
 	_setpControllerNames.clear();

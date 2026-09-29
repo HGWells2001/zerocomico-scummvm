@@ -191,6 +191,37 @@ for Placed and other camera selections, not only Spot, and the examined helper
 does not consume that second argument on this path. It is therefore not treated
 as a Spot FOV or another missing Spot parameter.
 
+## Persistent loop cutscenes
+
+Mp2's water-panel puzzle uses a distinct retail cutscene-control path around
+`c231`:
+
+```text
+loop_cut c231
+...
+run_cut  c231
+...
+stop_cut c231
+```
+
+Reverse engineering confirms that these are not aliases of synchronous
+`play_cut`. `loop_cut` marks and starts a persistent cut object,
+`run_cut` advances/renders that object, and `stop_cut` terminates it.
+The shipped `c231` timeline in `Videos.isc` contains no text/sample events,
+so its asynchronous requirement is limited to geometry, visibility and camera
+animation.
+
+The runtime now keeps a dedicated loop-cut SceneModel. `loop_cut` loads the
+P3D/ANJ pair and records its animation range; `run_cut` samples the current
+frame from elapsed time at the retail 25 fps cadence, poses the scene, samples
+its animated camera/target and presents one frame without blocking ScriptVM;
+`stop_cut` clears the persistent cut. `if_is_playingcut` now reports this
+state instead of always returning false.
+
+This deliberately does not turn ordinary `play_cut` into an asynchronous
+player, and does not yet generalize timeline audio/text events for future
+looping cuts. No such events are present in the retail `c231` use case.
+
 ## SetPlace followed by SetMap
 
 Retail scripts can request a room first and its map immediately afterwards,
