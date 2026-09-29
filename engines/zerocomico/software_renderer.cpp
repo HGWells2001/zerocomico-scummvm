@@ -48,6 +48,39 @@ static bool normalize3(Vec3f &v) {
 	return true;
 }
 
+static bool buildCameraBasis(const RenderCamera &camera, Vec3f &right, Vec3f &up, Vec3f &forward) {
+	forward = sub3(camera.target, camera.position);
+	if (!normalize3(forward))
+		return false;
+
+	const Vec3f worldUp = { 0.0f, 1.0f, 0.0f };
+	right = cross3(forward, worldUp);
+	if (!normalize3(right)) {
+		const Vec3f alternateUp = { 0.0f, 0.0f, 1.0f };
+		right = cross3(forward, alternateUp);
+		if (!normalize3(right))
+			return false;
+	}
+	up = cross3(right, forward);
+	if (!normalize3(up))
+		return false;
+
+	if (std::fabs(camera.rollRadians) > 1.0e-7f) {
+		const float c = std::cos(camera.rollRadians);
+		const float s = std::sin(camera.rollRadians);
+		const Vec3f unrolledRight = right;
+		const Vec3f unrolledUp = up;
+		right.x = unrolledRight.x * c + unrolledUp.x * s;
+		right.y = unrolledRight.y * c + unrolledUp.y * s;
+		right.z = unrolledRight.z * c + unrolledUp.z * s;
+		up.x = unrolledUp.x * c - unrolledRight.x * s;
+		up.y = unrolledUp.y * c - unrolledRight.y * s;
+		up.z = unrolledUp.z * c - unrolledRight.z * s;
+	}
+
+	return true;
+}
+
 static float edge(float ax, float ay, float bx, float by, float px, float py) {
 	return (px - ax) * (by - ay) - (py - ay) * (bx - ax);
 }
@@ -454,20 +487,10 @@ bool SoftwareRenderer::render(const SceneModel &scene, const RenderCamera &camer
 	if (width <= 0 || height <= 0 || camera.focalPixels <= 0.0f)
 		return false;
 
-	Vec3f forward = sub3(camera.target, camera.position);
-	if (!normalize3(forward))
-		return false;
-
-	const Vec3f worldUp = { 0.0f, 1.0f, 0.0f };
-	Vec3f right = cross3(forward, worldUp);
-	if (!normalize3(right)) {
-		const Vec3f alternateUp = { 0.0f, 0.0f, 1.0f };
-		right = cross3(forward, alternateUp);
-		if (!normalize3(right))
-			return false;
-	}
-	Vec3f up = cross3(right, forward);
-	if (!normalize3(up))
+	Vec3f right;
+	Vec3f up;
+	Vec3f forward;
+	if (!buildCameraBasis(camera, right, up, forward))
 		return false;
 
 	const float focalPixels = camera.focalPixels;
@@ -497,20 +520,10 @@ bool SoftwareRenderer::renderWithActor(const SceneModel &scene, const RenderCame
 	if (width <= 0 || height <= 0 || camera.focalPixels <= 0.0f)
 		return false;
 
-	Vec3f forward = sub3(camera.target, camera.position);
-	if (!normalize3(forward))
-		return false;
-
-	const Vec3f worldUp = { 0.0f, 1.0f, 0.0f };
-	Vec3f right = cross3(forward, worldUp);
-	if (!normalize3(right)) {
-		const Vec3f alternateUp = { 0.0f, 0.0f, 1.0f };
-		right = cross3(forward, alternateUp);
-		if (!normalize3(right))
-			return false;
-	}
-	Vec3f up = cross3(right, forward);
-	if (!normalize3(up))
+	Vec3f right;
+	Vec3f up;
+	Vec3f forward;
+	if (!buildCameraBasis(camera, right, up, forward))
 		return false;
 
 	target.free();
@@ -542,16 +555,10 @@ bool SoftwareRenderer::pickMesh(const SceneModel &scene, const RenderCamera &cam
 	if (width <= 0 || height <= 0 || camera.focalPixels <= 0.0f)
 		return false;
 
-	Vec3f forward = sub3(camera.target, camera.position);
-	if (!normalize3(forward))
-		return false;
-
-	const Vec3f worldUp = { 0.0f, 1.0f, 0.0f };
-	Vec3f right = cross3(forward, worldUp);
-	if (!normalize3(right))
-		return false;
-	Vec3f up = cross3(right, forward);
-	if (!normalize3(up))
+	Vec3f right;
+	Vec3f up;
+	Vec3f forward;
+	if (!buildCameraBasis(camera, right, up, forward))
 		return false;
 
 	float bestDepth = 1.0e30f;
