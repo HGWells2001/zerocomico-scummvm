@@ -18,6 +18,7 @@ struct RenderCamera {
 	Vec3f position;
 	Vec3f target;
 	float focalPixels;
+	float rollRadians = 0.0f;
 };
 
 struct RenderTransform {
