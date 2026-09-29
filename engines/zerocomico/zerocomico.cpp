@@ -118,6 +118,28 @@ static bool startsWithIgnoreCase(const Common::String &value,
 	       value.substr(0, prefix.size()).equalsIgnoreCase(prefix);
 }
 
+static Common::String indexedSceneEntityName(const Common::String &prefix, int index) {
+	return Common::String::format("%s%02d", prefix.c_str(), index);
+}
+
+static bool parseScriptFloat(const Common::String &token, float &value) {
+	if (token.empty())
+		return false;
+
+	Common::String normalized = token;
+	for (uint32 i = 0; i < normalized.size(); ++i)
+		if (normalized[i] == ',')
+			normalized.setChar('.', i);
+
+	char *end = nullptr;
+	const double parsed = strtod(normalized.c_str(), &end);
+	if (!end || end == normalized.c_str() || *end != 0)
+		return false;
+
+	value = (float)parsed;
+	return true;
+}
+
 static Common::String pairedCameraMapName(const Common::String &walkMap) {
 	Common::String lower = walkMap;
 	lower.toLowercase();
@@ -1092,6 +1114,87 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 	// engine, so these can advance the retail startup script without inventing
 	// state we do not render yet. Clone placement is deliberately left as a
 	// boundary until dynamic scene instances are represented natively.
+	if (op.equalsIgnoreCase("Setpos_z_by_index")) {
+		if (instruction.args.size() < 3)
+			return false;
+		int32 index = 0;
+		if (!_scriptVM.resolveValue(instruction.args[1], index))
+			return false;
+		float z = 0.0f;
+		int32 integerValue = 0;
+		if (_scriptVM.resolveValue(instruction.args[2], integerValue))
+			z = (float)integerValue;
+		else if (!parseScriptFloat(instruction.args[2], z))
+			return false;
+
+		const Common::String entityName = indexedSceneEntityName(instruction.args[0], (int)index);
+		NamedMesh *mesh = _activeScene.findMesh(entityName);
+		if (!mesh)
+			return false;
+		mesh->data.transform.translation.z = z;
+		return true;
+	}
+
+	if (op.equalsIgnoreCase("hide_by_index")) {
+		if (instruction.args.size() < 3)
+			return false;
+		int32 index = 0;
+		int32 hidden = 0;
+		if (!_scriptVM.resolveValue(instruction.args[1], index) ||
+		    !_scriptVM.resolveValue(instruction.args[2], hidden))
+			return false;
+
+		const Common::String entityName = indexedSceneEntityName(instruction.args[0], (int)index);
+		if (!_activeScene.findMesh(entityName))
+			return false;
+		if (hidden != 0) {
+			if (!containsIgnoreCase(_hiddenSceneMeshes, entityName))
+				_hiddenSceneMeshes.push_back(entityName);
+		} else {
+			removeIgnoreCase(_hiddenSceneMeshes, entityName);
+		}
+		return true;
+	}
+
+	if (op.equalsIgnoreCase("swap_entity_pos_byindex")) {
+		if (instruction.args.size() < 3)
+			return false;
+		int32 firstIndex = 0;
+		int32 secondIndex = 0;
+		if (!_scriptVM.resolveValue(instruction.args[1], firstIndex) ||
+		    !_scriptVM.resolveValue(instruction.args[2], secondIndex))
+			return false;
+
+		NamedMesh *first = _activeScene.findMesh(
+			indexedSceneEntityName(instruction.args[0], (int)firstIndex));
+		NamedMesh *second = _activeScene.findMesh(
+			indexedSceneEntityName(instruction.args[0], (int)secondIndex));
+		if (!first || !second)
+			return false;
+
+		const Vec3f position = first->data.transform.translation;
+		first->data.transform.translation = second->data.transform.translation;
+		second->data.transform.translation = position;
+		return true;
+	}
+
+	if (op.equalsIgnoreCase("setpos_on_entity_byindex")) {
+		if (instruction.args.size() < 3)
+			return false;
+		int32 index = 0;
+		if (!_scriptVM.resolveValue(instruction.args[2], index))
+			return false;
+
+		NamedMesh *target = _activeScene.findMesh(instruction.args[0]);
+		const NamedMesh *source = _activeScene.findMesh(
+			indexedSceneEntityName(instruction.args[1], (int)index));
+		if (!target || !source)
+			return false;
+
+		target->data.transform.translation = source->data.transform.translation;
+		return true;
+	}
+
 	if (op.equalsIgnoreCase("Setp")) {
 		if (instruction.args.size() < 2 || _currentMainPlace.empty())
 			return false;
@@ -1126,7 +1229,6 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 	    op.equalsIgnoreCase("CloneEntity") ||
 	    op.equalsIgnoreCase("SetEntityPos_Vector") ||
 	    op.equalsIgnoreCase("InsertInBackground") ||
-	    op.equalsIgnoreCase("swap_entity_pos_byindex") ||
 	    op.equalsIgnoreCase("dcue_all"))
 		return true;
 
