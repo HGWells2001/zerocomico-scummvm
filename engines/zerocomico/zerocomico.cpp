@@ -2593,6 +2593,9 @@ bool ZeroComicoEngine::playDialogue(const Common::String &name,
 		return false;
 	}
 
+	if (depth == 0)
+		_lastDialogCameraName.clear();
+
 	RenderCamera dialogueCamera = camera;
 	const ScriptCamera *dialogFirst = _dialogCameraFirstName.empty()
 		? nullptr : _activeCameraScript.findCamera(_dialogCameraFirstName);
@@ -2611,7 +2614,19 @@ bool ZeroComicoEngine::playDialogue(const Common::String &name,
 		dialogueCamera.target = scriptCamera->target;
 		dialogueCamera.focalPixels = 400.0f / halfTan;
 		dialogueCamera.rollRadians = 0.0f;
+		_lastDialogCameraName = scriptCamera->name;
 		return true;
+	};
+
+	auto finishDialogueCamera = [&]() {
+		if (depth != 0)
+			return;
+		if (_playerNoCameraReset) {
+			if (!_lastDialogCameraName.empty())
+				_pendingCameraName = _lastDialogCameraName;
+		} else if (_cameraMode == 0 && !_defaultRoomCameraName.empty()) {
+			_pendingCameraName = _defaultRoomCameraName;
+		}
 	};
 
 	// Zero Comico.exe selects the pair with an actor-side test. When the
@@ -2707,8 +2722,10 @@ bool ZeroComicoEngine::playDialogue(const Common::String &name,
 		}
 	}
 
-	if (dialog->choices.empty())
+	if (dialog->choices.empty()) {
+		finishDialogueCamera();
 		return true;
+	}
 
 	Common::Array<DialogChoice> activeChoices;
 	Common::Array<uint32> activeChoiceIndices;
@@ -2718,8 +2735,10 @@ bool ZeroComicoEngine::playDialogue(const Common::String &name,
 		activeChoices.push_back(dialog->choices[choiceIndex]);
 		activeChoiceIndices.push_back(choiceIndex);
 	}
-	if (activeChoices.empty())
+	if (activeChoices.empty()) {
+		finishDialogueCamera();
 		return true;
+	}
 
 	uint32 selected = 0;
 	bool chosen = false;
@@ -2763,8 +2782,10 @@ bool ZeroComicoEngine::playDialogue(const Common::String &name,
 				chosen = true;
 				break;
 			}
-			if (event.kbd.keycode == Common::KEYCODE_ESCAPE)
+			if (event.kbd.keycode == Common::KEYCODE_ESCAPE) {
+				finishDialogueCamera();
 				return true;
+			}
 		}
 		_system->delayMillis(10);
 	}
@@ -2774,11 +2795,16 @@ bool ZeroComicoEngine::playDialogue(const Common::String &name,
 
 	const uint32 originalChoice = activeChoiceIndices[selected];
 	_lastDialogueChoice = (int32)originalChoice;
-	if (dialog->choices[originalChoice].targetDialog.empty())
+	if (dialog->choices[originalChoice].targetDialog.empty()) {
+		finishDialogueCamera();
 		return true;
+	}
 
-	return playDialogue(dialog->choices[originalChoice].targetDialog, camera,
-	                    sceneDirectory, playerDirectory, frame, depth + 1);
+	const bool nestedOk = playDialogue(dialog->choices[originalChoice].targetDialog, camera,
+	                                  sceneDirectory, playerDirectory, frame, depth + 1);
+	if (nestedOk)
+		finishDialogueCamera();
+	return nestedOk;
 }
 
 bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
@@ -2820,6 +2846,7 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 	_pendingRoomMapName.clear();
 	_dialogCameraFirstName.clear();
 	_dialogCameraSecondName.clear();
+	_lastDialogCameraName.clear();
 	_selectedInventoryObject.clear();
 	_combineInventoryFirst.clear();
 	_combineInventorySecond.clear();

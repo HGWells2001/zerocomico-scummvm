@@ -144,6 +144,7 @@ private:
 	Common::String _defaultRoomCameraName;
 	Common::String _dialogCameraFirstName;
 	Common::String _dialogCameraSecondName;
+	Common::String _lastDialogCameraName;
 	Common::String _activeAutoCameraTrigger;
 	Common::String _currentMusicName;
 	Audio::SoundHandle _musicHandle;

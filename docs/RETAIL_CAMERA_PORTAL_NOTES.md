@@ -270,11 +270,18 @@ executes them through the same ScriptVM used by puzzle/room logic. This restores
 the variable mutations that hand control from dialogue into the corresponding
 combat/minigame branches.
 
-Direct executable analysis of `SetNoCameraReset` shows a boolean-like value
-stored on the addressed runtime character. All retail occurrences address
-`MainPlayer`; the engine now preserves that state as `_playerNoCameraReset`.
-The later automatic dialogue-camera reset policy is still a separate fidelity
-task, because `SetDialogCameras` itself is not yet fully implemented.
+Direct executable analysis of `SetNoCameraReset` shows the value stored at
+character offset `+0x5B10`. In the character-update path at `0x45AB29`, a
+non-zero value skips the camera-reset branch that normally runs when the
+character's dialogue/activity object becomes inactive.
+
+All eight retail occurrences address `MainPlayer`: four dialogue `do` blocks
+set the flag to 1 immediately before the Mp3 combat/minigame hand-off, and the
+matching puzzle loops restore it to 0. The runtime now mirrors the observable
+camera effect. A completed dialogue normally queues the room default camera in
+Placed mode; while `_playerNoCameraReset` is active, it instead queues the
+last camera selected by `SetDialogCameras`, preserving that shot across the
+handoff. Dynamic Subjective/Spot modes are left to their own runtime update.
 
 ## Mp5 portals
 
