@@ -1190,6 +1190,18 @@ void ZeroComicoEngine::installCpuCharactersForRoom(const Common::String &roomNam
 				const Vec3f position = spawn->data.transform.translation;
 				if (character.scene.translateHierarchy(character.bodyRoot, position))
 					character.positioned = true;
+
+				// SetCharPos_Entity spawn meshes carry the actor orientation in the
+				// retail 3x3 transform. Local -Z is the character's forward vector.
+				Vec3f facing = {
+					-spawn->data.transform.matrix[2],
+					0.0f,
+					-spawn->data.transform.matrix[8]
+				};
+				if (normalizeVec3(facing)) {
+					character.facing = facing;
+					character.haveFacing = true;
+				}
 			}
 		}
 
@@ -1258,9 +1270,13 @@ bool ZeroComicoEngine::giveLifeToCharacter(const Common::String &name) {
 	runtime.bodyRoot = definition->initialBodyName;
 	runtime.initialEntity = definition->initialEntity;
 	runtime.scene = body;
+	runtime.facing.x = 0.0f;
+	runtime.facing.y = 0.0f;
+	runtime.facing.z = -1.0f;
 	runtime.alive = true;
 	runtime.lifeBroken = definition->breakLifeOnInitialize;
 	runtime.positioned = false;
+	runtime.haveFacing = false;
 	_cpuCharacters.push_back(runtime);
 
 	debug(1, "Zero Comico: GiveLifeToChar activated %s using %s in %s%s",
@@ -2583,31 +2599,14 @@ bool ZeroComicoEngine::playDialogue(const Common::String &name,
 		return true;
 	};
 
-	// SetDialogCameras stores a left/right pair, not player/NPC slots. The
-	// original executable chooses between them from actor-side geometry. The
-	// exported fixed cameras encode the same distinction in their targets, so
-	// classify the pair against the live MainPlayer position. This naturally
-	// handles the retail dx/sx reversals and same-camera pairs.
-	const ScriptCamera *playerDialogCamera = nullptr;
-	const ScriptCamera *otherDialogCamera = nullptr;
-	if (dialogFirst && dialogSecond) {
-		const float firstDx = dialogFirst->target.x - _playerPosition.x;
-		const float firstDz = dialogFirst->target.z - _playerPosition.z;
-		const float secondDx = dialogSecond->target.x - _playerPosition.x;
-		const float secondDz = dialogSecond->target.z - _playerPosition.z;
-		const float firstDistance2 = firstDx * firstDx + firstDz * firstDz;
-		const float secondDistance2 = secondDx * secondDx + secondDz * secondDz;
-		if (firstDistance2 <= secondDistance2) {
-			playerDialogCamera = dialogFirst;
-			otherDialogCamera = dialogSecond;
-		} else {
-			playerDialogCamera = dialogSecond;
-			otherDialogCamera = dialogFirst;
-		}
-	} else {
-		playerDialogCamera = dialogFirst ? dialogFirst : dialogSecond;
-		otherDialogCamera = playerDialogCamera;
-	}
+	// Zero Comico.exe selects the pair with an actor-side test. When the
+	// speaking actor is the dialogue initiator (the MainPlayer in retail calls),
+	// both actor directions are identical and the test deterministically selects
+	// the second camera. NPC lines normally select the first camera, but when a
+	// SetCharPos_Entity spawn gave us an exact facing vector we reproduce the
+	// executable's XZ side test below.
+	const ScriptCamera *playerDialogCamera = dialogSecond ? dialogSecond : dialogFirst;
+	const ScriptCamera *otherDialogCamera = dialogFirst ? dialogFirst : dialogSecond;
 	applyDialogScriptCamera(playerDialogCamera);
 
 	for (uint32 lineIndex = 0; lineIndex < dialog->lines.size() && !shouldQuit(); ++lineIndex) {
@@ -2618,7 +2617,34 @@ bool ZeroComicoEngine::playDialogue(const Common::String &name,
 			speakerName.equalsIgnoreCase("MainPlayer") ||
 			(!_playerCharacterScript.playerName.empty() &&
 			 speakerName.equalsIgnoreCase(_playerCharacterScript.playerName));
-		applyDialogScriptCamera(speakerIsPlayer ? playerDialogCamera : otherDialogCamera);
+
+		const ScriptCamera *lineCamera = speakerIsPlayer
+			? playerDialogCamera : otherDialogCamera;
+		if (!speakerIsPlayer && dialogFirst && dialogSecond) {
+			const CpuCharacterRuntime *cpuSpeaker = nullptr;
+			for (uint32 cpuIndex = 0; cpuIndex < _cpuCharacters.size(); ++cpuIndex) {
+				if (_cpuCharacters[cpuIndex].name.equalsIgnoreCase(speakerName)) {
+					cpuSpeaker = &_cpuCharacters[cpuIndex];
+					break;
+				}
+			}
+
+			Vec3f playerForward = subtractVec3(_playerFacingTarget, _playerPosition);
+			playerForward.y = 0.0f;
+			if (cpuSpeaker && cpuSpeaker->haveFacing && normalizeVec3(playerForward)) {
+				Vec3f directionDelta = subtractVec3(playerForward, cpuSpeaker->facing);
+				if (normalizeVec3(directionDelta)) {
+					directionDelta.y = 0.0f;
+					const float sideY =
+						cpuSpeaker->facing.z * directionDelta.x -
+						cpuSpeaker->facing.x * directionDelta.z;
+					// Retail helper 0x420a2e returns true for sideY <= 0,
+					// and that branch uses the second SetDialogCameras argument.
+					lineCamera = sideY <= 0.0f ? dialogSecond : dialogFirst;
+				}
+			}
+		}
+		applyDialogScriptCamera(lineCamera);
 
 		if (!renderGameplayFrame(dialogueCamera, sceneDirectory, playerDirectory, "Stay", 0.0f, frame))
 			return false;

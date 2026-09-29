@@ -40,9 +40,11 @@ struct CpuCharacterRuntime {
 	Common::String bodyRoot;
 	Common::String initialEntity;
 	SceneModel scene;
+	Vec3f facing;
 	bool alive;
 	bool lifeBroken;
 	bool positioned;
+	bool haveFacing;
 };
 
 class ZeroComicoEngine : public Engine, public ScriptVMHost {

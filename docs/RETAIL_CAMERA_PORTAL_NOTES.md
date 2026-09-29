@@ -232,18 +232,29 @@ the first or second camera. This matches the scripts, where Mp2 deliberately
 passes several pairs as `*_dx *_sx` while other levels commonly use
 `*_sx *_dx`; nine calls intentionally pass the same camera twice.
 
-The reimplementation now retains the two requested camera names and switches
-the rendered dialogue view per spoken line. Camera.scr exports the corresponding
-fixed cameras with distinct targets, so the runtime classifies which member of
-the pair frames the live MainPlayer by horizontal target distance to the
-current player position; the other member frames the interlocutor. This is a
-data-driven equivalent for the exported retail camera pair and automatically
-preserves reversed and identical pairs. Dialogue choice lists keep the most
-recent dialogue view, with the player-side camera selected initially.
+The reimplementation retains the two requested camera names and switches the
+rendered dialogue view per spoken line. The executable side-test at
+`0x420a2e` has now been reconstructed down to its vector operations. For the
+current speaker it obtains that actor's forward vector and the forward vector
+of the dialogue initiator, computes:
 
-The underlying executable side-test at `0x420a2e` has also been isolated for
-future bit-level fidelity: it compares actor orientation vectors on the XZ
-plane and selects global camera A/B from the sign of the resulting side vector.
+```text
+delta = normalize(initiatorForward - speakerForward)
+delta.y = 0
+sideY = cross(speakerForward, delta).y
+```
+
+and selects the **second** SetDialogCameras argument when `sideY <= 0`,
+otherwise the first. When the speaker is the initiator itself, `delta` is
+zero and the retail comparison selects the second camera deterministically.
+
+For CPU characters spawned through `SetCharPos_Entity`, the runtime now
+recovers forward from the marker mesh's retail transform (local -Z) and applies
+that exact side test. Characters whose initialize block uses a vector marker
+rather than an entity do not yet retain an NPC orientation; those lines safely
+fall back to the first camera. Identical camera pairs remain naturally
+unchanged. Dialogue choice lists begin on the initiator/second camera and keep
+the most recent dialogue view.
 
 ## Dialogue do blocks and SetNoCameraReset
 
