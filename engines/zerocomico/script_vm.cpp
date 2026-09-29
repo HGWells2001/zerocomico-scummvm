@@ -356,6 +356,83 @@ bool ScriptVM::run(const ScriptProgram &program, uint32 startIndex, uint32 endIn
 			continue;
 		}
 
+		if (op.equalsIgnoreCase("jmp_if_l") || op.equalsIgnoreCase("jmp_if_le") ||
+		    op.equalsIgnoreCase("jmp_if_g") || op.equalsIgnoreCase("jmp_if_ge") ||
+		    op.equalsIgnoreCase("jmp_if_e") || op.equalsIgnoreCase("jmp_if_ne")) {
+			if (instruction.args.size() < 3)
+				return false;
+			int32 left = 0;
+			int32 right = 0;
+			if (!resolveValue(instruction.args[0], left) ||
+			    !resolveValue(instruction.args[1], right))
+				return false;
+
+			bool jump = false;
+			if (op.equalsIgnoreCase("jmp_if_l"))
+				jump = left < right;
+			else if (op.equalsIgnoreCase("jmp_if_le"))
+				jump = left <= right;
+			else if (op.equalsIgnoreCase("jmp_if_g"))
+				jump = left > right;
+			else if (op.equalsIgnoreCase("jmp_if_ge"))
+				jump = left >= right;
+			else if (op.equalsIgnoreCase("jmp_if_e"))
+				jump = left == right;
+			else
+				jump = left != right;
+
+			if (jump) {
+				const int target = program.labelIndex(instruction.args[2]);
+				if (target < 0 || (uint32)target >= endIndex)
+					return false;
+				pc = (uint32)target + 1;
+			} else {
+				++pc;
+			}
+			continue;
+		}
+
+		if (op.equalsIgnoreCase("jmp_if_z") || op.equalsIgnoreCase("jmp_if_nz")) {
+			if (instruction.args.size() < 2)
+				return false;
+			int32 value = 0;
+			if (!resolveValue(instruction.args[0], value))
+				return false;
+			const bool jump = op.equalsIgnoreCase("jmp_if_z") ? value == 0 : value != 0;
+			if (jump) {
+				const int target = program.labelIndex(instruction.args[1]);
+				if (target < 0 || (uint32)target >= endIndex)
+					return false;
+				pc = (uint32)target + 1;
+			} else {
+				++pc;
+			}
+			continue;
+		}
+
+		// Real-time thread blocks in the retail scripts are background loops.
+		// Running them synchronously would stall room bootstrap forever, so the
+		// main VM skips the block while preserving the foreground script.
+		if (op.equalsIgnoreCase("begin_rthread")) {
+			uint32 nestedThreads = 0;
+			uint32 next = pc + 1;
+			for (; next < endIndex; ++next) {
+				const Common::String &threadOp = instructions[next].opcode;
+				if (threadOp.equalsIgnoreCase("begin_thread") ||
+				    threadOp.equalsIgnoreCase("begin_rthread")) {
+					++nestedThreads;
+				} else if (threadOp.equalsIgnoreCase("end_thread")) {
+					if (nestedThreads == 0) {
+						++next;
+						break;
+					}
+					--nestedThreads;
+				}
+			}
+			pc = next;
+			continue;
+		}
+
 		if (!_host || !_host->executeScriptOpcode(instruction))
 			return false;
 
