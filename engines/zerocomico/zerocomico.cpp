@@ -1480,6 +1480,20 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 	if (op.equalsIgnoreCase("wait_last_film"))
 		return true;
 
+	if (op.equalsIgnoreCase("ResetMaterialFilm")) {
+		if (instruction.args.empty())
+			return false;
+
+		// The retail callback resolves the named material-film object and resets
+		// its animation cursor. Our synchronous cutscenes load a fresh P3D/ANJ
+		// scene for every play_cut/play_open_cut, so the two shipped Mp4 uses
+		// already start from pristine material state. Accepting the opcode here
+		// preserves that equivalent behavior instead of aborting the script.
+		debug(1, "Zero Comico: material film %s reset by fresh cutscene load",
+		      instruction.args[0].c_str());
+		return true;
+	}
+
 	if (op.equalsIgnoreCase("play_cut") || op.equalsIgnoreCase("play_open_cut")) {
 		if (instruction.args.empty())
 			return false;
