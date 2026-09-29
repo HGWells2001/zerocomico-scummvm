@@ -317,6 +317,107 @@ bool BspMap::containsWalkablePoint(float x, float y) const {
 	return true;
 }
 
+static Vec2 closestPointOnSegment(const Vec2 &a, const Vec2 &b, float x, float y) {
+	const float dx = b.x - a.x;
+	const float dy = b.y - a.y;
+	const float length2 = dx * dx + dy * dy;
+	if (length2 <= 1.0e-12f)
+		return a;
+
+	float t = ((x - a.x) * dx + (y - a.y) * dy) / length2;
+	if (t < 0.0f)
+		t = 0.0f;
+	else if (t > 1.0f)
+		t = 1.0f;
+
+	Vec2 out = { a.x + dx * t, a.y + dy * t };
+	return out;
+}
+
+bool BspMap::nearestWalkablePoint(float x, float y, Vec2 &result) const {
+	if (polygons.empty())
+		return false;
+
+	if (containsWalkablePoint(x, y)) {
+		result.x = x;
+		result.y = y;
+		return true;
+	}
+
+	bool insideHole = false;
+	uint32 holeIndex = 0;
+	for (uint32 i = 1; i < polygons.size(); ++i) {
+		if (pointInPolygon(polygons[i], x, y)) {
+			insideHole = true;
+			holeIndex = i;
+			break;
+		}
+	}
+
+	const Common::Array<Vec2> &boundary =
+		insideHole ? polygons[holeIndex] : polygons[0];
+	if (boundary.size() < 2)
+		return false;
+
+	bool haveCandidate = false;
+	float bestDistance2 = 0.0f;
+	Vec2 best = { 0.0f, 0.0f };
+	for (uint32 i = 0, j = boundary.size() - 1; i < boundary.size(); j = i++) {
+		Vec2 candidate = closestPointOnSegment(boundary[j], boundary[i], x, y);
+
+		// A point exactly on a hole edge is classified as inside the hole.
+		// Extend the shortest interior-to-edge vector just beyond the boundary,
+		// which mirrors the camera being pushed back into legal MapCam space.
+		if (insideHole) {
+			float dx = candidate.x - x;
+			float dy = candidate.y - y;
+			const float length2 = dx * dx + dy * dy;
+			if (length2 > 1.0e-12f) {
+				const float invLength = 1.0f / std::sqrt(length2);
+				candidate.x += dx * invLength * 0.05f;
+				candidate.y += dy * invLength * 0.05f;
+			}
+		}
+
+		if (!containsWalkablePoint(candidate.x, candidate.y))
+			continue;
+
+		const float dx = candidate.x - x;
+		const float dy = candidate.y - y;
+		const float distance2 = dx * dx + dy * dy;
+		if (!haveCandidate || distance2 < bestDistance2) {
+			haveCandidate = true;
+			bestDistance2 = distance2;
+			best = candidate;
+		}
+	}
+
+	if (haveCandidate) {
+		result = best;
+		return true;
+	}
+
+	// Degenerate/custom maps can defeat the polygon projection above. Fall back
+	// to a navigation point only if that point is itself legal walkable space.
+	for (uint32 i = 0; i < graph.size(); ++i) {
+		if (!containsWalkablePoint(graph[i].pos.x, graph[i].pos.y))
+			continue;
+		const float dx = graph[i].pos.x - x;
+		const float dy = graph[i].pos.y - y;
+		const float distance2 = dx * dx + dy * dy;
+		if (!haveCandidate || distance2 < bestDistance2) {
+			haveCandidate = true;
+			bestDistance2 = distance2;
+			best = graph[i].pos;
+		}
+	}
+	if (!haveCandidate)
+		return false;
+
+	result = best;
+	return true;
+}
+
 int BspMap::nearestGraphNode(float x, float y) const {
 	if (graph.empty())
 		return -1;
