@@ -7,6 +7,7 @@
 
 #include "common/array.h"
 #include "common/path.h"
+#include "common/scummsys.h"
 #include "common/str.h"
 
 namespace ZeroComico {
