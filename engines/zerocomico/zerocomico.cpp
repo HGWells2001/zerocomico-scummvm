@@ -2312,15 +2312,35 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 	}
 
 	if (op.equalsIgnoreCase("envsound_state")) {
-		if (instruction.args.empty())
+		if (instruction.args.size() < 3)
 			return false;
+
 		int32 state = 0;
-		if (!_scriptVM.resolveValue(instruction.args[0], state))
+		if (!_scriptVM.resolveValue(instruction.args[2], state))
 			return false;
-		if (state == 0)
-			setEnvironmentSound(_environmentSoundName, false);
-		else if (!_environmentSoundName.empty())
-			setEnvironmentSound(_environmentSoundName, true);
+
+		const Common::String &roomName = instruction.args[0];
+		const Common::String &soundName = instruction.args[1];
+		bool found = false;
+		for (uint32 i = 0; i < _environmentStateNames.size(); ++i) {
+			if (_environmentStateRooms[i].equalsIgnoreCase(roomName) &&
+			    _environmentStateNames[i].equalsIgnoreCase(soundName)) {
+				_environmentStateEnabled[i] = state != 0;
+				found = true;
+				break;
+			}
+		}
+		if (!found) {
+			_environmentStateRooms.push_back(roomName);
+			_environmentStateNames.push_back(soundName);
+			_environmentStateEnabled.push_back(state != 0);
+		}
+
+		// Retail signature is Room, EnvSound-object, state. These are per-emitter
+		// flags (for example Star00..Star17 in Mp2), not the chapter's global
+		// ambient sound handle.
+		debug(1, "Zero Comico: environment emitter %s/%s = %d",
+		      roomName.c_str(), soundName.c_str(), state != 0 ? 1 : 0);
 		return true;
 	}
 
@@ -3178,6 +3198,9 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 	_combineInventorySecond.clear();
 	_inventoryObjects.clear();
 	_hiddenSceneMeshes.clear();
+	_environmentStateRooms.clear();
+	_environmentStateNames.clear();
+	_environmentStateEnabled.clear();
 	_sceneLoopTargets.clear();
 	_sceneLoopSources.clear();
 	_sceneLoopStartMillis.clear();

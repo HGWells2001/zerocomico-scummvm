@@ -155,6 +155,9 @@ private:
 	Audio::SoundHandle _musicHandle;
 	Common::String _environmentSoundName;
 	Audio::SoundHandle _environmentSoundHandle;
+	Common::Array<Common::String> _environmentStateRooms;
+	Common::Array<Common::String> _environmentStateNames;
+	Common::Array<bool> _environmentStateEnabled;
 	Common::String _loopCutName;
 	Common::String _loopCutAssetStem;
 	float _loopCutStartFrame;
