@@ -961,6 +961,50 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 		return true;
 	}
 
+	if (op.equalsIgnoreCase("SetAnimSet")) {
+		if (instruction.args.size() < 2)
+			return false;
+
+		const CharacterAnimSet *animSet =
+			_playerCharacterScript.findAnimSet(instruction.args[1]);
+		if (!animSet)
+			return false;
+
+		Common::String assetStem = animSet->bodyName;
+		const uint32 separator = assetStem.find('_');
+		if (separator != Common::String::npos && separator + 1 < assetStem.size())
+			assetStem = assetStem.substr(separator + 1);
+
+		Common::Path directory =
+			Common::Path("Mpx/bodies").appendComponent(assetStem);
+		SceneModel replacementScene;
+		bool loaded = replacementScene.loadPair(
+			directory.appendComponent(assetStem + ".p3d"),
+			directory.appendComponent(assetStem + ".anj"));
+		if (!loaded) {
+			Common::String lowerFolder = assetStem;
+			lowerFolder.toLowercase();
+			directory = Common::Path("Mpx/bodies").appendComponent(lowerFolder);
+			loaded = replacementScene.loadPair(
+				directory.appendComponent(assetStem + ".p3d"),
+				directory.appendComponent(assetStem + ".anj"));
+		}
+		if (!loaded)
+			return false;
+
+		SequenceScript replacementSequences;
+		if (!replacementSequences.load(directory.appendComponent(assetStem + ".seq")))
+			return false;
+
+		_playerScene = replacementScene;
+		_playerSequences = replacementSequences;
+		_playerAssetDirectory = directory;
+		_playerHatVisible = true;
+		debug(1, "Zero Comico: switched MainPlayer animation set to %s (%s)",
+		      instruction.args[1].c_str(), animSet->bodyName.c_str());
+		return true;
+	}
+
 	if (op.equalsIgnoreCase("play") ||
 	    op.equalsIgnoreCase("wait_say") ||
 	    op.equalsIgnoreCase("SetDialogCameras") ||
@@ -1215,7 +1259,7 @@ bool ZeroComicoEngine::renderGameplayFrame(const RenderCamera &camera,
 			        animationSource.c_str());
 
 		rendered = _gameplayRenderer.renderWithActor(_activeScene, camera, sceneDirectory, visibleMeshes,
-		                                    _playerScene, playerDirectory, playerVisible,
+		                                    _playerScene, _playerAssetDirectory, playerVisible,
 		                                    playerTransform, frame, 800, 600);
 	} else {
 		rendered = _gameplayRenderer.render(_activeScene, camera, sceneDirectory, visibleMeshes,
@@ -1493,6 +1537,8 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 		debug(1, "Zero Comico: player %s decoded: %u materials, %u meshes, %u clips",
 		      playerAssetStem.c_str(), (uint)_playerScene.materials.size(),
 		      (uint)_playerScene.meshes.size(), (uint)_playerScene.clips.size());
+
+	_playerAssetDirectory = playerDirectory;
 
 	if (!_playerSequences.load(playerDirectory.appendComponent(playerAssetStem + ".seq"))) {
 		warning("Zero Comico: cannot parse player sequence file %s.seq",
