@@ -137,6 +137,9 @@ private:
 	Common::Array<Common::String> _sceneLoopSources;
 	Common::Array<uint32> _sceneLoopStartMillis;
 	Common::Array<Common::String> _loadedSetpAssets;
+	Common::Array<SceneModel> _loadedSetpScenes;
+	Common::Array<Common::String> _setpControllerNames;
+	Common::Array<Vec3f> _setpControllerPositions;
 	Common::Array<DynamicSceneEntity> _dynamicSceneEntities;
 	ScriptVM _scriptVM;
 	bool _interfaceDisabled;

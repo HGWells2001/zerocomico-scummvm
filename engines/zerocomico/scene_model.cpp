@@ -145,6 +145,21 @@ static const Common::String *findParentName(const HierarchyData &hierarchy, cons
 	return nullptr;
 }
 
+static bool hierarchyContains(const HierarchyData &hierarchy,
+                              const Common::String &rootName,
+                              const Common::String &name) {
+	Common::String current = name;
+	for (uint32 depth = 0; depth <= hierarchy.entries.size(); ++depth) {
+		if (current.equalsIgnoreCase(rootName))
+			return true;
+		const Common::String *parent = findParentName(hierarchy, current);
+		if (!parent || parent->empty() || parent->equalsIgnoreCase("NULL"))
+			return false;
+		current = *parent;
+	}
+	return false;
+}
+
 static bool sampleLocalMatrix(const AnimationClip &clip, const Common::String &name,
                               float frame, PoseMatrix &matrix) {
 	float translation[3];
@@ -644,38 +659,66 @@ void SceneModel::visibleMeshesForSource(const Common::String &sourceName, float 
 bool SceneModel::poseRigidAnimation(const Common::String &targetName,
                                     const Common::String &sourceName,
                                     float frame) {
-	NamedMesh *targetMesh = nullptr;
-	for (uint32 i = 0; i < meshes.size(); ++i) {
-		if (meshes[i].name.equalsIgnoreCase(targetName)) {
-			targetMesh = &meshes[i];
-			break;
+	NamedMesh *targetMesh = findMesh(targetName);
+	if (targetMesh && !targetMesh->data.isFlesh() &&
+	    !targetMesh->data.isSkinnedParent() && !targetMesh->data.vertices.empty()) {
+		const NamedAnimationClip *clip = findClipBySource(targetName, sourceName);
+		if (!clip)
+			return false;
+
+		PoseMatrix bindMatrix;
+		PoseMatrix poseMatrix;
+		PoseMatrix inverseBind;
+		if (!sampleLocalMatrix(clip->data, targetName, (float)clip->data.startFrame, bindMatrix) ||
+		    !sampleLocalMatrix(clip->data, targetName, frame, poseMatrix) ||
+		    !invertAffine(bindMatrix, inverseBind))
+			return false;
+
+		const PoseMatrix delta = multiplyMatrix(poseMatrix, inverseBind);
+		targetMesh->posedVertices.resize(targetMesh->data.vertices.size());
+		for (uint32 i = 0; i < targetMesh->data.vertices.size(); ++i) {
+			const Vec3f bindPoint = transformBindVertex(targetMesh->data.vertices[i],
+			                                           targetMesh->data.transform);
+			targetMesh->posedVertices[i] = transformPoint(delta, bindPoint);
 		}
+		return true;
 	}
 
-	if (!targetMesh || targetMesh->data.isFlesh() ||
-	    targetMesh->data.isSkinnedParent() || targetMesh->data.vertices.empty())
-		return false;
-
+	// Setp controllers such as Mp2's r23_dummyossa are hierarchy roots rather
+	// than visible meshes. Their playl animation must pose every rigid mesh
+	// below that root instead of failing the direct-mesh lookup above.
+	const HierarchyData *hierarchy = findHierarchy(*this, targetName);
 	const NamedAnimationClip *clip = findClipBySource(targetName, sourceName);
-	if (!clip)
+	if (!hierarchy || !clip)
 		return false;
 
-	PoseMatrix bindMatrix;
-	PoseMatrix poseMatrix;
-	PoseMatrix inverseBind;
-	if (!sampleLocalMatrix(clip->data, targetName, (float)clip->data.startFrame, bindMatrix) ||
-	    !sampleLocalMatrix(clip->data, targetName, frame, poseMatrix) ||
-	    !invertAffine(bindMatrix, inverseBind))
-		return false;
+	bool posedAny = false;
+	for (uint32 meshIndex = 0; meshIndex < meshes.size(); ++meshIndex) {
+		NamedMesh &namedMesh = meshes[meshIndex];
+		MeshData &mesh = namedMesh.data;
+		if (mesh.isFlesh() || mesh.isSkinnedParent() || mesh.vertices.empty() ||
+		    !hierarchyContains(*hierarchy, targetName, namedMesh.name))
+			continue;
 
-	const PoseMatrix delta = multiplyMatrix(poseMatrix, inverseBind);
-	targetMesh->posedVertices.resize(targetMesh->data.vertices.size());
-	for (uint32 i = 0; i < targetMesh->data.vertices.size(); ++i) {
-		const Vec3f bindPoint = transformBindVertex(targetMesh->data.vertices[i],
-		                                           targetMesh->data.transform);
-		targetMesh->posedVertices[i] = transformPoint(delta, bindPoint);
+		PoseMatrix bindGlobal;
+		PoseMatrix poseGlobal;
+		PoseMatrix inverseBind;
+		if (!buildGlobalMatrix(clip->data, *hierarchy, targetName, namedMesh.name,
+		                       (float)clip->data.startFrame, false, bindGlobal) ||
+		    !buildGlobalMatrix(clip->data, *hierarchy, targetName, namedMesh.name,
+		                       frame, false, poseGlobal) ||
+		    !invertAffine(bindGlobal, inverseBind))
+			continue;
+
+		const PoseMatrix delta = multiplyMatrix(poseGlobal, inverseBind);
+		namedMesh.posedVertices.resize(mesh.vertices.size());
+		for (uint32 i = 0; i < mesh.vertices.size(); ++i) {
+			const Vec3f bindPoint = transformBindVertex(mesh.vertices[i], mesh.transform);
+			namedMesh.posedVertices[i] = transformPoint(delta, bindPoint);
+		}
+		posedAny = true;
 	}
-	return true;
+	return posedAny;
 }
 
 const NamedMaterial *SceneModel::findMaterial(const Common::String &name) const {
@@ -711,6 +754,36 @@ const NamedMesh *SceneModel::findMesh(const Common::String &name) const {
 		if (meshes[i].name.equalsIgnoreCase(name))
 			return &meshes[i];
 	return nullptr;
+}
+
+bool SceneModel::hasHierarchy(const Common::String &name) const {
+	return findHierarchy(*this, name) != nullptr;
+}
+
+bool SceneModel::translateHierarchy(const Common::String &name, const Vec3f &delta) {
+	const HierarchyData *hierarchy = findHierarchy(*this, name);
+	if (!hierarchy)
+		return false;
+
+	bool moved = false;
+	for (uint32 i = 0; i < meshes.size(); ++i) {
+		NamedMesh &namedMesh = meshes[i];
+		if (!hierarchyContains(*hierarchy, name, namedMesh.name))
+			continue;
+
+		MeshData &mesh = namedMesh.data;
+		for (uint32 v = 0; v < mesh.vertices.size(); ++v) {
+			mesh.vertices[v].x += delta.x;
+			mesh.vertices[v].y += delta.y;
+			mesh.vertices[v].z += delta.z;
+		}
+		mesh.transform.translation.x += delta.x;
+		mesh.transform.translation.y += delta.y;
+		mesh.transform.translation.z += delta.z;
+		namedMesh.posedVertices.clear();
+		moved = true;
+	}
+	return moved;
 }
 
 void SceneModel::mergeFrom(const SceneModel &other) {

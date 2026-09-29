@@ -63,6 +63,8 @@ public:
 	NamedMesh *findMesh(const Common::String &name);
 	const NamedMesh *findMesh(const Common::String &name) const;
 	const NamedAnimationClip *findClip(const Common::String &name) const;
+	bool hasHierarchy(const Common::String &name) const;
+	bool translateHierarchy(const Common::String &name, const Vec3f &delta);
 
 	// Adds records from a secondary retail P3D/ANJ pair (Setp assets such as
 	// tubi, acqua and pulsanti) without replacing the currently loaded room.

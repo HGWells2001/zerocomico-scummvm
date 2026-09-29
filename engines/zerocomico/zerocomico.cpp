@@ -1323,10 +1323,41 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 		NamedMesh *active = _activeScene.findMesh(instruction.args[0]);
 		DynamicSceneEntity *dynamic = findDynamicSceneEntity(instruction.args[0]);
 		if (!active && !dynamic) {
-			// Setp targets may be hierarchy/controller names rather than visible
-			// meshes. Those need their own controller transform path.
-			debug(2, "Zero Comico: %s target %s is not a rigid mesh",
-			      op.c_str(), instruction.args[0].c_str());
+			if (!_activeScene.hasHierarchy(instruction.args[0])) {
+				debug(2, "Zero Comico: %s target %s is not a scene entity",
+				      op.c_str(), instruction.args[0].c_str());
+				return true;
+			}
+
+			int controllerIndex = -1;
+			for (uint32 i = 0; i < _setpControllerNames.size(); ++i)
+				if (_setpControllerNames[i].equalsIgnoreCase(instruction.args[0])) {
+					controllerIndex = (int)i;
+					break;
+				}
+			if (controllerIndex < 0) {
+				_setpControllerNames.push_back(instruction.args[0]);
+				Vec3f origin = { 0.0f, 0.0f, 0.0f };
+				_setpControllerPositions.push_back(origin);
+				controllerIndex = (int)_setpControllerPositions.size() - 1;
+			}
+
+			Vec3f previous = _setpControllerPositions[(uint32)controllerIndex];
+			Vec3f next = previous;
+			if (op.equalsIgnoreCase("setpos_x"))
+				next.x = value;
+			else if (op.equalsIgnoreCase("setpos_y"))
+				next.y = value;
+			else
+				next.z = value;
+			Vec3f delta = {
+				next.x - previous.x,
+				next.y - previous.y,
+				next.z - previous.z
+			};
+			if (!_activeScene.translateHierarchy(instruction.args[0], delta))
+				return false;
+			_setpControllerPositions[(uint32)controllerIndex] = next;
 			return true;
 		}
 
@@ -1445,6 +1476,7 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 			}
 			_activeScene.mergeFrom(asset);
 			_loadedSetpAssets.push_back(assetStem);
+			_loadedSetpScenes.push_back(asset);
 			debug(1, "Zero Comico: Setp merged asset %s (%u meshes, %u clips)",
 			      assetStem.c_str(), (uint)asset.meshes.size(), (uint)asset.clips.size());
 		}
@@ -2496,6 +2528,9 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 	_sceneLoopSources.clear();
 	_sceneLoopStartMillis.clear();
 	_loadedSetpAssets.clear();
+	_loadedSetpScenes.clear();
+	_setpControllerNames.clear();
+	_setpControllerPositions.clear();
 	_dynamicSceneEntities.clear();
 
 	const Common::Path roomScript(level + "/gameplay/room.isc");
@@ -3114,6 +3149,15 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 			        room->name.c_str());
 			return false;
 		}
+		for (uint32 setpIndex = 0; setpIndex < _loadedSetpScenes.size(); ++setpIndex)
+			_activeScene.mergeFrom(_loadedSetpScenes[setpIndex]);
+
+		// Reapply controller offsets after the freshly loaded Setp asset records
+		// have been merged into the new room scene.
+		for (uint32 controllerIndex = 0; controllerIndex < _setpControllerNames.size(); ++controllerIndex)
+			_activeScene.translateHierarchy(_setpControllerNames[controllerIndex],
+			                                _setpControllerPositions[controllerIndex]);
+
 		installDynamicBackgroundForRoom(room->name);
 
 		_activeWalkMap = BspMap();
