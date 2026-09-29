@@ -18,6 +18,20 @@ struct CharacterAnimSet {
 	Common::String bodyName;
 };
 
+struct CharacterDefinition {
+	Common::String name;
+	bool mainPlayer;
+	bool cpuPlayer;
+	bool castShadows;
+	Common::String initialAnimSet;
+	Common::String initialBodyName;
+	Common::String initialEntity;
+	Common::String mainPlace;
+	Common::String roomName;
+	bool breakLifeOnInitialize;
+	Common::Array<CharacterAnimSet> animSets;
+};
+
 class CharacterScript {
 public:
 	CharacterScript();
@@ -30,12 +44,14 @@ public:
 		       combineStart < combineEnd;
 	}
 	const CharacterAnimSet *findAnimSet(const Common::String &name) const;
+	const CharacterDefinition *findCharacter(const Common::String &name) const;
 	const ScriptProgram &program() const { return _program; }
 
 	Common::String playerName;
 	Common::String initialAnimSet;
 	Common::String initialBodyName;
 	Common::Array<CharacterAnimSet> animSets;
+	Common::Array<CharacterDefinition> characters;
 	uint32 combineStart;
 	uint32 combineEnd;
 
