@@ -1584,8 +1584,92 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 			}
 			if (event.type == Common::EVENT_KEYDOWN && event.kbd.keycode == Common::KEYCODE_BACKSPACE) {
 				_selectedInventoryObject.clear();
+				_combineInventoryFirst.clear();
+				_combineInventorySecond.clear();
 				renderGameplayFrame(renderCamera, sceneDirectory, playerDirectory,
 				                    "Stay", 0.0f, frame);
+				continue;
+			}
+			if (event.type == Common::EVENT_KEYDOWN && event.kbd.keycode == Common::KEYCODE_c) {
+				if (_selectedInventoryObject.empty() || !_playerCharacterScript.hasCombineBlock())
+					continue;
+
+				if (_combineInventoryFirst.empty()) {
+					_combineInventoryFirst = _selectedInventoryObject;
+					_combineInventorySecond.clear();
+					debug(1, "Zero Comico: inventory combine armed with %s",
+					      _combineInventoryFirst.c_str());
+					renderGameplayFrame(renderCamera, sceneDirectory, playerDirectory,
+					                    "Stay", 0.0f, frame);
+					continue;
+				}
+
+				if (_combineInventoryFirst.equalsIgnoreCase(_selectedInventoryObject)) {
+					_combineInventoryFirst.clear();
+					_combineInventorySecond.clear();
+					renderGameplayFrame(renderCamera, sceneDirectory, playerDirectory,
+					                    "Stay", 0.0f, frame);
+					continue;
+				}
+
+				_combineInventorySecond = _selectedInventoryObject;
+				_pendingSaySpeaker.clear();
+				_pendingSayText.clear();
+				debug(1, "Zero Comico: trying inventory combine %s + %s",
+				      _combineInventoryFirst.c_str(), _combineInventorySecond.c_str());
+
+				if (!_scriptVM.run(_playerCharacterScript.program(),
+				                   _playerCharacterScript.combineStart,
+				                   _playerCharacterScript.combineEnd, 4096)) {
+					warning("Zero Comico: inventory combine block stopped on an unsupported opcode");
+				}
+
+				_combineInventoryFirst.clear();
+				_combineInventorySecond.clear();
+				renderGameplayFrame(renderCamera, sceneDirectory, playerDirectory,
+				                    "Stay", 0.0f, frame);
+
+				if (!_pendingSayText.empty() && !shouldQuit()) {
+					drawCutsceneSubtitle(frame,
+					                     _pendingSaySpeaker.empty() ? Common::String("Giovanni") : _pendingSaySpeaker,
+					                     _pendingSayText);
+					_system->copyRectToScreen(frame.getPixels(), frame.pitch,
+					                          0, 0, frame.w, frame.h);
+					_system->updateScreen();
+
+					uint32 sayDuration = (uint32)_pendingSayText.size() * 60U;
+					if (sayDuration < 1000U)
+						sayDuration = 1000U;
+					if (sayDuration > 5000U)
+						sayDuration = 5000U;
+
+					const uint32 sayStart = _system->getMillis();
+					bool dismissSay = false;
+					while (!shouldQuit() && !dismissSay &&
+					       _system->getMillis() - sayStart < sayDuration) {
+						Common::Event sayEvent;
+						while (_system->getEventManager()->pollEvent(sayEvent)) {
+							if (sayEvent.type == Common::EVENT_QUIT ||
+							    sayEvent.type == Common::EVENT_RETURN_TO_LAUNCHER) {
+								quitGame();
+								dismissSay = true;
+								break;
+							}
+							if (sayEvent.type == Common::EVENT_KEYDOWN ||
+							    sayEvent.type == Common::EVENT_LBUTTONDOWN ||
+							    sayEvent.type == Common::EVENT_RBUTTONDOWN) {
+								dismissSay = true;
+								break;
+							}
+						}
+						_system->delayMillis(10);
+					}
+					_pendingSaySpeaker.clear();
+					_pendingSayText.clear();
+					if (!shouldQuit())
+						renderGameplayFrame(renderCamera, sceneDirectory, playerDirectory,
+						                    "Stay", 0.0f, frame);
+				}
 				continue;
 			}
 			if (event.type == Common::EVENT_RBUTTONDOWN) {
