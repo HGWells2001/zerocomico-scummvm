@@ -167,6 +167,8 @@ private:
 	float _spotDistance;
 	float _spotMinDistance;
 	float _spotSmooth;
+	bool _spotCameraInitialized;
+	Vec3f _spotCameraPosition;
 	bool _dynamicCameraInitialized;
 	Vec3f _dynamicCameraPosition;
 	uint32 _scriptKeyMask;

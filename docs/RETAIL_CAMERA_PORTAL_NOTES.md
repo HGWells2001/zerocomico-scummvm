@@ -138,6 +138,32 @@ clips the focus-to-camera segment against the first **solid `bsp_edge`** that
 actually exits BSP space. Polygon outlines remain useful for general
 walkability helpers, but Spot camera constraint no longer depends on them.
 
+### Vertical correction and smoothing
+
+The retail Spot routine computes the horizontal distance after MapCam clipping,
+divides it directly by `SpotDistance`, and does **not** clamp that ratio. It
+then applies:
+
+```text
+correction = (1 - distance / SpotDistance) * MaxSpotDeltaY
+camera.y  += correction
+focus.y   += correction / 2
+```
+
+The executable also confirms that `SpotSmooth` is a divisor, not a percentage
+or a time-based coefficient:
+
+```text
+current += (desired - current) / SpotSmooth
+```
+
+This smoothing uses Spot-specific persistent position state. A room/scene load
+sets a one-shot reset flag, causing the next Spot update to copy the desired
+position directly; subsequent frames smooth from that stored Spot position.
+Changing camera mode alone does not destroy that Spot history. The
+reimplementation now mirrors that separation instead of sharing the smoothing
+state with Subjective mode.
+
 ## SetPlace followed by SetMap
 
 Retail scripts can request a room first and its map immediately afterwards,

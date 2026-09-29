@@ -623,8 +623,9 @@ ZeroComicoEngine::ZeroComicoEngine(OSystem *syst, const ADGameDescription *desc)
 	  _cameraMode(0), _cameraModeLocked(false),
 	  _spotHeight(85.0f), _spotMaxDeltaY(30.0f), _spotDistance(350.0f),
 	  _spotMinDistance(25.0f), _spotSmooth(30.0f),
-	  _dynamicCameraInitialized(false), _scriptKeyMask(0) {
+	  _spotCameraInitialized(false), _dynamicCameraInitialized(false), _scriptKeyMask(0) {
 	_playerPosition.x = _playerPosition.y = _playerPosition.z = 0.0f;
+	_spotCameraPosition.x = _spotCameraPosition.y = _spotCameraPosition.z = 0.0f;
 	_dynamicCameraPosition.x = _dynamicCameraPosition.y = _dynamicCameraPosition.z = 0.0f;
 	_playerFacingTarget.x = _playerFacingTarget.y = _playerFacingTarget.z = 0.0f;
 }
@@ -2700,6 +2701,7 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 	_portalsEnabled = true;
 	_cameraMode = 0;
 	_cameraModeLocked = false;
+	_spotCameraInitialized = false;
 	_dynamicCameraInitialized = false;
 	_spotHeight = 85.0f;
 	_spotMaxDeltaY = 30.0f;
@@ -3162,36 +3164,36 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 		const float dx = desired.x - focus.x;
 		const float dz = desired.z - focus.z;
 		const float actualDistance = std::sqrt(dx * dx + dz * dz);
-		float ratio = _spotDistance > 0.0001f ? actualDistance / _spotDistance : 1.0f;
-		if (ratio < 0.0f)
-			ratio = 0.0f;
-		else if (ratio > 1.0f)
-			ratio = 1.0f;
+		const float ratio = actualDistance / _spotDistance;
 
-		// The original raises the camera by (1-distanceRatio)*MaxSpotDeltaY and
-		// raises the focus by half as much when MapCam shortens the boom.
+		// Zero Comico.exe uses the raw distance ratio here: there is no clamp.
+		// It raises the camera by (1-ratio)*MaxSpotDeltaY and the focus by half
+		// that amount after MapCam has shortened the horizontal boom.
 		const float verticalCorrection = (1.0f - ratio) * _spotMaxDeltaY;
 		desired.y = focus.y + verticalCorrection;
 		focus.y += verticalCorrection * 0.5f;
 
-		if (!_dynamicCameraInitialized) {
-			_dynamicCameraPosition = desired;
-			_dynamicCameraInitialized = true;
+		// Spot smoothing has its own persistent state in the retail engine.
+		// Room/scene setup sets a one-shot reset flag; mode switches do not erase
+		// the previous Spot position. On normal frames the exact update is:
+		// current += (desired - current) / SpotSmooth.
+		if (!_spotCameraInitialized) {
+			_spotCameraPosition = desired;
+			_spotCameraInitialized = true;
 		} else {
-			const float smooth = _spotSmooth > 1.0f ? _spotSmooth : 1.0f;
-			_dynamicCameraPosition.x += (desired.x - _dynamicCameraPosition.x) / smooth;
-			_dynamicCameraPosition.y += (desired.y - _dynamicCameraPosition.y) / smooth;
-			_dynamicCameraPosition.z += (desired.z - _dynamicCameraPosition.z) / smooth;
+			_spotCameraPosition.x += (desired.x - _spotCameraPosition.x) / _spotSmooth;
+			_spotCameraPosition.y += (desired.y - _spotCameraPosition.y) / _spotSmooth;
+			_spotCameraPosition.z += (desired.z - _spotCameraPosition.z) / _spotSmooth;
 		}
 
-		Vec3f lookDirection = subtractVec3(focus, _dynamicCameraPosition);
+		Vec3f lookDirection = subtractVec3(focus, _spotCameraPosition);
 		lookDirection.y = 0.0f;
 		if (!normalizeVec3(lookDirection))
 			lookDirection = forward;
 
 		// The executable pads the camera away from the focus by SpotMinDistance
 		// after smoothing, then aims 1.5 m (150 retail world units) beyond focus.
-		renderCamera.position = _dynamicCameraPosition;
+		renderCamera.position = _spotCameraPosition;
 		renderCamera.position.x -= lookDirection.x * _spotMinDistance;
 		renderCamera.position.z -= lookDirection.z * _spotMinDistance;
 		renderCamera.target = focus;
@@ -3430,6 +3432,7 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 
 		_pendingCameraName.clear();
 		_activeAutoCameraTrigger.clear();
+		_spotCameraInitialized = false;
 		_dynamicCameraInitialized = false;
 		_defaultRoomCameraName = room->camera;
 		startRoomMusic(room->music, room->musicVolume);
