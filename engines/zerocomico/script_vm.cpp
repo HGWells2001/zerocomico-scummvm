@@ -21,7 +21,9 @@ static bool isConditionalOpcode(const Common::String &op) {
 	       op.equalsIgnoreCase("ifallobjnoselected") ||
 	       op.equalsIgnoreCase("ifcombine") ||
 	       op.equalsIgnoreCase("if_is_playingcut") ||
-	       op.equalsIgnoreCase("if_is_openmenuinterface");
+	       op.equalsIgnoreCase("if_is_openmenuinterface") ||
+	       op.equalsIgnoreCase("if_key") ||
+	       op.equalsIgnoreCase("if_No_Key_Pressed");
 }
 
 } // namespace
@@ -197,7 +199,9 @@ bool ScriptVM::evaluateComparison(const ScriptInstruction &instruction, bool &re
 	    instruction.opcode.equalsIgnoreCase("ifallobjnoselected") ||
 	    instruction.opcode.equalsIgnoreCase("ifcombine") ||
 	    instruction.opcode.equalsIgnoreCase("if_is_playingcut") ||
-	    instruction.opcode.equalsIgnoreCase("if_is_openmenuinterface"))
+	    instruction.opcode.equalsIgnoreCase("if_is_openmenuinterface") ||
+	    instruction.opcode.equalsIgnoreCase("if_key") ||
+	    instruction.opcode.equalsIgnoreCase("if_No_Key_Pressed"))
 		return _host && _host->evaluateScriptCondition(instruction, result);
 
 	if (instruction.args.empty())
@@ -352,13 +356,33 @@ bool ScriptVM::run(const ScriptProgram &program, uint32 startIndex, uint32 endIn
 			continue;
 		}
 
-		if (op.equalsIgnoreCase("jmp")) {
+		if (op.equalsIgnoreCase("jmp") || op.equalsIgnoreCase("wjmp")) {
 			if (instruction.args.empty())
+				return false;
+			if (op.equalsIgnoreCase("wjmp") &&
+			    (!_host || !_host->yieldScriptExecution()))
 				return false;
 			const int target = program.labelIndex(instruction.args[0]);
 			if (target < 0 || (uint32)target >= endIndex)
 				return false;
 			pc = (uint32)target + 1;
+			continue;
+		}
+
+		if (op.equalsIgnoreCase("jmp_if_key")) {
+			if (instruction.args.size() < 2 || !_host)
+				return false;
+			bool pressed = false;
+			if (!_host->evaluateScriptCondition(instruction, pressed))
+				return false;
+			if (pressed) {
+				const int target = program.labelIndex(instruction.args[1]);
+				if (target < 0 || (uint32)target >= endIndex)
+					return false;
+				pc = (uint32)target + 1;
+			} else {
+				++pc;
+			}
 			continue;
 		}
 

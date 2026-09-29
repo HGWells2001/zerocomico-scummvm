@@ -46,6 +46,64 @@ static const char *const kMenuButtons[] = {
 
 static const int kMenuButtonCount = 5;
 
+enum ScriptKeyMask {
+	kScriptKeyLeft    = 1 << 0,
+	kScriptKeyRight   = 1 << 1,
+	kScriptKeyUp      = 1 << 2,
+	kScriptKeyDown    = 1 << 3,
+	kScriptKeyOperate = 1 << 4,
+	kScriptKeySkip    = 1 << 5,
+	kScriptKeyAbort   = 1 << 6,
+	kScriptKeySpace   = 1 << 7
+};
+
+static uint32 scriptKeyMaskForName(const Common::String &name) {
+	if (name.equalsIgnoreCase("LEFT"))
+		return kScriptKeyLeft;
+	if (name.equalsIgnoreCase("RIGHT"))
+		return kScriptKeyRight;
+	if (name.equalsIgnoreCase("UP"))
+		return kScriptKeyUp;
+	if (name.equalsIgnoreCase("DOWN"))
+		return kScriptKeyDown;
+	if (name.equalsIgnoreCase("OPERATE"))
+		return kScriptKeyOperate;
+	if (name.equalsIgnoreCase("SKIP"))
+		return kScriptKeySkip;
+	if (name.equalsIgnoreCase("ABORT"))
+		return kScriptKeyAbort;
+	if (name.equalsIgnoreCase("SPACE"))
+		return kScriptKeySpace;
+	return 0;
+}
+
+static uint32 scriptKeyMaskForEvent(const Common::Event &event) {
+	if (event.type != Common::EVENT_KEYDOWN && event.type != Common::EVENT_KEYUP)
+		return 0;
+
+	switch (event.kbd.keycode) {
+	case Common::KEYCODE_LEFT:
+		return kScriptKeyLeft;
+	case Common::KEYCODE_RIGHT:
+		return kScriptKeyRight;
+	case Common::KEYCODE_UP:
+		return kScriptKeyUp;
+	case Common::KEYCODE_DOWN:
+		return kScriptKeyDown;
+	case Common::KEYCODE_RETURN:
+	case Common::KEYCODE_KP_ENTER:
+		return kScriptKeyOperate;
+	case Common::KEYCODE_DELETE:
+		return kScriptKeySkip;
+	case Common::KEYCODE_ESCAPE:
+		return kScriptKeyAbort;
+	case Common::KEYCODE_SPACE:
+		return kScriptKeySpace;
+	default:
+		return 0;
+	}
+}
+
 static bool containsIgnoreCase(const Common::Array<Common::String> &values,
                                const Common::String &value) {
 	for (uint32 i = 0; i < values.size(); ++i)
@@ -487,7 +545,7 @@ ZeroComicoEngine::ZeroComicoEngine(OSystem *syst, const ADGameDescription *desc)
 	  _cameraMode(0), _cameraModeLocked(false),
 	  _spotHeight(85.0f), _spotMaxDeltaY(30.0f), _spotDistance(350.0f),
 	  _spotMinDistance(25.0f), _spotSmooth(30.0f),
-	  _dynamicCameraInitialized(false) {
+	  _dynamicCameraInitialized(false), _scriptKeyMask(0) {
 	_playerPosition.x = _playerPosition.y = _playerPosition.z = 0.0f;
 	_dynamicCameraPosition.x = _dynamicCameraPosition.y = _dynamicCameraPosition.z = 0.0f;
 	_playerFacingTarget.x = _playerFacingTarget.y = _playerFacingTarget.z = 0.0f;
@@ -1350,6 +1408,7 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 		while (!shouldQuit() && _system->getMillis() - start < duration) {
 			Common::Event event;
 			while (_system->getEventManager()->pollEvent(event)) {
+				updateScriptKeyState(event);
 				if (event.type == Common::EVENT_QUIT ||
 				    event.type == Common::EVENT_RETURN_TO_LAUNCHER) {
 					quitGame();
@@ -1513,6 +1572,22 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 
 bool ZeroComicoEngine::evaluateScriptCondition(const ScriptInstruction &instruction,
                                                     bool &result) const {
+	if (instruction.opcode.equalsIgnoreCase("if_key") ||
+	    instruction.opcode.equalsIgnoreCase("jmp_if_key")) {
+		if (instruction.args.empty())
+			return false;
+		const uint32 mask = scriptKeyMaskForName(instruction.args[0]);
+		if (mask == 0)
+			return false;
+		result = (_scriptKeyMask & mask) != 0;
+		return true;
+	}
+
+	if (instruction.opcode.equalsIgnoreCase("if_No_Key_Pressed")) {
+		result = _scriptKeyMask == 0;
+		return true;
+	}
+
 	if (instruction.opcode.equalsIgnoreCase("ifallobjnoselected")) {
 		result = _selectedInventoryObject.empty();
 		return true;
@@ -1557,6 +1632,34 @@ bool ZeroComicoEngine::evaluateScriptCondition(const ScriptInstruction &instruct
 	}
 
 	return false;
+}
+
+void ZeroComicoEngine::updateScriptKeyState(const Common::Event &event) {
+	const uint32 mask = scriptKeyMaskForEvent(event);
+	if (mask == 0)
+		return;
+	if (event.type == Common::EVENT_KEYDOWN)
+		_scriptKeyMask |= mask;
+	else if (event.type == Common::EVENT_KEYUP)
+		_scriptKeyMask &= ~mask;
+}
+
+bool ZeroComicoEngine::yieldScriptExecution() {
+	Common::Event event;
+	while (_system->getEventManager()->pollEvent(event)) {
+		updateScriptKeyState(event);
+		if (event.type == Common::EVENT_QUIT ||
+		    event.type == Common::EVENT_RETURN_TO_LAUNCHER) {
+			quitGame();
+			return false;
+		}
+	}
+
+	// Scripts use wjmp as their scheduler boundary. The retail VM advances
+	// gameplay/cutscene script state at the same 25 fps cadence used by
+	// wait_frames and JACS timelines.
+	_system->delayMillis(40);
+	return !shouldQuit();
 }
 
 void ZeroComicoEngine::startRoomMusic(const Common::String &fileName, float volume) {
@@ -2010,6 +2113,7 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 	_activeRoomMaps.clear();
 	_activeRoomCameraMaps.clear();
 	_activeAutoCameraTrigger.clear();
+	_scriptKeyMask = 0;
 	_portalsEnabled = true;
 	_cameraMode = 0;
 	_cameraModeLocked = false;

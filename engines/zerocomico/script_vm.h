@@ -32,6 +32,11 @@ public:
 	                                   bool &result) const {
 		return false;
 	}
+
+	// wjmp is the retail script scheduler's yield-and-jump primitive. A native
+	// host uses this hook to pump input and advance one script tick before the
+	// VM resumes at the requested label.
+	virtual bool yieldScriptExecution() { return true; }
 };
 
 class ScriptVM {

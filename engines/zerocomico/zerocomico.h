@@ -36,6 +36,7 @@ public:
 	bool executeScriptOpcode(const ScriptInstruction &instruction) override;
 	bool evaluateScriptCondition(const ScriptInstruction &instruction,
 	                           bool &result) const override;
+	bool yieldScriptExecution() override;
 
 private:
 	bool runStartupScript(const Common::String &mainPlace);
@@ -64,6 +65,7 @@ private:
 	void showImageModal(const Common::Path &path);
 	void showBootstrapScreen();
 	void waitForExit();
+	void updateScriptKeyState(const Common::Event &event);
 
 	const ADGameDescription *_gameDescription;
 	SceneModel _menuScene;
@@ -133,6 +135,7 @@ private:
 	float _spotSmooth;
 	bool _dynamicCameraInitialized;
 	Vec3f _dynamicCameraPosition;
+	uint32 _scriptKeyMask;
 };
 
 } // namespace ZeroComico
