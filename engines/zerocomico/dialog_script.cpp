@@ -89,7 +89,10 @@ bool DialogScript::parse(const ScriptProgram &program) {
 						break;
 					}
 				}
-				if (!choice.text.empty() && !choice.targetDialog.empty())
+				// #Fix/#Exit choices used by the insult minigames intentionally
+				// have no @Dialog target. Preserve them so the runtime can return
+				// the selected choice index to GetLastChoisePos.
+				if (!choice.text.empty())
 					dialog.choices.push_back(choice);
 				continue;
 			}
