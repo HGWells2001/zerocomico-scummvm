@@ -84,6 +84,11 @@ private:
 	Common::String _pendingSayText;
 	Common::String _pendingDialogName;
 	int32 _lastDialogueChoice;
+	bool _scriptDialogueContextActive;
+	RenderCamera _scriptDialogueCamera;
+	Common::Path _scriptDialogueSceneDirectory;
+	Common::Path _scriptDialoguePlayerDirectory;
+	Graphics::ManagedSurface *_scriptDialogueFrame;
 	Common::String _pendingMainPlace;
 	Common::String _pendingRoomName;
 	Common::String _pendingRoomCutscene;
