@@ -1393,7 +1393,11 @@ bool ZeroComicoEngine::giveLifeToCharacter(const Common::String &name) {
 
 	CpuCharacterRuntime *existing = findCpuCharacter(name);
 	if (existing) {
+		// GiveLifeToChar's retail callback re-registers the controller, restores
+		// its active flag and clears wait state +0x150.
 		existing->alive = true;
+		existing->lifeBroken = false;
+		existing->waitState = 0;
 		if (_activeRoomName.equalsIgnoreCase(existing->roomName))
 			installCpuCharactersForRoom(existing->roomName);
 		return true;
@@ -2304,9 +2308,32 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 
 	if (op.equalsIgnoreCase("play") ||
 	    op.equalsIgnoreCase("wait_say") ||
-	    op.equalsIgnoreCase("cwait_say") ||
-	    op.equalsIgnoreCase("BreakLifeToChar"))
+	    op.equalsIgnoreCase("cwait_say"))
 		return true;
+
+	if (op.equalsIgnoreCase("BreakLifeToChar")) {
+		if (instruction.args.empty())
+			return false;
+
+		CpuCharacterRuntime *character = findCpuCharacter(instruction.args[0]);
+		if (!character) {
+			// Some room scripts can break a character before this lightweight
+			// runtime has instantiated its CPU body. Retail treats the command as a
+			// state change, not an object-removal failure, so keep script progress.
+			debug(2, "Zero Comico: BreakLifeToChar deferred for %s",
+			      instruction.args[0].c_str());
+			return true;
+		}
+
+		// Retail callback 0x42b7b8 unregisters the life controller, clears its
+		// active flag and writes 0x40 to character offset +0x150. The rendered
+		// body remains present.
+		character->lifeBroken = true;
+		character->waitState = 0x40;
+		debug(1, "Zero Comico: life broken for %s (wait state 0x40)",
+		      character->name.c_str());
+		return true;
+	}
 
 	if (op.equalsIgnoreCase("SetNoCameraReset")) {
 		if (instruction.args.size() < 2 ||
