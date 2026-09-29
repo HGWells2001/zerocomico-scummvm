@@ -961,6 +961,20 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 		return true;
 	}
 
+	if (op.equalsIgnoreCase("GetLastChoisePos")) {
+		if (instruction.args.empty())
+			return false;
+		return _scriptVM.setVariable(instruction.args[0], _lastDialogueChoice);
+	}
+
+	// The current dialogue UI keeps the retail choice ordering. These mutation
+	// opcodes are accepted as state-machine boundaries until per-choice enable
+	// masks and text-table substitution are represented explicitly.
+	if (op.equalsIgnoreCase("SetChoise") ||
+	    op.equalsIgnoreCase("ModifySentence") ||
+	    op.equalsIgnoreCase("csay_FromTextable"))
+		return true;
+
 	if (op.equalsIgnoreCase("SetAnimSet")) {
 		if (instruction.args.size() < 2)
 			return false;
@@ -1419,6 +1433,11 @@ bool ZeroComicoEngine::playDialogue(const Common::String &name,
 
 	if (shouldQuit())
 		return false;
+
+	_lastDialogueChoice = (int32)selected;
+	if (dialog->choices[selected].targetDialog.empty())
+		return true;
+
 	return playDialogue(dialog->choices[selected].targetDialog, camera,
 	                    sceneDirectory, playerDirectory, frame, depth + 1);
 }
@@ -1438,6 +1457,7 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 	_pendingSaySpeaker.clear();
 	_pendingSayText.clear();
 	_pendingDialogName.clear();
+	_lastDialogueChoice = -1;
 	_pendingRoomName.clear();
 	_pendingRoomCutscene.clear();
 	_selectedInventoryObject.clear();
