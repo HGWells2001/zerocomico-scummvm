@@ -845,6 +845,30 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 		return true;
 	}
 
+	if (op.equalsIgnoreCase("addobjininv")) {
+		if (instruction.args.size() < 2)
+			return false;
+		const Common::String &inventoryObject = instruction.args[1];
+		if (!containsIgnoreCase(_inventoryObjects, inventoryObject))
+			_inventoryObjects.push_back(inventoryObject);
+		debug(1, "Zero Comico: inventory added %s", inventoryObject.c_str());
+		return true;
+	}
+
+	if (op.equalsIgnoreCase("SelectObjInInv")) {
+		if (instruction.args.size() < 2)
+			return false;
+		const Common::String &inventoryObject = instruction.args[1];
+		if (!containsIgnoreCase(_inventoryObjects, inventoryObject))
+			return false;
+		_selectedInventoryObject = inventoryObject;
+		return true;
+	}
+
+	if (op.equalsIgnoreCase("UpdateInventory") ||
+	    op.equalsIgnoreCase("ShutupAll"))
+		return true;
+
 	if (op.equalsIgnoreCase("hide") || op.equalsIgnoreCase("unhide")) {
 		if (instruction.args.empty())
 			return false;
@@ -939,6 +963,19 @@ bool ZeroComicoEngine::evaluateScriptCondition(const ScriptInstruction &instruct
 		if (instruction.args.size() < 2)
 			return false;
 		result = _selectedInventoryObject.equalsIgnoreCase(instruction.args[1]);
+		return true;
+	}
+
+	if (instruction.opcode.equalsIgnoreCase("ifcombine")) {
+		if (instruction.args.size() < 2)
+			return false;
+		const bool direct =
+			_combineInventoryFirst.equalsIgnoreCase(instruction.args[0]) &&
+			_combineInventorySecond.equalsIgnoreCase(instruction.args[1]);
+		const bool reverse =
+			_combineInventoryFirst.equalsIgnoreCase(instruction.args[1]) &&
+			_combineInventorySecond.equalsIgnoreCase(instruction.args[0]);
+		result = direct || reverse;
 		return true;
 	}
 
