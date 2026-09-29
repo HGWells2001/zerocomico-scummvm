@@ -1755,6 +1755,27 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 		return showScriptLine(speaker, instruction.args[0]);
 	}
 
+	if (op.equalsIgnoreCase("Sayn")) {
+		if (instruction.args.size() < 2)
+			return false;
+
+		int32 value = 0;
+		if (!_scriptVM.resolveValue(instruction.args[1], value))
+			return false;
+
+		Common::String text = instruction.args[0];
+		const uint32 marker = text.find("%d");
+		if (marker != Common::String::npos) {
+			text = text.substr(0, marker) +
+			       Common::String::format("%d", (int)value) +
+			       text.substr(marker + 2);
+		}
+
+		const Common::String speaker = _playerCharacterScript.playerName.empty()
+			? Common::String("MainPlayer") : _playerCharacterScript.playerName;
+		return showScriptLine(speaker, text);
+	}
+
 	if (op.equalsIgnoreCase("start_dialog")) {
 		if (instruction.args.size() < 2)
 			return false;
