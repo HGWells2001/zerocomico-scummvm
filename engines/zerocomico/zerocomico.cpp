@@ -2586,6 +2586,11 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 			Vec3f ground;
 			if (!screenPointToGround(renderCamera, event.mouse.x, event.mouse.y, 800, 600, ground))
 				continue;
+			if (!_activeWalkMap.containsWalkablePoint(ground.x, ground.z)) {
+				debug(2, "Zero Comico: ignored click outside walkable floor at %.3f %.3f",
+				      ground.x, ground.z);
+				continue;
+			}
 
 			const int destinationNode = _activeWalkMap.nearestGraphNode(ground.x, ground.z);
 			Common::Array<int> route;
