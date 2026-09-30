@@ -41,6 +41,13 @@ struct RenderTransform {
 	float localRotation[4]; // axis x, y, z followed by angle in radians
 };
 
+struct RenderActor {
+	const SceneModel *scene;
+	Common::Path textureDirectory;
+	Common::Array<Common::String> visibleMeshes;
+	RenderTransform transform;
+};
+
 class SoftwareRenderer {
 public:
 	SoftwareRenderer();
@@ -73,6 +80,15 @@ public:
 	                     const Common::Array<Common::String> &actorVisibleMeshes,
 	                     const RenderTransform &actorTransform,
 	                     Graphics::ManagedSurface &target, int width = 800, int height = 600) const;
+
+	// Generalized gameplay compositor for the player plus any number of CPU
+	// characters. Every actor keeps its own source scene, texture directory and
+	// instance transform while sharing the room z buffer.
+	bool renderWithActors(const SceneModel &scene, const RenderCamera &camera,
+	                      const Common::Path &textureDirectory,
+	                      const Common::Array<Common::String> &visibleMeshes,
+	                      const Common::Array<RenderActor> &actors,
+	                      Graphics::ManagedSurface &target, int width = 800, int height = 600) const;
 
 	// Projects candidate room meshes through the same camera convention as the
 	// renderer and returns the nearest screen-space hit.

@@ -1420,9 +1420,8 @@ void ZeroComicoEngine::installCpuCharactersForRoom(const Common::String &roomNam
 			if (!character.initialEntity.empty()) {
 				const NamedMesh *spawn = _activeScene.findMesh(character.initialEntity);
 				if (spawn) {
-					const Vec3f position = spawn->data.transform.translation;
-					if (character.scene.translateHierarchy(character.bodyRoot, position))
-						character.positioned = true;
+					character.position = spawn->data.transform.translation;
+					character.positioned = true;
 
 					// SetCharPos_Entity spawn meshes carry the actor orientation in the
 					// retail 3x3 transform. Local -Z is the character's forward vector.
@@ -1439,8 +1438,8 @@ void ZeroComicoEngine::installCpuCharactersForRoom(const Common::String &roomNam
 			} else if (!character.initialVector.empty()) {
 				const ShapeMarker *marker = _activeShapes.find(character.initialVector);
 				if (marker) {
-					if (character.scene.translateHierarchy(character.bodyRoot, marker->a))
-						character.positioned = true;
+					character.position = marker->a;
+					character.positioned = true;
 					Vec3f facing = subtractVec3(marker->b, marker->a);
 					facing.y = 0.0f;
 					if (normalizeVec3(facing)) {
@@ -1450,11 +1449,8 @@ void ZeroComicoEngine::installCpuCharactersForRoom(const Common::String &roomNam
 				}
 			}
 		}
-
-		_activeScene.mergeFrom(character.scene);
 	}
 }
-
 bool ZeroComicoEngine::giveLifeToCharacter(const Common::String &name) {
 	if (name.equalsIgnoreCase("MainPlayer") ||
 	    name.equalsIgnoreCase(_playerCharacterScript.playerName))
@@ -1520,7 +1516,9 @@ bool ZeroComicoEngine::giveLifeToCharacter(const Common::String &name) {
 	runtime.bodyRoot = definition->initialBodyName;
 	runtime.initialEntity = definition->initialEntity;
 	runtime.initialVector = definition->initialVector;
+	runtime.assetDirectory = bodyDirectory;
 	runtime.scene = body;
+	runtime.position.x = runtime.position.y = runtime.position.z = 0.0f;
 	runtime.facing.x = 0.0f;
 	runtime.facing.y = 0.0f;
 	runtime.facing.z = -1.0f;
@@ -3316,6 +3314,7 @@ bool ZeroComicoEngine::renderGameplayFrame(const RenderCamera &camera,
 			visibleMeshes.push_back("__zerocomico_no_visible_room_meshes__");
 	}
 	bool rendered = false;
+	Common::Array<RenderActor> actors;
 
 	if (!_playerScene.meshes.empty() && _havePlayerStart) {
 		const Common::String playerRoot = !_playerSequences.bodyName.empty()
@@ -3335,23 +3334,90 @@ bool ZeroComicoEngine::renderGameplayFrame(const RenderCamera &camera,
 			}
 		}
 
-		RenderTransform playerTransform;
-		playerTransform.translation = _playerPosition;
+		RenderActor playerActor;
+		playerActor.scene = &_playerScene;
+		playerActor.textureDirectory = _playerAssetDirectory;
+		playerActor.visibleMeshes = playerVisible;
+		playerActor.transform.translation = _playerPosition;
 		const float faceX = _playerFacingTarget.x - _playerPosition.x;
 		const float faceZ = _playerFacingTarget.z - _playerPosition.z;
-		playerTransform.yawRadians = std::atan2(faceX, faceZ);
-		if (!sampleRootTransform(_playerScene, playerRoot, animationSource, animationFrame, playerTransform))
+		playerActor.transform.yawRadians = std::atan2(faceX, faceZ);
+		if (!sampleRootTransform(_playerScene, playerRoot, animationSource, animationFrame,
+		                         playerActor.transform))
 			warning("Zero Comico: player %s root transform missing; using identity root pose",
 			        animationSource.c_str());
-
-		rendered = _gameplayRenderer.renderWithActor(_activeScene, gameplayCamera, sceneDirectory, visibleMeshes,
-		                                    _playerScene, _playerAssetDirectory, playerVisible,
-		                                    playerTransform, frame, 800, 600);
-	} else {
-		rendered = _gameplayRenderer.render(_activeScene, gameplayCamera, sceneDirectory, visibleMeshes,
-		                           frame, 800, 600);
+		actors.push_back(playerActor);
 	}
 
+	for (uint32 cpuIndex = 0; cpuIndex < _cpuCharacters.size(); ++cpuIndex) {
+		CpuCharacterRuntime &character = _cpuCharacters[cpuIndex];
+		if (!character.alive || !character.positioned ||
+		    !character.roomName.equalsIgnoreCase(_activeRoomName) ||
+		    character.scene.meshes.empty())
+			continue;
+
+		Common::String cpuSource("Stay");
+		float cpuFrame = 0.0f;
+		for (uint32 loopIndex = 0; loopIndex < _sceneLoopTargets.size(); ++loopIndex) {
+			if (!_sceneLoopTargets[loopIndex].equalsIgnoreCase(character.bodyRoot))
+				continue;
+			const NamedAnimationClip *clip = character.scene.findClipBySource(
+				character.bodyRoot, _sceneLoopSources[loopIndex]);
+			if (!clip)
+				continue;
+			cpuSource = _sceneLoopSources[loopIndex];
+			const float firstFrame = (float)clip->data.startFrame;
+			const float lastFrame = (float)clip->data.endFrame;
+			const float frameCount = lastFrame >= firstFrame
+				? lastFrame - firstFrame + 1.0f : 1.0f;
+			const float elapsedFrames =
+				(float)(now - _sceneLoopStartMillis[loopIndex]) * 25.0f / 1000.0f;
+			cpuFrame = firstFrame + std::fmod(elapsedFrames, frameCount);
+			break;
+		}
+		for (uint32 shotIndex = 0; shotIndex < _sceneOneShotTargets.size(); ++shotIndex) {
+			if (!_sceneOneShotTargets[shotIndex].equalsIgnoreCase(character.bodyRoot))
+				continue;
+			const NamedAnimationClip *clip = character.scene.findClipBySource(
+				character.bodyRoot, _sceneOneShotSources[shotIndex]);
+			if (!clip)
+				continue;
+			cpuSource = _sceneOneShotSources[shotIndex];
+			const float firstFrame = (float)clip->data.startFrame;
+			const float lastFrame = (float)clip->data.endFrame;
+			const float elapsedFrames =
+				(float)(now - _sceneOneShotStartMillis[shotIndex]) * 25.0f / 1000.0f;
+			cpuFrame = firstFrame + elapsedFrames;
+			if (cpuFrame > lastFrame)
+				cpuFrame = lastFrame;
+			break;
+		}
+
+		if (!character.scene.poseSkinnedGeometry(character.bodyRoot, "Stay",
+		                                        cpuSource, cpuFrame))
+			character.scene.poseRigidAnimation(character.bodyRoot, cpuSource, cpuFrame);
+
+		RenderActor cpuActor;
+		cpuActor.scene = &character.scene;
+		cpuActor.textureDirectory = character.assetDirectory;
+		character.scene.visibleMeshesForSource(cpuSource, cpuFrame, cpuActor.visibleMeshes);
+		cpuActor.transform.translation = character.position;
+		cpuActor.transform.yawRadians = character.haveFacing
+			? std::atan2(character.facing.x, character.facing.z) : 0.0f;
+		if (!sampleRootTransform(character.scene, character.bodyRoot, cpuSource, cpuFrame,
+		                         cpuActor.transform))
+			sampleRootTransform(character.scene, character.bodyRoot, "Stay", 0.0f,
+			                    cpuActor.transform);
+		actors.push_back(cpuActor);
+	}
+
+	if (actors.empty())
+		rendered = _gameplayRenderer.render(_activeScene, gameplayCamera, sceneDirectory,
+		                                    visibleMeshes, frame, 800, 600);
+	else
+		rendered = _gameplayRenderer.renderWithActors(_activeScene, gameplayCamera,
+		                                              sceneDirectory, visibleMeshes,
+		                                              actors, frame, 800, 600);
 	if (!rendered)
 		return false;
 

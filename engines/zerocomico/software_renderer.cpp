@@ -617,6 +617,23 @@ bool SoftwareRenderer::renderWithActor(const SceneModel &scene, const RenderCame
                                        const Common::Array<Common::String> &actorVisibleMeshes,
                                        const RenderTransform &actorTransform,
                                        Graphics::ManagedSurface &target, int width, int height) const {
+	RenderActor renderActor;
+	renderActor.scene = &actor;
+	renderActor.textureDirectory = actorTextureDirectory;
+	renderActor.visibleMeshes = actorVisibleMeshes;
+	renderActor.transform = actorTransform;
+
+	Common::Array<RenderActor> actors;
+	actors.push_back(renderActor);
+	return renderWithActors(scene, camera, textureDirectory, visibleMeshes,
+	                        actors, target, width, height);
+}
+
+bool SoftwareRenderer::renderWithActors(const SceneModel &scene, const RenderCamera &camera,
+                                        const Common::Path &textureDirectory,
+                                        const Common::Array<Common::String> &visibleMeshes,
+                                        const Common::Array<RenderActor> &actors,
+                                        Graphics::ManagedSurface &target, int width, int height) const {
 	if (width <= 0 || height <= 0 || camera.focalPixels <= 0.0f)
 		return false;
 
@@ -635,17 +652,23 @@ bool SoftwareRenderer::renderWithActor(const SceneModel &scene, const RenderCame
 	for (uint32 i = 0; i < zBuffer.size(); ++i)
 		zBuffer[i] = 1.0e30f;
 
-	const bool renderedRoom = renderScene(scene, textureDirectory, visibleMeshes, camera,
-	                                      right, up, forward, camera.focalPixels,
-	                                      nullptr, _textureCacheKeys, _textureCache,
-	                                      _animatedTextureCache, target, zBuffer);
-	const bool renderedActor = renderScene(actor, actorTextureDirectory, actorVisibleMeshes, camera,
-	                                       right, up, forward, camera.focalPixels,
-	                                       &actorTransform, _textureCacheKeys, _textureCache,
-	                                       _animatedTextureCache, target, zBuffer);
-	return renderedRoom || renderedActor;
-}
+	bool rendered = renderScene(scene, textureDirectory, visibleMeshes, camera,
+	                            right, up, forward, camera.focalPixels,
+	                            nullptr, _textureCacheKeys, _textureCache,
+	                            _animatedTextureCache, target, zBuffer);
 
+	for (uint32 actorIndex = 0; actorIndex < actors.size(); ++actorIndex) {
+		const RenderActor &actor = actors[actorIndex];
+		if (!actor.scene)
+			continue;
+		rendered = renderScene(*actor.scene, actor.textureDirectory, actor.visibleMeshes,
+		                       camera, right, up, forward, camera.focalPixels,
+		                       &actor.transform, _textureCacheKeys, _textureCache,
+		                       _animatedTextureCache, target, zBuffer) || rendered;
+	}
+
+	return rendered;
+}
 
 bool SoftwareRenderer::pickMesh(const SceneModel &scene, const RenderCamera &camera,
                                 int screenX, int screenY,
