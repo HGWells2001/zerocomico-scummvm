@@ -19,9 +19,9 @@ struct CharacterAnimSet {
 	Common::String takeLowAnimation;
 	Common::String takeMidAnimation;
 	Common::String takeHighAnimation;
-	float takeLowDistance;
-	float takeMidDistance;
-	float takeHighDistance;
+	int32 takeLowEventFrame;
+	int32 takeMidEventFrame;
+	int32 takeHighEventFrame;
 };
 
 struct CharacterDefinition {

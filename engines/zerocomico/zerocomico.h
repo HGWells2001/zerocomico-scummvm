@@ -180,6 +180,11 @@ private:
 	float _loopCutEndFrame;
 	uint32 _loopCutStartMillis;
 	bool _loopCutActive;
+	Common::String _pendingTakeAnimation;
+	Common::String _pendingTakeInventoryObject;
+	int32 _pendingTakeEventFrame;
+	bool _pendingTakeActive;
+	bool _pendingTakeInventoryAdded;
 	Common::String _selectedInventoryObject;
 	Common::String _combineInventoryFirst;
 	Common::String _combineInventorySecond;

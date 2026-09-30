@@ -364,6 +364,23 @@ name and approach distance for each class. The runtime therefore records the
 object classification directly in `PuzzleObject`; selecting and playing the
 corresponding character pickup animation remains a separate runtime step.
 
+The second argument of each playable-character pickup declaration is also
+now identified. The executable stores the animation id for low/mid/high at
+indices `0x55`, `0x56` and `0x57`, and stores the numeric argument in the
+parallel table addressed by the same index. `wait_take` increments a pickup
+counter and calls the normal `addobjininv` path exactly when that counter
+equals the stored value. It is therefore an **inventory event frame/tick**, not
+an approach distance. The shipped playable AnimSets all use `10` for low and
+mid pickup; high remains at the retail default `pickup 10` and is unused by
+the 357 shipped puzzle objects.
+
+Direct ANJ decoding confirms that `Get` and `Getdown` span frames **0..80**
+for Giovanni, Aldo and Giacomo. Their character `step_events` independently
+schedule sample 2 (`Take.mp3`) at frame 15. The runtime now plays the selected
+pickup clip at its established 25 fps cadence, transfers the inventory object
+at event frame 10, and keeps `wait_take` blocked until the clip reaches its
+final frame. Step-event audio remains a separate subsystem.
+
 ## Retail depth cue
 
 The retail script corpus uses `dcue_all` exactly once, during Mp5 startup:

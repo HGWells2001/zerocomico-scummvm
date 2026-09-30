@@ -624,7 +624,8 @@ ZeroComicoEngine::ZeroComicoEngine(OSystem *syst, const ADGameDescription *desc)
 	  _playerNavNode(-1), _lastDialogueChoice(-1), _scriptDialogueContextActive(false),
 	  _scriptDialogueFrame(nullptr),
 	  _loopCutStartFrame(0.0f), _loopCutEndFrame(0.0f), _loopCutStartMillis(0),
-	  _loopCutActive(false), _scriptVM(this),
+	  _loopCutActive(false), _pendingTakeEventFrame(0), _pendingTakeActive(false),
+	  _pendingTakeInventoryAdded(false), _scriptVM(this),
 	  _interfaceDisabled(false), _3dEnabled(true), _portalsEnabled(true),
 	  _cameraMode(0), _cameraModeLocked(false), _playerNoCameraReset(false),
 	  _depthCueEnabled(false), _depthCueStart(0.0f), _depthCueEnd(0.0f),
@@ -2062,16 +2063,131 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 	if (op.equalsIgnoreCase("take")) {
 		if (instruction.args.size() < 2)
 			return false;
-		const Common::String &inventoryObject = instruction.args[1];
-		if (!containsIgnoreCase(_inventoryObjects, inventoryObject))
-			_inventoryObjects.push_back(inventoryObject);
-		_selectedInventoryObject = inventoryObject;
-		debug(1, "Zero Comico: inventory acquired %s", inventoryObject.c_str());
+
+		_pendingTakeAnimation.clear();
+		_pendingTakeInventoryObject = instruction.args[1];
+		_pendingTakeEventFrame = 0;
+		_pendingTakeActive = false;
+		_pendingTakeInventoryAdded = false;
+
+		const PuzzleObject *pickupObject = _activePuzzle.findByEntity(instruction.args[0]);
+		if (!pickupObject)
+			pickupObject = _activePuzzle.findObject(instruction.args[0]);
+		const CharacterAnimSet *animSet = _playerCharacterScript.findAnimSet(_playerAnimSetName);
+
+		if (pickupObject && animSet) {
+			switch (pickupObject->takeMode) {
+			case kPuzzleTakeLow:
+				_pendingTakeAnimation = animSet->takeLowAnimation;
+				_pendingTakeEventFrame = animSet->takeLowEventFrame;
+				break;
+			case kPuzzleTakeMid:
+				_pendingTakeAnimation = animSet->takeMidAnimation;
+				_pendingTakeEventFrame = animSet->takeMidEventFrame;
+				break;
+			case kPuzzleTakeHigh:
+				_pendingTakeAnimation = animSet->takeHighAnimation;
+				_pendingTakeEventFrame = animSet->takeHighEventFrame;
+				break;
+			case kPuzzleTakeNone:
+			default:
+				break;
+			}
+		}
+
+		if (!_pendingTakeAnimation.empty()) {
+			_pendingTakeActive = true;
+			debug(1, "Zero Comico: pickup %s uses %s, inventory event frame %d",
+			      instruction.args[0].c_str(), _pendingTakeAnimation.c_str(),
+			      (int)_pendingTakeEventFrame);
+		} else {
+			if (!containsIgnoreCase(_inventoryObjects, _pendingTakeInventoryObject))
+				_inventoryObjects.push_back(_pendingTakeInventoryObject);
+			_selectedInventoryObject = _pendingTakeInventoryObject;
+			_pendingTakeInventoryAdded = true;
+			debug(1, "Zero Comico: pickup %s has no animation class; inventory acquired immediately",
+			      instruction.args[0].c_str());
+		}
 		return true;
 	}
 
-	if (op.equalsIgnoreCase("wait_take"))
-		return true;
+	if (op.equalsIgnoreCase("wait_take")) {
+		if (!_pendingTakeActive)
+			return true;
+
+		auto acquirePendingTake = [&]() {
+			if (_pendingTakeInventoryAdded || _pendingTakeInventoryObject.empty())
+				return;
+			if (!containsIgnoreCase(_inventoryObjects, _pendingTakeInventoryObject))
+				_inventoryObjects.push_back(_pendingTakeInventoryObject);
+			_selectedInventoryObject = _pendingTakeInventoryObject;
+			_pendingTakeInventoryAdded = true;
+			debug(1, "Zero Comico: inventory acquired %s at pickup event frame %d",
+			      _pendingTakeInventoryObject.c_str(), (int)_pendingTakeEventFrame);
+		};
+
+		const Common::String playerRoot = !_playerSequences.bodyName.empty()
+			? _playerSequences.bodyName : _playerCharacterScript.initialBodyName;
+		float startFrame = 0.0f;
+		float endFrame = 0.0f;
+		if (!_scriptDialogueContextActive || !_scriptDialogueFrame ||
+		    !animationClipRange(_playerScene, playerRoot, _pendingTakeAnimation,
+		                        startFrame, endFrame)) {
+			warning("Zero Comico: cannot play pickup animation %s; completing inventory transfer",
+			        _pendingTakeAnimation.c_str());
+			acquirePendingTake();
+			_pendingTakeActive = false;
+			_pendingTakeAnimation.clear();
+			_pendingTakeInventoryObject.clear();
+			return true;
+		}
+
+		const float frameRate = 25.0f;
+		float frameValue = startFrame;
+		int32 relativeFrame = 0;
+		while (!shouldQuit() && frameValue <= endFrame) {
+			if (!_pendingTakeInventoryAdded && relativeFrame >= _pendingTakeEventFrame)
+				acquirePendingTake();
+
+			if (!renderGameplayFrame(_scriptDialogueCamera, _scriptDialogueSceneDirectory,
+			                         _scriptDialoguePlayerDirectory, _pendingTakeAnimation,
+			                         frameValue, *_scriptDialogueFrame))
+				break;
+
+			Common::Event event;
+			while (_system->getEventManager()->pollEvent(event)) {
+				updateScriptKeyState(event);
+				if (event.type == Common::EVENT_QUIT ||
+				    event.type == Common::EVENT_RETURN_TO_LAUNCHER) {
+					quitGame();
+					break;
+				}
+			}
+			if (shouldQuit())
+				break;
+
+			frameValue += 1.0f;
+			++relativeFrame;
+			_system->delayMillis((uint32)(1000.0f / frameRate));
+		}
+
+		if (!_pendingTakeInventoryAdded)
+			acquirePendingTake();
+
+		_pendingTakeActive = false;
+		_pendingTakeAnimation.clear();
+		_pendingTakeInventoryObject.clear();
+
+		if (!shouldQuit()) {
+			float stayFrame = 0.0f;
+			float stayEnd = 0.0f;
+			animationClipRange(_playerScene, playerRoot, "Stay", stayFrame, stayEnd);
+			renderGameplayFrame(_scriptDialogueCamera, _scriptDialogueSceneDirectory,
+			                    _scriptDialoguePlayerDirectory, "Stay", stayFrame,
+			                    *_scriptDialogueFrame);
+		}
+		return !shouldQuit();
+	}
 
 	if (op.equalsIgnoreCase("subobjininv")) {
 		if (instruction.args.size() < 2)

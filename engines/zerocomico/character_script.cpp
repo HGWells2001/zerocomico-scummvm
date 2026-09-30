@@ -10,12 +10,12 @@ namespace ZeroComico {
 
 namespace {
 
-static float parseAnimFloat(const Common::String &value, float fallback) {
+static int32 parseAnimInteger(const Common::String &value, int32 fallback) {
 	char *end = nullptr;
-	const double parsed = strtod(value.c_str(), &end);
+	const long parsed = strtol(value.c_str(), &end, 10);
 	if (!end || end == value.c_str() || *end != 0)
 		return fallback;
-	return (float)parsed;
+	return (int32)parsed;
 }
 
 } // namespace
@@ -93,9 +93,9 @@ bool CharacterScript::parse() {
 				animSet.takeLowAnimation = "pickdw";
 				animSet.takeMidAnimation = "pickmd";
 				animSet.takeHighAnimation = "pickup";
-				animSet.takeLowDistance = 10.0f;
-				animSet.takeMidDistance = 10.0f;
-				animSet.takeHighDistance = 10.0f;
+				animSet.takeLowEventFrame = 10;
+				animSet.takeMidEventFrame = 10;
+				animSet.takeHighEventFrame = 10;
 
 				const int animSetDepth = inst.depth;
 				for (uint32 k = j + 1; k < end; ++k) {
@@ -106,23 +106,23 @@ bool CharacterScript::parse() {
 						break;
 
 					Common::String *animation = nullptr;
-					float *distance = nullptr;
+					int32 *eventFrame = nullptr;
 					if (property.opcode.equalsIgnoreCase("take_low")) {
 						animation = &animSet.takeLowAnimation;
-						distance = &animSet.takeLowDistance;
+						eventFrame = &animSet.takeLowEventFrame;
 					} else if (property.opcode.equalsIgnoreCase("take_mid")) {
 						animation = &animSet.takeMidAnimation;
-						distance = &animSet.takeMidDistance;
+						eventFrame = &animSet.takeMidEventFrame;
 					} else if (property.opcode.equalsIgnoreCase("take_high")) {
 						animation = &animSet.takeHighAnimation;
-						distance = &animSet.takeHighDistance;
+						eventFrame = &animSet.takeHighEventFrame;
 					}
 
 					if (!animation || property.args.empty())
 						continue;
 					*animation = property.args[0];
 					if (property.args.size() >= 2)
-						*distance = parseAnimFloat(property.args[1], *distance);
+						*eventFrame = parseAnimInteger(property.args[1], *eventFrame);
 				}
 
 				character.animSets.push_back(animSet);
