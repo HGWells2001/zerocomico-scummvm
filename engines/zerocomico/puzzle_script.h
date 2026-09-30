@@ -46,6 +46,8 @@ struct PuzzleObject {
 	uint32 operateEnd;
 	uint32 enterStart;
 	uint32 enterEnd;
+	uint32 exitStart;
+	uint32 exitEnd;
 };
 
 class PuzzleScript {

@@ -62,6 +62,7 @@ bool PuzzleScript::parse() {
 		object.soundState = false;
 		object.operateStart = object.operateEnd = 0xffffffffU;
 		object.enterStart = object.enterEnd = 0xffffffffU;
+		object.exitStart = object.exitEnd = 0xffffffffU;
 
 		const int objectDepth = header.depth;
 		for (uint32 j = i + 1; j < instructions.size(); ++j) {
@@ -120,6 +121,16 @@ bool PuzzleScript::parse() {
 				for (uint32 k = j + 1; k < instructions.size(); ++k) {
 					if (instructions[k].opcode.equalsIgnoreCase("end")) {
 						object.enterEnd = k;
+						break;
+					}
+					if (instructions[k].opcode.equalsIgnoreCase("Object"))
+						break;
+				}
+			} else if (inst.opcode.equalsIgnoreCase("out")) {
+				object.exitStart = j + 1;
+				for (uint32 k = j + 1; k < instructions.size(); ++k) {
+					if (instructions[k].opcode.equalsIgnoreCase("end")) {
+						object.exitEnd = k;
 						break;
 					}
 					if (instructions[k].opcode.equalsIgnoreCase("Object"))

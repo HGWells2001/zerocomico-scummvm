@@ -403,6 +403,26 @@ The runtime now mirrors those three side effects for both explicit
 uses those two in addition to the previously handled `examinable` and
 `enabled` forms.
 
+## Retail puzzle region transitions
+
+The supplied puzzle corpus contains **15** spatial `in:` blocks and **2**
+matching `out:` blocks. They are attached to ordinary puzzle Objects through
+`polygon:` or `rangeshape:` names and use the same Shape.shp geometry
+already decoded for camera triggers. Examples include the Mp2 hazard warnings,
+Mp3 height changes and Mp5 automatic cutscene/room-transition zones.
+
+`PuzzleScript` now retains both entry and exit instruction ranges. During
+gameplay the player position is tested against those shapes; crossing a
+boundary updates the Object's `INSIDE` flag and executes the corresponding
+retail script block through the normal ScriptVM. Room changes reset the spatial
+inside cache so the destination room is classified afresh.
+
+The character-side `ifCobjstate Character Object "STATE VALUE"` condition is
+also routed through the same decoded Object state. The three shipped uses test
+`INSIDE TRUE` for the ambient-dialogue ranges in Mp1, Mp2 and Mp3, so future
+CPU ControlCode scheduling can consume the same spatial truth rather than
+reimplementing range geometry.
+
 ## Retail depth cue
 
 The retail script corpus uses `dcue_all` exactly once, during Mp5 startup:

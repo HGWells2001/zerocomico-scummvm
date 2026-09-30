@@ -216,6 +216,37 @@ static void markInventoryObjectAssigned(PuzzleScript &puzzle, const Common::Stri
 	object->assigned = true;
 }
 
+static bool puzzleObjectMatchesState(const PuzzleObject &object, Common::String state) {
+	state.toLowercase();
+
+	if (state.find("pickable true") != Common::String::npos) return object.pickable;
+	if (state.find("pickable false") != Common::String::npos) return !object.pickable;
+	if (state.find("examinable true") != Common::String::npos) return object.examinable;
+	if (state.find("examinable false") != Common::String::npos) return !object.examinable;
+	if (state.find("operated true") != Common::String::npos) return object.operated;
+	if (state.find("operated false") != Common::String::npos) return !object.operated;
+	if (state.find("examinated true") != Common::String::npos) return object.examinated;
+	if (state.find("examinated false") != Common::String::npos) return !object.examinated;
+	if (state.find("autocamera true") != Common::String::npos) return object.autoCamera;
+	if (state.find("autocamera false") != Common::String::npos) return !object.autoCamera;
+	if (state.find("randompos true") != Common::String::npos) return object.randomPos;
+	if (state.find("randompos false") != Common::String::npos) return !object.randomPos;
+	if (state.find("combined true") != Common::String::npos) return object.combined;
+	if (state.find("combined false") != Common::String::npos) return !object.combined;
+	if (state.find("assigned true") != Common::String::npos) return object.assigned;
+	if (state.find("assigned false") != Common::String::npos) return !object.assigned;
+	if (state.find("enabled true") != Common::String::npos) return object.enabled;
+	if (state.find("enabled false") != Common::String::npos) return !object.enabled;
+	if (state.find("inside true") != Common::String::npos) return object.inside;
+	if (state.find("inside false") != Common::String::npos) return !object.inside;
+	if (state.find("collision true") != Common::String::npos) return object.collision;
+	if (state.find("collision false") != Common::String::npos) return !object.collision;
+	if (state.find("soundstate true") != Common::String::npos) return object.soundState;
+	if (state.find("soundstate false") != Common::String::npos) return !object.soundState;
+
+	return false;
+}
+
 static float dotVec3(const Vec3f &a, const Vec3f &b) {
 	return a.x * b.x + a.y * b.y + a.z * b.z;
 }
@@ -2938,6 +2969,16 @@ bool ZeroComicoEngine::evaluateScriptCondition(const ScriptInstruction &instruct
 		return true;
 	}
 
+	if (instruction.opcode.equalsIgnoreCase("ifcobjstate")) {
+		if (instruction.args.size() < 3)
+			return false;
+		const PuzzleObject *object = _activePuzzle.findObject(instruction.args[1]);
+		if (!object)
+			return false;
+		result = puzzleObjectMatchesState(*object, instruction.args[2]);
+		return true;
+	}
+
 	// Ordinary play_cut is synchronous, but loop_cut keeps a persistent retail
 	// cut object alive between ScriptVM scheduler boundaries.
 	if (instruction.opcode.equalsIgnoreCase("if_is_playingcut")) {
@@ -4327,6 +4368,8 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 		room = nextRoom;
 		_activeRoomName = room->name;
 		_activeRoomPrefix = room->prefix;
+		for (uint32 objectIndex = 0; objectIndex < _activePuzzle.objects.size(); ++objectIndex)
+			_activePuzzle.objects[objectIndex].inside = false;
 		_activeRoomMaps = room->maps;
 		_activeRoomCameraMaps = room->cameraMaps;
 		Common::String nextStem = room->name;
@@ -4442,10 +4485,73 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 		return true;
 	};
 
+	auto runPuzzleRegionTransitions = [&]() -> bool {
+		for (uint32 objectIndex = 0; objectIndex < _activePuzzle.objects.size(); ++objectIndex) {
+			PuzzleObject &object = _activePuzzle.objects[objectIndex];
+			if (!object.enabled)
+				continue;
+			if (!object.roomScope.empty() && !object.roomScope.equalsIgnoreCase(_activeRoomName))
+				continue;
+
+			const Common::String regionName = !object.rangeShape.empty()
+				? object.rangeShape : object.polygon;
+			if (regionName.empty())
+				continue;
+
+			const bool insideNow = _activeShapes.containsRegion(
+				regionName, _playerPosition.x, _playerPosition.z);
+			if (insideNow == object.inside)
+				continue;
+
+			object.inside = insideNow;
+			const uint32 start = insideNow ? object.enterStart : object.exitStart;
+			const uint32 end = insideNow ? object.enterEnd : object.exitEnd;
+			if (start == 0xffffffffU || end == 0xffffffffU || start >= end)
+				continue;
+
+			debug(1, "Zero Comico: player %s puzzle region %s",
+			      insideNow ? "entered" : "left", object.name.c_str());
+
+			_scriptDialogueContextActive = true;
+			_scriptDialogueCamera = renderCamera;
+			_scriptDialogueSceneDirectory = sceneDirectory;
+			_scriptDialoguePlayerDirectory = playerDirectory;
+			_scriptDialogueFrame = &frame;
+			const bool regionOk = _scriptVM.run(_activePuzzle.program(), start, end, 8192);
+			_scriptDialogueContextActive = false;
+			_scriptDialogueFrame = nullptr;
+			if (!regionOk)
+				warning("Zero Comico: puzzle region %s stopped on an unsupported opcode",
+				        object.name.c_str());
+
+			rebuildInteractionMeshes();
+			if (!_pendingDialogName.empty() && !shouldQuit()) {
+				playDialogue(_pendingDialogName, renderCamera, sceneDirectory,
+				             playerDirectory, frame);
+				_pendingDialogName.clear();
+			}
+			if (!_pendingMainPlace.empty())
+				return true;
+			if (!_pendingRoomName.empty()) {
+				if (!applyPendingRoomTransition())
+					return false;
+				return true;
+			}
+		}
+		return true;
+	};
+
 	bool done = false;
 	uint32 lastIdleRender = _system->getMillis();
 	const uint32 idleAnimationStart = lastIdleRender;
 	while (!shouldQuit() && !done) {
+		if (!runPuzzleRegionTransitions())
+			return false;
+		if (!_pendingMainPlace.empty()) {
+			done = true;
+			break;
+		}
+
 		Common::Event event;
 		while (_system->getEventManager()->pollEvent(event)) {
 			if (event.type == Common::EVENT_QUIT || event.type == Common::EVENT_RETURN_TO_LAUNCHER) {
@@ -4807,6 +4913,19 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 					_playerPosition.x += dx * advance;
 					_playerPosition.z += dz * advance;
 					distance -= advance;
+
+					if (!runPuzzleRegionTransitions()) {
+						done = true;
+						break;
+					}
+					if (!_pendingMainPlace.empty()) {
+						done = true;
+						break;
+					}
+					if (!_activeRoomName.equalsIgnoreCase(routeRoomName)) {
+						distance = 0.0f;
+						break;
+					}
 
 					bool crossedPortal = false;
 					if (_portalsEnabled && room && !room->portals.empty()) {

@@ -18,6 +18,7 @@ static bool isConditionalOpcode(const Common::String &op) {
 	       op.equalsIgnoreCase("if_z") || op.equalsIgnoreCase("if_nz") ||
 	       op.equalsIgnoreCase("ifobjselected") ||
 	       op.equalsIgnoreCase("ifobjininv") ||
+	       op.equalsIgnoreCase("ifcobjstate") ||
 	       op.equalsIgnoreCase("ifallobjnoselected") ||
 	       op.equalsIgnoreCase("ifcombine") ||
 	       op.equalsIgnoreCase("if_is_playingcut") ||
@@ -201,6 +202,7 @@ bool ScriptVM::executeRandom(const ScriptInstruction &instruction) {
 bool ScriptVM::evaluateComparison(const ScriptInstruction &instruction, bool &result) const {
 	if (instruction.opcode.equalsIgnoreCase("ifobjselected") ||
 	    instruction.opcode.equalsIgnoreCase("ifobjininv") ||
+	    instruction.opcode.equalsIgnoreCase("ifcobjstate") ||
 	    instruction.opcode.equalsIgnoreCase("ifallobjnoselected") ||
 	    instruction.opcode.equalsIgnoreCase("ifcombine") ||
 	    instruction.opcode.equalsIgnoreCase("if_is_playingcut") ||
