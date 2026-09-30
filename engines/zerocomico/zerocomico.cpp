@@ -2543,6 +2543,38 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 		return true;
 	}
 
+	if (op.equalsIgnoreCase("set_entity_pos")) {
+		if (instruction.args.size() < 4)
+			return false;
+
+		auto resolveCoordinate = [&](const Common::String &token, float &value) -> bool {
+			int32 integerValue = 0;
+			if (_scriptVM.resolveValue(token, integerValue)) {
+				value = (float)integerValue;
+				return true;
+			}
+			return parseScriptFloat(token, value);
+		};
+
+		Vec3f position;
+		if (!resolveCoordinate(instruction.args[1], position.x) ||
+		    !resolveCoordinate(instruction.args[2], position.y) ||
+		    !resolveCoordinate(instruction.args[3], position.z))
+			return false;
+
+		for (uint32 cpuIndex = 0; cpuIndex < _cpuCharacters.size(); ++cpuIndex) {
+			CpuCharacterRuntime &character = _cpuCharacters[cpuIndex];
+			if (!character.name.equalsIgnoreCase(instruction.args[0]) &&
+			    !character.bodyRoot.equalsIgnoreCase(instruction.args[0]))
+				continue;
+			character.position = position;
+			character.positioned = true;
+			return true;
+		}
+
+		return setSceneEntityTranslation(instruction.args[0], position);
+	}
+
 	if (op.equalsIgnoreCase("PlaySample")) {
 		if (instruction.args.empty())
 			return false;
@@ -2987,6 +3019,47 @@ bool ZeroComicoEngine::evaluateScriptCondition(const ScriptInstruction &instruct
 		result = puzzleObjectMatchesState(*object, instruction.args[2]);
 		return true;
 	}
+
+	if (instruction.opcode.equalsIgnoreCase("ifcplace")) {
+		if (instruction.args.size() < 2)
+			return false;
+
+		const Common::String &characterName = instruction.args[0];
+		const bool player =
+			characterName.equalsIgnoreCase("MainPlayer") ||
+			(!_playerCharacterScript.playerName.empty() &&
+			 characterName.equalsIgnoreCase(_playerCharacterScript.playerName));
+		if (player) {
+			result = _activeRoomName.equalsIgnoreCase(instruction.args[1]);
+			return true;
+		}
+
+		const CpuCharacterRuntime *character = nullptr;
+		for (uint32 i = 0; i < _cpuCharacters.size(); ++i) {
+			if (_cpuCharacters[i].name.equalsIgnoreCase(characterName)) {
+				character = &_cpuCharacters[i];
+				break;
+			}
+		}
+		result = character && character->alive &&
+		         character->roomName.equalsIgnoreCase(instruction.args[1]);
+		return true;
+	}
+
+	if (instruction.opcode.equalsIgnoreCase("if_Char_InDialog")) {
+		// Dialogue playback is synchronous in this runtime, so autonomous
+		// ControlCode ticks cannot run while a dialogue owns the screen.
+		result = false;
+		return true;
+	}
+
+	if (instruction.opcode.equalsIgnoreCase("if_Is_OpenInterface")) {
+		// The retail modal inventory/interface controller is not open while the
+		// gameplay scheduler is running. DisableInterface is a separate gate.
+		result = false;
+		return true;
+	}
+
 
 	// Ordinary play_cut is synchronous, but loop_cut keeps a persistent retail
 	// cut object alive between ScriptVM scheduler boundaries.
@@ -4647,7 +4720,53 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 	bool done = false;
 	uint32 lastIdleRender = _system->getMillis();
 	const uint32 idleAnimationStart = lastIdleRender;
+	uint32 lastControlCodeTick = lastIdleRender - 40U;
+
+	auto runCharacterControlCodes = [&]() -> bool {
+		const uint32 now = _system->getMillis();
+		if (now - lastControlCodeTick < 40U)
+			return true;
+		lastControlCodeTick = now;
+
+		for (uint32 characterIndex = 0;
+		     characterIndex < _playerCharacterScript.characters.size();
+		     ++characterIndex) {
+			const CharacterDefinition &definition =
+				_playerCharacterScript.characters[characterIndex];
+			if (definition.controlStart == 0xffffffffU ||
+			    definition.controlEnd == 0xffffffffU ||
+			    definition.controlStart >= definition.controlEnd)
+				continue;
+
+			if (!definition.mainPlayer) {
+				CpuCharacterRuntime *runtime = findCpuCharacter(definition.name);
+				if (!runtime || !runtime->alive || runtime->lifeBroken ||
+				    !runtime->roomName.equalsIgnoreCase(_activeRoomName))
+					continue;
+			}
+
+			_scriptDialogueContextActive = true;
+			_scriptDialogueCamera = renderCamera;
+			_scriptDialogueSceneDirectory = sceneDirectory;
+			_scriptDialoguePlayerDirectory = playerDirectory;
+			_scriptDialogueFrame = &frame;
+			const bool ok = _scriptVM.run(_playerCharacterScript.program(),
+			                              definition.controlStart,
+			                              definition.controlEnd, 512);
+			_scriptDialogueContextActive = false;
+			_scriptDialogueFrame = nullptr;
+			if (!ok) {
+				warning("Zero Comico: ControlCode for %s stopped on an unsupported opcode",
+				        definition.name.c_str());
+				return false;
+			}
+		}
+		return true;
+	};
+
 	while (!shouldQuit() && !done) {
+		if (!runCharacterControlCodes())
+			return false;
 		if (!runPuzzleRegionTransitions())
 			return false;
 		if (!_pendingMainPlace.empty()) {
@@ -5011,6 +5130,10 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 				}
 
 				while (distance > 0.0001f && !done && !shouldQuit()) {
+					if (!runCharacterControlCodes()) {
+						done = true;
+						break;
+					}
 					const float advance = distance < stepDistance ? distance : stepDistance;
 					const Vec3f previousPosition = _playerPosition;
 					_playerPosition.x += dx * advance;
@@ -5118,6 +5241,10 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 				if (animationClipRange(_playerScene, _playerSequences.bodyName, stopSource,
 				                       stopFrame, stopEnd)) {
 					while (stopFrame <= stopEnd && !done && !shouldQuit()) {
+						if (!runCharacterControlCodes()) {
+							done = true;
+							break;
+						}
 						updateDynamicCamera(stopSource, stopFrame);
 						if (!renderGameplayFrame(renderCamera, sceneDirectory, playerDirectory,
 						                         stopSource, stopFrame, frame)) {

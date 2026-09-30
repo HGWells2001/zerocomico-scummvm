@@ -118,7 +118,23 @@ runtime paths instead of being approximated separately. A `BreakLifeToChar`
 issued before a later-room body has been loaded is remembered and applied when
 that character is instantiated; a subsequent `GiveLifeToChar` clears it.
 
-The autonomous per-frame `ControlCode:` scheduler is still separate work.
+The four shipped `ControlCode:` blocks are now retained and scheduled at
+25 Hz through the ordinary ScriptVM. Three drive the idle companion chatter in
+Mp1/Mp2/Mp3; the fourth drives Mp1's Astro movement. The scheduler runs both
+while idle and while the player traverses a BSP path, so counters and CPU
+animations do not freeze during walking.
+
+The additional retail conditions used by those blocks are implemented:
+`ifcplace`, `if_Char_InDialog` and `if_Is_OpenInterface`. Dialogue is
+synchronous in the current runtime, so no ControlCode tick can overlap an
+active dialogue; the latter two conditions are therefore false whenever the
+autonomous scheduler is actually executing. Existing `ifcobjstate`,
+cutscene/menu and keyboard conditions share the same VM state.
+
+Executable disassembly also confirms `set_entity_pos` is registered with the
+signature `ennn` and forwards its three numeric arguments directly to the
+entity position setter. Astro's `Astro_X Astro_Y 8.218` values are therefore
+used as runtime coordinates with no scale conversion.
 
 ## Navigation
 

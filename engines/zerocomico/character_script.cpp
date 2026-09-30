@@ -76,6 +76,7 @@ bool CharacterScript::parse() {
 		character.castShadows = true;
 		character.breakLifeOnInitialize = false;
 		character.initializeStart = character.initializeEnd = 0xffffffffU;
+		character.controlStart = character.controlEnd = 0xffffffffU;
 
 		for (uint32 j = i + 1; j < end; ++j) {
 			const ScriptInstruction &inst = instructions[j];
@@ -173,6 +174,18 @@ bool CharacterScript::parse() {
 			}
 			if (inst.opcode.equalsIgnoreCase("InitialAnimSet") && !inst.args.empty()) {
 				character.initialAnimSet = inst.args[0];
+				continue;
+			}
+			if (inst.opcode.equalsIgnoreCase("ControlCode") &&
+			    character.controlStart == 0xffffffffU) {
+				character.controlStart = j + 1;
+				for (uint32 k = character.controlStart; k < end; ++k) {
+					if (instructions[k].opcode.equalsIgnoreCase("end") &&
+					    instructions[k].depth <= inst.depth) {
+						character.controlEnd = k;
+						break;
+					}
+				}
 				continue;
 			}
 			if (inst.opcode.equalsIgnoreCase("initialize") &&

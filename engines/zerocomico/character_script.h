@@ -50,6 +50,8 @@ struct CharacterDefinition {
 	bool breakLifeOnInitialize;
 	uint32 initializeStart;
 	uint32 initializeEnd;
+	uint32 controlStart;
+	uint32 controlEnd;
 	Common::Array<CharacterSample> samples;
 	Common::Array<CharacterAnimSet> animSets;
 };

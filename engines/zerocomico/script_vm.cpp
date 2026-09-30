@@ -19,6 +19,9 @@ static bool isConditionalOpcode(const Common::String &op) {
 	       op.equalsIgnoreCase("ifobjselected") ||
 	       op.equalsIgnoreCase("ifobjininv") ||
 	       op.equalsIgnoreCase("ifcobjstate") ||
+	       op.equalsIgnoreCase("ifcplace") ||
+	       op.equalsIgnoreCase("if_Char_InDialog") ||
+	       op.equalsIgnoreCase("if_Is_OpenInterface") ||
 	       op.equalsIgnoreCase("ifallobjnoselected") ||
 	       op.equalsIgnoreCase("ifcombine") ||
 	       op.equalsIgnoreCase("if_is_playingcut") ||
@@ -203,6 +206,9 @@ bool ScriptVM::evaluateComparison(const ScriptInstruction &instruction, bool &re
 	if (instruction.opcode.equalsIgnoreCase("ifobjselected") ||
 	    instruction.opcode.equalsIgnoreCase("ifobjininv") ||
 	    instruction.opcode.equalsIgnoreCase("ifcobjstate") ||
+	    instruction.opcode.equalsIgnoreCase("ifcplace") ||
+	    instruction.opcode.equalsIgnoreCase("if_Char_InDialog") ||
+	    instruction.opcode.equalsIgnoreCase("if_Is_OpenInterface") ||
 	    instruction.opcode.equalsIgnoreCase("ifallobjnoselected") ||
 	    instruction.opcode.equalsIgnoreCase("ifcombine") ||
 	    instruction.opcode.equalsIgnoreCase("if_is_playingcut") ||
