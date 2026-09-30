@@ -1520,6 +1520,10 @@ bool ZeroComicoEngine::instantiateCpuCharacter(const Common::String &name) {
 	runtime.positioned = false;
 	runtime.haveFacing = false;
 	runtime.waitState = runtime.lifeBroken ? 0x40 : 0;
+	runtime.idleAnimationStartMillis = _system->getMillis();
+	runtime.lastEventSource.clear();
+	runtime.lastEventFrame = -1;
+	runtime.haveEventFrame = false;
 	_cpuCharacters.push_back(runtime);
 
 	CpuCharacterRuntime *created = findCpuCharacter(definition->name);
@@ -3487,6 +3491,17 @@ bool ZeroComicoEngine::renderGameplayFrame(const RenderCamera &camera,
 
 		Common::String cpuSource("Stay");
 		float cpuFrame = 0.0f;
+		const NamedAnimationClip *idleClip = character.scene.findClipBySource(
+			character.bodyRoot, "Stay");
+		if (idleClip) {
+			const float firstFrame = (float)idleClip->data.startFrame;
+			const float lastFrame = (float)idleClip->data.endFrame;
+			const float frameCount = lastFrame >= firstFrame
+				? lastFrame - firstFrame + 1.0f : 1.0f;
+			const float elapsedFrames =
+				(float)(now - character.idleAnimationStartMillis) * 25.0f / 1000.0f;
+			cpuFrame = firstFrame + std::fmod(elapsedFrames, frameCount);
+		}
 		for (uint32 loopIndex = 0; loopIndex < _sceneLoopTargets.size(); ++loopIndex) {
 			if (!_sceneLoopTargets[loopIndex].equalsIgnoreCase(character.bodyRoot))
 				continue;
@@ -3521,6 +3536,64 @@ bool ZeroComicoEngine::renderGameplayFrame(const RenderCamera &camera,
 				cpuFrame = shotFrame;
 			}
 			break;
+		}
+
+		if (!character.lifeBroken) {
+			const CharacterDefinition *definition =
+				_playerCharacterScript.findCharacter(character.name);
+			const CharacterAnimSet *animSet = nullptr;
+			if (definition) {
+				for (uint32 animSetIndex = 0; animSetIndex < definition->animSets.size(); ++animSetIndex) {
+					if (definition->animSets[animSetIndex].name.equalsIgnoreCase(
+							definition->initialAnimSet)) {
+						animSet = &definition->animSets[animSetIndex];
+						break;
+					}
+				}
+			}
+
+			const NamedAnimationClip *eventClip =
+				character.scene.findClipBySource(character.bodyRoot, cpuSource);
+			if (definition && animSet && eventClip) {
+				const int32 currentEventFrame =
+					(int32)std::floor(cpuFrame - (float)eventClip->data.startFrame + 0.0001f);
+				const bool sourceChanged =
+					!character.haveEventFrame ||
+					!character.lastEventSource.equalsIgnoreCase(cpuSource);
+
+				for (uint32 eventIndex = 0; eventIndex < animSet->stepEvents.size(); ++eventIndex) {
+					const CharacterStepEvent &event = animSet->stepEvents[eventIndex];
+					if (!event.animation.equalsIgnoreCase(cpuSource))
+						continue;
+
+					bool crossed = false;
+					if (sourceChanged) {
+						crossed = event.frame <= currentEventFrame;
+					} else if (currentEventFrame >= character.lastEventFrame) {
+						crossed = event.frame > character.lastEventFrame &&
+						          event.frame <= currentEventFrame;
+					} else {
+						crossed = event.frame > character.lastEventFrame ||
+						          event.frame <= currentEventFrame;
+					}
+					if (!crossed)
+						continue;
+
+#ifdef USE_MAD
+					for (uint32 sampleIndex = 0; sampleIndex < definition->samples.size(); ++sampleIndex) {
+						if (definition->samples[sampleIndex].id != event.sampleId)
+							continue;
+						playNamedMp3(_mixer, Audio::Mixer::kSFXSoundType,
+						             definition->samples[sampleIndex].fileName);
+						break;
+					}
+#endif
+				}
+
+				character.lastEventSource = cpuSource;
+				character.lastEventFrame = currentEventFrame;
+				character.haveEventFrame = true;
+			}
 		}
 
 		if (!character.scene.poseSkinnedGeometry(character.bodyRoot, "Stay",

@@ -145,6 +145,13 @@ Mp1/Mp2/Mp3 companion `Stay_gia`, `Stay_gio` and `Stay_ald` clips are
 present in the supplied Giovanni/Aldo/Giacomo ANJ files and now render through
 this actor-specific path.
 
+CPU actors also advance their ordinary `Stay` clip at 25 fps even when no
+explicit `playl` is active. The 15 shipped CPU `step_events` are dispatched
+from the parsed AnimSet/sample tables when their frame is crossed, including
+loop wrap, rather than by matching filenames in code. This covers companion
+voice/sputum cues and the Orca's `Stay` events at frames 205 and 240. Event
+audio is suppressed while a character's life controller is broken.
+
 ## Navigation
 
 The Mp1 start marker `r11_Start` resolves to the retail world position and

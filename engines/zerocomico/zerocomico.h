@@ -56,6 +56,10 @@ struct CpuCharacterRuntime {
 	bool positioned;
 	bool haveFacing;
 	int32 waitState;
+	uint32 idleAnimationStartMillis;
+	Common::String lastEventSource;
+	int32 lastEventFrame;
+	bool haveEventFrame;
 };
 
 class ZeroComicoEngine : public Engine, public ScriptVMHost {
