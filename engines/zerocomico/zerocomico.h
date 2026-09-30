@@ -204,6 +204,7 @@ private:
 	Common::Array<Vec3f> _setpControllerPositions;
 	Common::Array<DynamicSceneEntity> _dynamicSceneEntities;
 	Common::Array<CpuCharacterRuntime> _cpuCharacters;
+	Common::Array<RenderActor> _activeRenderActors;
 	ScriptVM _scriptVM;
 	bool _interfaceDisabled;
 	bool _3dEnabled;

@@ -670,23 +670,15 @@ bool SoftwareRenderer::renderWithActors(const SceneModel &scene, const RenderCam
 	return rendered;
 }
 
-bool SoftwareRenderer::pickMesh(const SceneModel &scene, const RenderCamera &camera,
-                                int screenX, int screenY,
-                                const Common::Array<Common::String> &candidates,
-                                Common::String &pickedName, int width, int height) const {
-	pickedName.clear();
-	if (width <= 0 || height <= 0 || camera.focalPixels <= 0.0f)
-		return false;
-
-	Vec3f right;
-	Vec3f up;
-	Vec3f forward;
-	if (!buildCameraBasis(camera, right, up, forward))
-		return false;
-
+static void pickSceneMeshes(const SceneModel &scene, const RenderCamera &camera,
+                            const Vec3f &right, const Vec3f &up, const Vec3f &forward,
+                            int screenX, int screenY,
+                            const Common::Array<Common::String> &candidates,
+                            const RenderTransform *instanceTransform,
+                            int width, int height, float &bestDepth,
+                            Common::String &pickedName) {
 	const float px = (float)screenX + 0.5f;
 	const float py = (float)screenY + 0.5f;
-	float bestDepth = 1.0e30f;
 
 	for (uint32 candidateIndex = 0; candidateIndex < candidates.size(); ++candidateIndex) {
 		const NamedMesh *namedMesh = scene.findMesh(candidates[candidateIndex]);
@@ -717,6 +709,7 @@ bool SoftwareRenderer::pickMesh(const SceneModel &scene, const RenderCamera &cam
 					world = mesh.vertices[vertexIndex];
 				else
 					world = transformVertex(mesh.vertices[vertexIndex], mesh.transform);
+				world = applyInstanceTransform(world, instanceTransform);
 
 				if (!projectVertex(world, camera, right, up, forward, camera.focalPixels,
 				                   width, height, projected[i])) {
@@ -741,8 +734,6 @@ bool SoftwareRenderer::pickMesh(const SceneModel &scene, const RenderCamera &cam
 			if (w0 < -0.0025f || w1 < -0.0025f || w2 < -0.0025f)
 				continue;
 
-			// Use the same perspective depth interpolation as rasterization so an
-			// overlapping hotspot resolves to the triangle actually visible in front.
 			const float invDepth =
 				w0 / projected[0].z + w1 / projected[1].z + w2 / projected[2].z;
 			if (invDepth <= 0.0f)
@@ -754,7 +745,55 @@ bool SoftwareRenderer::pickMesh(const SceneModel &scene, const RenderCamera &cam
 			}
 		}
 	}
+}
 
+bool SoftwareRenderer::pickMesh(const SceneModel &scene, const RenderCamera &camera,
+                                int screenX, int screenY,
+                                const Common::Array<Common::String> &candidates,
+                                Common::String &pickedName, int width, int height) const {
+	pickedName.clear();
+	if (width <= 0 || height <= 0 || camera.focalPixels <= 0.0f)
+		return false;
+
+	Vec3f right;
+	Vec3f up;
+	Vec3f forward;
+	if (!buildCameraBasis(camera, right, up, forward))
+		return false;
+
+	float bestDepth = 1.0e30f;
+	pickSceneMeshes(scene, camera, right, up, forward, screenX, screenY,
+	                candidates, nullptr, width, height, bestDepth, pickedName);
+	return !pickedName.empty();
+}
+
+bool SoftwareRenderer::pickMeshWithActors(const SceneModel &scene, const RenderCamera &camera,
+                                          int screenX, int screenY,
+                                          const Common::Array<Common::String> &candidates,
+                                          const Common::Array<RenderActor> &actors,
+                                          Common::String &pickedName,
+                                          int width, int height) const {
+	pickedName.clear();
+	if (width <= 0 || height <= 0 || camera.focalPixels <= 0.0f)
+		return false;
+
+	Vec3f right;
+	Vec3f up;
+	Vec3f forward;
+	if (!buildCameraBasis(camera, right, up, forward))
+		return false;
+
+	float bestDepth = 1.0e30f;
+	pickSceneMeshes(scene, camera, right, up, forward, screenX, screenY,
+	                candidates, nullptr, width, height, bestDepth, pickedName);
+	for (uint32 actorIndex = 0; actorIndex < actors.size(); ++actorIndex) {
+		const RenderActor &actor = actors[actorIndex];
+		if (!actor.scene)
+			continue;
+		pickSceneMeshes(*actor.scene, camera, right, up, forward, screenX, screenY,
+		                candidates, &actor.transform, width, height,
+		                bestDepth, pickedName);
+	}
 	return !pickedName.empty();
 }
 

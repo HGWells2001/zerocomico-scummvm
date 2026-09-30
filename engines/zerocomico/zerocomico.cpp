@@ -3314,7 +3314,7 @@ bool ZeroComicoEngine::renderGameplayFrame(const RenderCamera &camera,
 			visibleMeshes.push_back("__zerocomico_no_visible_room_meshes__");
 	}
 	bool rendered = false;
-	Common::Array<RenderActor> actors;
+	_activeRenderActors.clear();
 
 	if (!_playerScene.meshes.empty() && _havePlayerStart) {
 		const Common::String playerRoot = !_playerSequences.bodyName.empty()
@@ -3346,7 +3346,7 @@ bool ZeroComicoEngine::renderGameplayFrame(const RenderCamera &camera,
 		                         playerActor.transform))
 			warning("Zero Comico: player %s root transform missing; using identity root pose",
 			        animationSource.c_str());
-		actors.push_back(playerActor);
+		_activeRenderActors.push_back(playerActor);
 	}
 
 	for (uint32 cpuIndex = 0; cpuIndex < _cpuCharacters.size(); ++cpuIndex) {
@@ -3408,16 +3408,16 @@ bool ZeroComicoEngine::renderGameplayFrame(const RenderCamera &camera,
 		                         cpuActor.transform))
 			sampleRootTransform(character.scene, character.bodyRoot, "Stay", 0.0f,
 			                    cpuActor.transform);
-		actors.push_back(cpuActor);
+		_activeRenderActors.push_back(cpuActor);
 	}
 
-	if (actors.empty())
+	if (_activeRenderActors.empty())
 		rendered = _gameplayRenderer.render(_activeScene, gameplayCamera, sceneDirectory,
 		                                    visibleMeshes, frame, 800, 600);
 	else
 		rendered = _gameplayRenderer.renderWithActors(_activeScene, gameplayCamera,
 		                                              sceneDirectory, visibleMeshes,
-		                                              actors, frame, 800, 600);
+		                                              _activeRenderActors, frame, 800, 600);
 	if (!rendered)
 		return false;
 
@@ -4763,9 +4763,9 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 			}
 			if (event.type == Common::EVENT_RBUTTONDOWN) {
 				Common::String pickedEntity;
-				if (_gameplayRenderer.pickMesh(_activeScene, renderCamera,
+				if (_gameplayRenderer.pickMeshWithActors(_activeScene, renderCamera,
 				                               event.mouse.x, event.mouse.y,
-				                               examineMeshes, pickedEntity)) {
+				                               examineMeshes, _activeRenderActors, pickedEntity)) {
 					const PuzzleObject *object = findPuzzleObjectForMesh(
 						_activePuzzle, _activeScene, _activeRoomPrefix, pickedEntity);
 					if (object && !object->examineText.empty()) {
@@ -4819,9 +4819,9 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 				continue;
 
 			Common::String operatedEntity;
-			if (_gameplayRenderer.pickMesh(_activeScene, renderCamera,
+			if (_gameplayRenderer.pickMeshWithActors(_activeScene, renderCamera,
 			                               event.mouse.x, event.mouse.y,
-			                               operateMeshes, operatedEntity)) {
+			                               operateMeshes, _activeRenderActors, operatedEntity)) {
 				const PuzzleObject *object = findPuzzleObjectForMesh(
 					_activePuzzle, _activeScene, _activeRoomPrefix, operatedEntity);
 				if (object && object->operateStart < object->operateEnd) {
