@@ -21,6 +21,12 @@ struct RoomPortal {
 	Common::String destinationPortal;
 };
 
+struct RoomCharacterSound {
+	Common::String character;
+	int32 sampleId;
+	Common::String fileName;
+};
+
 struct RoomDefinition {
 	Common::String name;
 	Common::String prefix;
@@ -32,6 +38,7 @@ struct RoomDefinition {
 	Common::Array<Common::String> maps;
 	Common::Array<Common::String> cameraMaps;
 	Common::Array<RoomPortal> portals;
+	Common::Array<RoomCharacterSound> characterSounds;
 };
 
 class ChapterDefinition {

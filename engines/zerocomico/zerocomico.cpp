@@ -5494,6 +5494,86 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 			debug(1, "Zero Comico: Giovanni walk speed %.3f units/s from %u JACS loop clips",
 			      walkSpeed, (uint)measuredWalkClips);
 
+			const CharacterAnimSet *walkAnimSet =
+				_playerCharacterScript.findAnimSet(_playerAnimSetName);
+			const CharacterDefinition *walkDefinition =
+				_playerCharacterScript.findCharacter(_playerCharacterScript.playerName);
+			Common::String lastPlayerEventSource;
+			int32 lastPlayerEventFrame = -1;
+			bool havePlayerEventFrame = false;
+
+			auto dispatchPlayerStepEvents = [&](const Common::String &source,
+			                                    float sourceFrame) {
+#ifdef USE_MAD
+				if (!walkAnimSet || !walkDefinition || !room)
+					return;
+
+				const NamedAnimationClip *clip =
+					_playerScene.findClipBySource(_playerSequences.bodyName, source);
+				if (!clip)
+					return;
+
+				const int32 currentFrame =
+					(int32)std::floor(sourceFrame - (float)clip->data.startFrame + 0.0001f);
+				const bool sourceChanged =
+					!havePlayerEventFrame || !lastPlayerEventSource.equalsIgnoreCase(source);
+
+				for (uint32 eventIndex = 0; eventIndex < walkAnimSet->stepEvents.size(); ++eventIndex) {
+					const CharacterStepEvent &stepEvent = walkAnimSet->stepEvents[eventIndex];
+					if (!stepEvent.animation.equalsIgnoreCase(source))
+						continue;
+
+					bool crossed = false;
+					if (sourceChanged) {
+						crossed = stepEvent.frame <= currentFrame;
+					} else if (currentFrame >= lastPlayerEventFrame) {
+						crossed = stepEvent.frame > lastPlayerEventFrame &&
+						          stepEvent.frame <= currentFrame;
+					} else {
+						crossed = stepEvent.frame > lastPlayerEventFrame ||
+						          stepEvent.frame <= currentFrame;
+					}
+					if (!crossed)
+						continue;
+
+					Common::String sampleName;
+					for (uint32 soundIndex = 0; soundIndex < room->characterSounds.size(); ++soundIndex) {
+						const RoomCharacterSound &sound = room->characterSounds[soundIndex];
+						const bool targetsPlayer =
+							sound.character.equalsIgnoreCase("MainPlayer") ||
+							sound.character.equalsIgnoreCase(walkDefinition->name);
+						if (targetsPlayer && sound.sampleId == stepEvent.sampleId) {
+							sampleName = sound.fileName;
+							break;
+						}
+					}
+					if (sampleName.empty()) {
+						for (uint32 sampleIndex = 0; sampleIndex < walkDefinition->samples.size(); ++sampleIndex) {
+							if (walkDefinition->samples[sampleIndex].id == stepEvent.sampleId) {
+								sampleName = walkDefinition->samples[sampleIndex].fileName;
+								break;
+							}
+						}
+					}
+					if (sampleName.empty())
+						continue;
+
+					playNamedMp3(_mixer, Audio::Mixer::kSFXSoundType, sampleName, nullptr,
+					             retailChannelVolume(2, 100.0f, sampleName));
+					debug(2, "Zero Comico: player step event %s frame %d -> %d (%s)",
+					      source.c_str(), (int)currentFrame, (int)stepEvent.sampleId,
+					      sampleName.c_str());
+				}
+
+				lastPlayerEventSource = source;
+				lastPlayerEventFrame = currentFrame;
+				havePlayerEventFrame = true;
+#else
+				(void)source;
+				(void)sourceFrame;
+#endif
+			};
+
 			bool starting = true;
 			uint32 animationClipIndex = 0;
 			Common::String animationSource = startClips[0];
@@ -5577,6 +5657,7 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 
 					updateAutoCamera();
 					updateDynamicCamera(animationSource, animationFrame);
+					dispatchPlayerStepEvents(animationSource, animationFrame);
 
 					if (!renderGameplayFrame(renderCamera, sceneDirectory, playerDirectory,
 					                         animationSource, animationFrame, frame)) {
@@ -5638,6 +5719,7 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 							break;
 						}
 						updateDynamicCamera(stopSource, stopFrame);
+						dispatchPlayerStepEvents(stopSource, stopFrame);
 						if (!renderGameplayFrame(renderCamera, sceneDirectory, playerDirectory,
 						                         stopSource, stopFrame, frame)) {
 							done = true;

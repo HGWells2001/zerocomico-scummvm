@@ -152,6 +152,24 @@ loop wrap, rather than by matching filenames in code. This covers companion
 voice/sputum cues and the Orca's `Stay` events at frames 205 and 240. Event
 audio is suppressed while a character's life controller is broken.
 
+## Player locomotion step sounds
+
+Playable-character locomotion uses a two-stage retail mapping. AnimSet
+`step_events` emit numeric sample ids, while each `Room` can remap those
+ids with `chsound <character> <id> <file>`. The supplied data uses ids 0 and
+1 for the alternating footsteps and contains **36** room mappings. Examples
+select metal, stone, cobblestone, wood, marble, cloud and Mp5-specific step
+pairs from `Sound/steps`.
+
+`ChapterDefinition` now retains those room-local `chsound` assignments.
+During BSP walking the runtime detects frame crossings in the active player's
+`Start*`/`Camm*` clips, resolves the event id through the current room
+first and then through the character's ordinary Sample table, and plays the
+resolved MP3 through retail sound class 2. The same dispatcher also accepts
+events on stop clips if custom data supplies them. This mirrors the data split
+used by the original engine instead of hard-coding a surface name from the
+room.
+
 ## Navigation
 
 The Mp1 start marker `r11_Start` resolves to the retail world position and

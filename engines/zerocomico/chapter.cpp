@@ -77,6 +77,16 @@ bool ChapterDefinition::parse(const ScriptProgram &program) {
 			room.maps.push_back(inst.args[0]);
 		} else if (inst.opcode.equalsIgnoreCase("cameramap") && !inst.args.empty()) {
 			room.cameraMaps.push_back(inst.args[0]);
+		} else if (inst.opcode.equalsIgnoreCase("chsound") && inst.args.size() >= 3) {
+			char *end = nullptr;
+			const long parsed = strtol(inst.args[1].c_str(), &end, 10);
+			if (end && *end == 0) {
+				RoomCharacterSound sound;
+				sound.character = inst.args[0];
+				sound.sampleId = (int32)parsed;
+				sound.fileName = inst.args[2];
+				room.characterSounds.push_back(sound);
+			}
 		} else if (inst.opcode.equalsIgnoreCase("portal") && inst.args.size() >= 2) {
 			RoomPortal portal;
 			portal.name = inst.args[0];
