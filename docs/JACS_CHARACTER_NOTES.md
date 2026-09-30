@@ -64,6 +64,30 @@ same TCB path before the axis is normalized by the pose matrix builder.
 Rigid child meshes are posed with the same hierarchy delta so the head and
 hat follow the animated body.
 
+## Pickup animation metadata
+
+The retail character scripts do not leave pickup animation choice implicit.
+Every shipped playable AnimSet defines:
+
+```text
+take_low: getdown 10
+take_Mid: get 10
+```
+
+and the Giovanni, Aldo and Giacomo ANJ files all contain the corresponding
+`GetDown` and `Get` clips. Their character scripts also declare animation
+events `Get { 15#2 }` and `GetDown { 15#2 }`, showing that frame 15 carries
+the pickup cue.
+
+The original executable has three pickup slots. Its defaults are `pickdw`
+(low), `pickmd` (mid) and `pickup` (high), each with parameter 10; the
+retail scripts override low and mid but never declare `take_high`.
+
+`CharacterScript` now preserves all three animation names and parameters per
+AnimSet instead of discarding them. This deliberately stops short of choosing
+low/mid from object geometry until that classifier has been verified against
+the executable.
+
 ## Navigation
 
 The Mp1 start marker `r11_Start` resolves to the retail world position and

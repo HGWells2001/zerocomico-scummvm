@@ -4,7 +4,21 @@
 
 #include "zerocomico/character_script.h"
 
+#include <cstdlib>
+
 namespace ZeroComico {
+
+namespace {
+
+static float parseAnimFloat(const Common::String &value, float fallback) {
+	char *end = nullptr;
+	const double parsed = strtod(value.c_str(), &end);
+	if (!end || end == value.c_str() || *end != 0)
+		return fallback;
+	return (float)parsed;
+}
+
+} // namespace
 
 CharacterScript::CharacterScript()
 	: combineStart(0xffffffffU), combineEnd(0xffffffffU) {
@@ -72,6 +86,45 @@ bool CharacterScript::parse() {
 				CharacterAnimSet animSet;
 				animSet.name = inst.args[0];
 				animSet.bodyName = inst.args[1];
+
+				// These are the retail engine defaults reconstructed from
+				// Zero Comico.exe. The shipped playable AnimSets override low/mid
+				// with GetDown/Get, while take_high remains at its default.
+				animSet.takeLowAnimation = "pickdw";
+				animSet.takeMidAnimation = "pickmd";
+				animSet.takeHighAnimation = "pickup";
+				animSet.takeLowDistance = 10.0f;
+				animSet.takeMidDistance = 10.0f;
+				animSet.takeHighDistance = 10.0f;
+
+				const int animSetDepth = inst.depth;
+				for (uint32 k = j + 1; k < end; ++k) {
+					const ScriptInstruction &property = instructions[k];
+					if ((property.opcode.equalsIgnoreCase("AnimSet") &&
+					     property.depth <= animSetDepth) ||
+					    property.depth < animSetDepth)
+						break;
+
+					Common::String *animation = nullptr;
+					float *distance = nullptr;
+					if (property.opcode.equalsIgnoreCase("take_low")) {
+						animation = &animSet.takeLowAnimation;
+						distance = &animSet.takeLowDistance;
+					} else if (property.opcode.equalsIgnoreCase("take_mid")) {
+						animation = &animSet.takeMidAnimation;
+						distance = &animSet.takeMidDistance;
+					} else if (property.opcode.equalsIgnoreCase("take_high")) {
+						animation = &animSet.takeHighAnimation;
+						distance = &animSet.takeHighDistance;
+					}
+
+					if (!animation || property.args.empty())
+						continue;
+					*animation = property.args[0];
+					if (property.args.size() >= 2)
+						*distance = parseAnimFloat(property.args[1], *distance);
+				}
+
 				character.animSets.push_back(animSet);
 				continue;
 			}

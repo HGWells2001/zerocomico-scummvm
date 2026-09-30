@@ -16,6 +16,12 @@ namespace ZeroComico {
 struct CharacterAnimSet {
 	Common::String name;
 	Common::String bodyName;
+	Common::String takeLowAnimation;
+	Common::String takeMidAnimation;
+	Common::String takeHighAnimation;
+	float takeLowDistance;
+	float takeMidDistance;
+	float takeHighDistance;
 };
 
 struct CharacterDefinition {
