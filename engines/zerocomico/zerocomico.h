@@ -110,7 +110,9 @@ private:
 	bool setSceneEntityTranslation(const Common::String &name, const Vec3f &position);
 	bool setSceneEntityVectorTransform(const Common::String &name, const ShapeMarker &marker);
 	CpuCharacterRuntime *findCpuCharacter(const Common::String &name);
+	bool instantiateCpuCharacter(const Common::String &name);
 	bool giveLifeToCharacter(const Common::String &name);
+	void ensureCpuCharactersForRoom(const Common::String &roomName);
 	void installCpuCharactersForRoom(const Common::String &roomName);
 
 	const ADGameDescription *_gameDescription;
@@ -204,6 +206,7 @@ private:
 	Common::Array<Vec3f> _setpControllerPositions;
 	Common::Array<DynamicSceneEntity> _dynamicSceneEntities;
 	Common::Array<CpuCharacterRuntime> _cpuCharacters;
+	Common::Array<Common::String> _deferredBrokenCpuCharacters;
 	Common::Array<RenderActor> _activeRenderActors;
 	ScriptVM _scriptVM;
 	bool _interfaceDisabled;

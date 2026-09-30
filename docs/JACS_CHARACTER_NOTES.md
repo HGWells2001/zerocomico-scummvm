@@ -90,9 +90,35 @@ active player AnimSet**: it starts from the character script's
 swap. This matters because pickup metadata belongs to an AnimSet rather than to
 the character globally.
 
-The actual low/mid/high classifier is still intentionally not guessed. The
-original `take` path is being reconstructed before wiring these animations to
-object geometry.
+The object-side `take_none/take_low/take_mid/take_high` token is now decoded
+as the retail pickup classifier. The runtime selects the active AnimSet's
+matching animation, transfers the inventory object at its declared event tick,
+and dispatches the parsed `step_events` sample cue from the same character
+metadata.
+
+## CPU character instances
+
+The retail `char.isc` files declare 53 CPU-player characters; **45** of them
+have both a body AnimSet and an explicit `SetCharPos_Entity` or
+`SetCharPos_Vector` spawn marker. Those 45 are now instantiated lazily when
+their room becomes active rather than being merged by mesh name into the room
+SceneModel.
+
+CPU bodies render as independent actors in the room's shared z-buffer. This is
+required for duplicate/model-related characters such as `Granchio` and
+`Granchio01`, and it preserves each body's own texture directory. The loader
+tries both chapter-local `MpX/bodies` assets and the shared `Mpx/bodies`
+tree used by Aldo, Giovanni and Giacomo.
+
+Each character's retail `initialize:` instruction range is retained and run
+when that CPU instance is created. The currently shipped initializer vocabulary
+(`SetCharPos_Entity`, `SetCharPos_Vector`, `SetWaitState`,
+`BreakLifeToChar`, `play` and `playl`) therefore feeds the ordinary
+runtime paths instead of being approximated separately. A `BreakLifeToChar`
+issued before a later-room body has been loaded is remembered and applied when
+that character is instantiated; a subsequent `GiveLifeToChar` clears it.
+
+The autonomous per-frame `ControlCode:` scheduler is still separate work.
 
 ## Navigation
 

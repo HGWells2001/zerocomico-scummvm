@@ -1451,29 +1451,13 @@ void ZeroComicoEngine::installCpuCharactersForRoom(const Common::String &roomNam
 		}
 	}
 }
-bool ZeroComicoEngine::giveLifeToCharacter(const Common::String &name) {
-	if (name.equalsIgnoreCase("MainPlayer") ||
-	    name.equalsIgnoreCase(_playerCharacterScript.playerName))
+bool ZeroComicoEngine::instantiateCpuCharacter(const Common::String &name) {
+	if (findCpuCharacter(name))
 		return true;
-
-	CpuCharacterRuntime *existing = findCpuCharacter(name);
-	if (existing) {
-		// GiveLifeToChar's retail callback re-registers the controller, restores
-		// its active flag and clears wait state +0x150.
-		existing->alive = true;
-		existing->lifeBroken = false;
-		existing->waitState = 0;
-		if (_activeRoomName.equalsIgnoreCase(existing->roomName))
-			installCpuCharactersForRoom(existing->roomName);
-		return true;
-	}
 
 	const CharacterDefinition *definition = _playerCharacterScript.findCharacter(name);
-	if (!definition || !definition->cpuPlayer || definition->initialBodyName.empty()) {
-		warning("Zero Comico: GiveLifeToChar cannot resolve CPU character %s",
-		        name.c_str());
+	if (!definition || !definition->cpuPlayer || definition->initialBodyName.empty())
 		return false;
-	}
 
 	Common::String assetStem = definition->initialBodyName;
 	const uint32 separator = assetStem.find('_');
@@ -1482,25 +1466,32 @@ bool ZeroComicoEngine::giveLifeToCharacter(const Common::String &name) {
 
 	Common::String lowerStem = assetStem;
 	lowerStem.toLowercase();
-	const Common::Path bodyDirectory =
-		Common::Path(_currentMainPlace + "/bodies").appendComponent(lowerStem);
+
+	Common::Array<Common::Path> directories;
+	directories.push_back(
+		Common::Path(_currentMainPlace + "/bodies").appendComponent(lowerStem));
+	directories.push_back(Common::Path("Mpx/bodies").appendComponent(lowerStem));
+	directories.push_back(Common::Path("Mpx/bodies").appendComponent(assetStem));
+	directories.push_back(Common::Path("Mpx/bodies").appendComponent(name));
+
+	Common::Array<Common::String> fileStems;
+	fileStems.push_back(assetStem);
+	if (!lowerStem.equalsIgnoreCase(assetStem) || lowerStem != assetStem)
+		fileStems.push_back(lowerStem);
+	if (!name.equalsIgnoreCase(assetStem))
+		fileStems.push_back(name);
 
 	SceneModel body;
-	bool loaded = body.loadPair(
-		bodyDirectory.appendComponent(assetStem + ".p3d"),
-		bodyDirectory.appendComponent(assetStem + ".anj"));
-	if (!loaded) {
-		loaded = body.loadPair(
-			bodyDirectory.appendComponent(lowerStem + ".p3d"),
-			bodyDirectory.appendComponent(lowerStem + ".anj"));
-	}
-	if (!loaded) {
-		// Some retail folders use a lower-case directory but preserve the
-		// character declaration's capitalization in the asset filename
-		// (notably Mp4/bodies/testa/Testa.p3d).
-		loaded = body.loadPair(
-			bodyDirectory.appendComponent(name + ".p3d"),
-			bodyDirectory.appendComponent(name + ".anj"));
+	Common::Path bodyDirectory;
+	bool loaded = false;
+	for (uint32 directoryIndex = 0; directoryIndex < directories.size() && !loaded; ++directoryIndex) {
+		for (uint32 stemIndex = 0; stemIndex < fileStems.size() && !loaded; ++stemIndex) {
+			loaded = body.loadPair(
+				directories[directoryIndex].appendComponent(fileStems[stemIndex] + ".p3d"),
+				directories[directoryIndex].appendComponent(fileStems[stemIndex] + ".anj"));
+			if (loaded)
+				bodyDirectory = directories[directoryIndex];
+		}
 	}
 	if (!loaded) {
 		warning("Zero Comico: cannot load CPU body %s for %s",
@@ -1523,21 +1514,74 @@ bool ZeroComicoEngine::giveLifeToCharacter(const Common::String &name) {
 	runtime.facing.y = 0.0f;
 	runtime.facing.z = -1.0f;
 	runtime.alive = true;
-	runtime.lifeBroken = definition->breakLifeOnInitialize;
+	runtime.lifeBroken =
+		definition->breakLifeOnInitialize ||
+		containsIgnoreCase(_deferredBrokenCpuCharacters, definition->name);
 	runtime.positioned = false;
 	runtime.haveFacing = false;
-	runtime.waitState = 0;
+	runtime.waitState = runtime.lifeBroken ? 0x40 : 0;
 	_cpuCharacters.push_back(runtime);
 
-	debug(1, "Zero Comico: GiveLifeToChar activated %s using %s in %s%s",
-	      runtime.name.c_str(), runtime.bodyRoot.c_str(), runtime.roomName.c_str(),
-	      runtime.lifeBroken ? " (life immediately broken by initialize block)" : "");
+	CpuCharacterRuntime *created = findCpuCharacter(definition->name);
+	if (!created)
+		return false;
 
-	if (_activeRoomName.equalsIgnoreCase(runtime.roomName))
-		installCpuCharactersForRoom(runtime.roomName);
+	if (definition->initializeStart != 0xffffffffU &&
+	    definition->initializeEnd != 0xffffffffU &&
+	    definition->initializeStart < definition->initializeEnd) {
+		if (!_scriptVM.run(_playerCharacterScript.program(),
+		                   definition->initializeStart, definition->initializeEnd, 128)) {
+			warning("Zero Comico: CPU initialize block for %s stopped early",
+			        definition->name.c_str());
+		}
+	}
+
+	debug(1, "Zero Comico: instantiated CPU %s using %s in %s%s",
+	      created->name.c_str(), created->bodyRoot.c_str(), created->roomName.c_str(),
+	      created->lifeBroken ? " (life broken)" : "");
 	return true;
 }
 
+bool ZeroComicoEngine::giveLifeToCharacter(const Common::String &name) {
+	if (name.equalsIgnoreCase("MainPlayer") ||
+	    name.equalsIgnoreCase(_playerCharacterScript.playerName))
+		return true;
+
+	if (!instantiateCpuCharacter(name)) {
+		warning("Zero Comico: GiveLifeToChar cannot resolve CPU character %s",
+		        name.c_str());
+		return false;
+	}
+
+	CpuCharacterRuntime *character = findCpuCharacter(name);
+	if (!character)
+		return false;
+
+	removeIgnoreCase(_deferredBrokenCpuCharacters, name);
+	character->alive = true;
+	character->lifeBroken = false;
+	character->waitState = 0;
+	if (_activeRoomName.equalsIgnoreCase(character->roomName))
+		installCpuCharactersForRoom(character->roomName);
+
+	debug(1, "Zero Comico: GiveLifeToChar activated %s", character->name.c_str());
+	return true;
+}
+
+void ZeroComicoEngine::ensureCpuCharactersForRoom(const Common::String &roomName) {
+	for (uint32 i = 0; i < _playerCharacterScript.characters.size(); ++i) {
+		const CharacterDefinition &definition = _playerCharacterScript.characters[i];
+		if (!definition.cpuPlayer ||
+		    !definition.roomName.equalsIgnoreCase(roomName) ||
+		    definition.initialBodyName.empty() ||
+		    (definition.initialEntity.empty() && definition.initialVector.empty()))
+			continue;
+		if (!findCpuCharacter(definition.name) && !instantiateCpuCharacter(definition.name))
+			warning("Zero Comico: could not instantiate CPU %s for %s",
+			        definition.name.c_str(), roomName.c_str());
+	}
+	installCpuCharactersForRoom(roomName);
+}
 bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction) {
 	const Common::String &op = instruction.opcode;
 
@@ -1639,99 +1683,67 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 		return true;
 	}
 
+	if (op.equalsIgnoreCase("SetCharPos_Entity")) {
+		if (instruction.args.size() < 2)
+			return false;
+
+		CpuCharacterRuntime *character = findCpuCharacter(instruction.args[0]);
+		if (!character)
+			return false;
+		const NamedMesh *spawn = _activeScene.findMesh(instruction.args[1]);
+		if (!spawn)
+			return false;
+
+		character->position = spawn->data.transform.translation;
+		character->positioned = true;
+		character->initialEntity = instruction.args[1];
+
+		Vec3f facing = {
+			-spawn->data.transform.matrix[2],
+			0.0f,
+			-spawn->data.transform.matrix[8]
+		};
+		if (normalizeVec3(facing)) {
+			character->facing = facing;
+			character->haveFacing = true;
+		}
+		return true;
+	}
+
 	if (op.equalsIgnoreCase("SetCharPos_Vector")) {
 		if (instruction.args.size() < 2)
 			return false;
 
-		// Runtime puzzle scripts use this opcode for MainPlayer (or the actual
-		// playable-character name). CPU spawn versions live in char.isc initialize
-		// blocks and are handled by CharacterScript/installCpuCharactersForRoom.
-		// Do not silently teleport the player when an unrelated character name is
-		// supplied by custom or malformed data.
+		const ShapeMarker *marker = _activeShapes.find(instruction.args[1]);
+		if (!marker)
+			return false;
+
 		const Common::String &characterName = instruction.args[0];
 		const bool targetsPlayer =
 			characterName.equalsIgnoreCase("MainPlayer") ||
 			(!_playerCharacterScript.playerName.empty() &&
 			 characterName.equalsIgnoreCase(_playerCharacterScript.playerName));
-		if (!targetsPlayer) {
-			warning("Zero Comico: runtime SetCharPos_Vector for non-player %s is unsupported",
-			        characterName.c_str());
-			return false;
-		}
-
-		const ShapeMarker *marker = _activeShapes.find(instruction.args[1]);
-		if (!marker)
-			return false;
-		_playerPosition = marker->a;
-		_playerFacingTarget = marker->b;
-		_havePlayerStart = true;
-		_playerNavNode = -1;
-		return true;
-	}
-
-	if (op.equalsIgnoreCase("chplace")) {
-		if (instruction.args.empty())
-			return false;
-		_pendingRoomName = instruction.args[0];
-		_pendingRoomCutscene.clear();
-		_pendingRoomMapRoomName.clear();
-		_pendingRoomMapName.clear();
-		if (instruction.args.size() >= 2)
-			_pendingRoomCutscene = instruction.args[1];
-		return true;
-	}
-
-	if (op.equalsIgnoreCase("setmap")) {
-		if (instruction.args.size() < 2 || _currentMainPlace.empty())
-			return false;
-
-		const Common::String &targetRoom = instruction.args[0];
-		const Common::String &requestedMap = instruction.args[1];
-
-		// Retail scripts commonly issue SetPlace <room> followed immediately by
-		// SetMap <same room> <map>. The destination room is not active yet, so
-		// defer that map selection until the room transition is committed.
-		if (!targetRoom.equalsIgnoreCase(_activeRoomName)) {
-			_pendingRoomMapRoomName = targetRoom;
-			_pendingRoomMapName = requestedMap;
-			debug(1, "Zero Comico: queued map %s for destination room %s",
-			      requestedMap.c_str(), targetRoom.c_str());
+		if (targetsPlayer) {
+			_playerPosition = marker->a;
+			_playerFacingTarget = marker->b;
+			_havePlayerStart = true;
+			_playerNavNode = -1;
 			return true;
 		}
 
-		if (!_activeRoomMaps.empty() && !containsIgnoreCase(_activeRoomMaps, requestedMap)) {
-			warning("Zero Comico: map %s is not declared for room %s",
-			        requestedMap.c_str(), _activeRoomName.c_str());
+		CpuCharacterRuntime *character = findCpuCharacter(characterName);
+		if (!character)
 			return false;
+
+		character->position = marker->a;
+		character->positioned = true;
+		character->initialVector = instruction.args[1];
+		Vec3f facing = subtractVec3(marker->b, marker->a);
+		facing.y = 0.0f;
+		if (normalizeVec3(facing)) {
+			character->facing = facing;
+			character->haveFacing = true;
 		}
-
-		const Common::Path gameplayDirectory(_currentMainPlace + "/gameplay");
-		const Common::Path mapPath = gameplayDirectory.appendComponent(requestedMap);
-		BspMap replacement;
-		if (!replacement.load(mapPath))
-			return false;
-
-		// Retail room.isc declares exactly one camera map for each gameplay room,
-		// even when that room exposes several selectable walk maps. SetMap changes
-		// only the character-navigation map; the room's MapCam remains active.
-		_activeWalkMap = replacement;
-		_playerNavNode = _activeWalkMap.graph.empty()
-			? -1 : _activeWalkMap.nearestGraphNode(_playerPosition.x, _playerPosition.z);
-		debug(1, "Zero Comico: switched walk map to %s at node %d",
-		      requestedMap.c_str(), _playerNavNode);
-		return true;
-	}
-
-	if (op.equalsIgnoreCase("ChangeMainplace")) {
-		if (instruction.args.empty())
-			return false;
-		_pendingMainPlace = instruction.args[0];
-		_pendingRoomName.clear();
-		_pendingRoomCutscene.clear();
-		_pendingRoomMapRoomName.clear();
-		_pendingRoomMapName.clear();
-		debug(1, "Zero Comico: requested main-place transition to %s",
-		      _pendingMainPlace.c_str());
 		return true;
 	}
 
@@ -2625,9 +2637,8 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 
 		CpuCharacterRuntime *character = findCpuCharacter(instruction.args[0]);
 		if (!character) {
-			// Some room scripts can break a character before this lightweight
-			// runtime has instantiated its CPU body. Retail treats the command as a
-			// state change, not an object-removal failure, so keep script progress.
+			if (!containsIgnoreCase(_deferredBrokenCpuCharacters, instruction.args[0]))
+				_deferredBrokenCpuCharacters.push_back(instruction.args[0]);
 			debug(2, "Zero Comico: BreakLifeToChar deferred for %s",
 			      instruction.args[0].c_str());
 			return true;
@@ -3798,6 +3809,8 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 	_setpControllerPositions.clear();
 	_dynamicSceneEntities.clear();
 	_cpuCharacters.clear();
+	_deferredBrokenCpuCharacters.clear();
+	_activeRenderActors.clear();
 
 	const Common::Path roomScript(level + "/gameplay/room.isc");
 	ScriptProgram roomProgram;
@@ -3931,6 +3944,11 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 		      (uint)_playerScene.meshes.size(), (uint)_playerScene.clips.size());
 
 	_playerAssetDirectory = playerDirectory;
+
+	// CPU bodies are loaded lazily per room. Their initialize blocks run through
+	// the same ScriptVM once the destination room scene is available, so spawn
+	// markers, wait state and initial play/playl commands remain data-driven.
+	ensureCpuCharactersForRoom(_activeRoomName);
 
 	if (!_playerSequences.load(playerDirectory.appendComponent(playerAssetStem + ".seq"))) {
 		warning("Zero Comico: cannot parse player sequence file %s.seq",
@@ -4459,7 +4477,7 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 			                                _setpControllerPositions[controllerIndex]);
 
 		installDynamicBackgroundForRoom(room->name);
-		installCpuCharactersForRoom(room->name);
+		ensureCpuCharactersForRoom(room->name);
 
 		_activeWalkMap = BspMap();
 		_activeCameraMap = BspMap();

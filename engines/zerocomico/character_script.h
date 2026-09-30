@@ -48,6 +48,8 @@ struct CharacterDefinition {
 	Common::String mainPlace;
 	Common::String roomName;
 	bool breakLifeOnInitialize;
+	uint32 initializeStart;
+	uint32 initializeEnd;
 	Common::Array<CharacterSample> samples;
 	Common::Array<CharacterAnimSet> animSets;
 };
