@@ -314,6 +314,19 @@ Placed mode; while `_playerNoCameraReset` is active, it instead queues the
 last camera selected by `SetDialogCameras`, preserving that shot across the
 handoff. Dynamic Subjective/Spot modes are left to their own runtime update.
 
+## Retail user-effect state
+
+Mp2 uses `e3d_parse "set_usereffect_state ..."` 25 times. Direct
+`japotek3d.dll` disassembly shows that the command resolves the named 3D
+object, follows its attached user-effect pointer, and writes the supplied
+integer directly to the effect state field at offset `+0xCC`.
+
+The shipped calls touch `r21_Scale`, `r21_ScaleG`, `r24_Scale`,
+`r24_ScaleG`, `r25_Scale`, `r25_ScaleG` and `r21_Rotte`, using only
+states 0 and 1. The runtime now preserves that name-to-state table exactly
+instead of silently discarding the commands. Rendering the actual Scale/Rotte
+effect remains a separate renderer-fidelity task.
+
 ## Retail depth cue
 
 The retail script corpus uses `dcue_all` exactly once, during Mp5 startup:

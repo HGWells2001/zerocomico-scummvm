@@ -168,6 +168,8 @@ private:
 	Common::Array<bool> _environmentStateEnabled;
 	Common::Array<Common::String> _lightStateNames;
 	Common::Array<bool> _lightStateEnabled;
+	Common::Array<Common::String> _userEffectStateNames;
+	Common::Array<int32> _userEffectStates;
 	Common::Array<MixerVolumeSnapshot> _masterVolumeStack;
 	Common::String _loopCutName;
 	Common::String _loopCutAssetStem;

@@ -2585,9 +2585,36 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 			return true;
 		}
 
-		// Other retail e3d_Parse commands, notably set_usereffect_state, belong
-		// to a separate renderer-effect subsystem. Preserve their script boundary
-		// until that subsystem is reconstructed.
+		if (command[0].equalsIgnoreCase("set_usereffect_state")) {
+			if (command.size() < 3)
+				return false;
+
+			char *end = nullptr;
+			const long parsed = strtol(command[2].c_str(), &end, 10);
+			if (!end || end == command[2].c_str() || *end != 0)
+				return false;
+			const int32 state = (int32)parsed;
+
+			bool found = false;
+			for (uint32 i = 0; i < _userEffectStateNames.size(); ++i) {
+				if (!_userEffectStateNames[i].equalsIgnoreCase(command[1]))
+					continue;
+				_userEffectStates[i] = state;
+				found = true;
+				break;
+			}
+			if (!found) {
+				_userEffectStateNames.push_back(command[1]);
+				_userEffectStates.push_back(state);
+			}
+
+			debug(1, "Zero Comico: user effect %s state = %d",
+			      command[1].c_str(), (int)state);
+			return true;
+		}
+
+		// The remaining retail e3d_Parse form "shade" belongs to the lighting
+		// path and is kept separate from user-effect state.
 		return true;
 	}
 
@@ -3421,6 +3448,8 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 	_environmentStateEnabled.clear();
 	_lightStateNames.clear();
 	_lightStateEnabled.clear();
+	_userEffectStateNames.clear();
+	_userEffectStates.clear();
 	_masterVolumeStack.clear();
 	_sceneLoopTargets.clear();
 	_sceneLoopSources.clear();
