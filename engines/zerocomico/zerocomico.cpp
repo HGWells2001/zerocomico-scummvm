@@ -1783,6 +1783,71 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 		return true;
 	}
 
+	if (op.equalsIgnoreCase("chplace")) {
+		if (instruction.args.empty())
+			return false;
+		_pendingRoomName = instruction.args[0];
+		_pendingRoomCutscene.clear();
+		_pendingRoomMapRoomName.clear();
+		_pendingRoomMapName.clear();
+		if (instruction.args.size() >= 2)
+			_pendingRoomCutscene = instruction.args[1];
+		return true;
+	}
+
+	if (op.equalsIgnoreCase("setmap")) {
+		if (instruction.args.size() < 2 || _currentMainPlace.empty())
+			return false;
+
+		const Common::String &targetRoom = instruction.args[0];
+		const Common::String &requestedMap = instruction.args[1];
+
+		// Retail scripts commonly issue SetPlace <room> followed immediately by
+		// SetMap <same room> <map>. The destination room is not active yet, so
+		// defer that map selection until the room transition is committed.
+		if (!targetRoom.equalsIgnoreCase(_activeRoomName)) {
+			_pendingRoomMapRoomName = targetRoom;
+			_pendingRoomMapName = requestedMap;
+			debug(1, "Zero Comico: queued map %s for destination room %s",
+			      requestedMap.c_str(), targetRoom.c_str());
+			return true;
+		}
+
+		if (!_activeRoomMaps.empty() && !containsIgnoreCase(_activeRoomMaps, requestedMap)) {
+			warning("Zero Comico: map %s is not declared for room %s",
+			        requestedMap.c_str(), _activeRoomName.c_str());
+			return false;
+		}
+
+		const Common::Path gameplayDirectory(_currentMainPlace + "/gameplay");
+		const Common::Path mapPath = gameplayDirectory.appendComponent(requestedMap);
+		BspMap replacement;
+		if (!replacement.load(mapPath))
+			return false;
+
+		// SetMap changes only the character-navigation map. The room-declared
+		// camera map remains active until a room transition replaces it.
+		_activeWalkMap = replacement;
+		_playerNavNode = _activeWalkMap.graph.empty()
+			? -1 : _activeWalkMap.nearestGraphNode(_playerPosition.x, _playerPosition.z);
+		debug(1, "Zero Comico: switched walk map to %s at node %d",
+		      requestedMap.c_str(), _playerNavNode);
+		return true;
+	}
+
+	if (op.equalsIgnoreCase("ChangeMainplace")) {
+		if (instruction.args.empty())
+			return false;
+		_pendingMainPlace = instruction.args[0];
+		_pendingRoomName.clear();
+		_pendingRoomCutscene.clear();
+		_pendingRoomMapRoomName.clear();
+		_pendingRoomMapName.clear();
+		debug(1, "Zero Comico: requested main-place transition to %s",
+		      _pendingMainPlace.c_str());
+		return true;
+	}
+
 	if (op.equalsIgnoreCase("SetPlace")) {
 		if (instruction.args.empty())
 			return false;
