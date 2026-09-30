@@ -47,6 +47,7 @@ bool PuzzleScript::parse() {
 		object.name = header.args[0];
 		object.range = 0.0f;
 		object.size = 1.0f;
+		object.takeMode = kPuzzleTakeNone;
 		object.enabled = true;
 		object.examinable = false;
 		object.pickable = false;
@@ -70,7 +71,15 @@ bool PuzzleScript::parse() {
 			if (inst.depth < objectDepth)
 				break;
 
-			if (inst.opcode.equalsIgnoreCase("entity") && !inst.args.empty()) {
+			if (inst.opcode.equalsIgnoreCase("take_none")) {
+				object.takeMode = kPuzzleTakeNone;
+			} else if (inst.opcode.equalsIgnoreCase("take_low")) {
+				object.takeMode = kPuzzleTakeLow;
+			} else if (inst.opcode.equalsIgnoreCase("take_mid")) {
+				object.takeMode = kPuzzleTakeMid;
+			} else if (inst.opcode.equalsIgnoreCase("take_high")) {
+				object.takeMode = kPuzzleTakeHigh;
+			} else if (inst.opcode.equalsIgnoreCase("entity") && !inst.args.empty()) {
 				object.entity = inst.args[0];
 			} else if (inst.opcode.equalsIgnoreCase("polygon") && !inst.args.empty()) {
 				object.polygon = inst.args[0];

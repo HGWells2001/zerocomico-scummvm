@@ -13,6 +13,13 @@
 
 namespace ZeroComico {
 
+enum PuzzleTakeMode {
+	kPuzzleTakeNone = 0,
+	kPuzzleTakeLow,
+	kPuzzleTakeMid,
+	kPuzzleTakeHigh
+};
+
 struct PuzzleObject {
 	Common::String name;
 	Common::String entity;
@@ -22,6 +29,7 @@ struct PuzzleObject {
 	Common::String examineText;
 	float range;
 	float size;
+	PuzzleTakeMode takeMode;
 	bool enabled;
 	bool examinable;
 	bool pickable;

@@ -350,6 +350,20 @@ their BGRA frames, and accumulates animation time only while the matching user
 effect is non-zero. Disabling and re-enabling Scale/ScaleG therefore pauses
 and resumes the animation instead of restarting it.
 
+## Retail pickup class
+
+The object-side `take_low`, `take_mid`, `take_high` and `take_none`
+tokens are an explicit pickup classification, not a height test performed at
+pickup time. In `Zero Comico.exe` the object parser maps them to the internal
+values `0x55`, `0x56`, `0x57` and `0` respectively.
+
+All 357 `Object` declarations in the supplied `Mp1..Mp5/gameplay/puzzle.isc`
+files contain exactly one of these tokens: **297 none, 27 low, 33 mid and
+0 high**. The shipped character AnimSets independently provide the animation
+name and approach distance for each class. The runtime therefore records the
+object classification directly in `PuzzleObject`; selecting and playing the
+corresponding character pickup animation remains a separate runtime step.
+
 ## Retail depth cue
 
 The retail script corpus uses `dcue_all` exactly once, during Mp5 startup:
