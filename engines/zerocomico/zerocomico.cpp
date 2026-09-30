@@ -3403,12 +3403,57 @@ bool ZeroComicoEngine::renderGameplayFrame(const RenderCamera &camera,
 	if (!_playerScene.meshes.empty() && _havePlayerStart) {
 		const Common::String playerRoot = !_playerSequences.bodyName.empty()
 			? _playerSequences.bodyName : _playerCharacterScript.initialBodyName;
-		if (!_playerScene.poseSkinnedGeometry(playerRoot, "Stay", animationSource, animationFrame))
+		Common::String playerSource = animationSource;
+		float playerFrame = animationFrame;
+
+		// Scripted character play/playl commands own the idle actor while their
+		// clip is active. Explicit locomotion/pickup rendering remains
+		// authoritative so an ambient animation cannot interrupt movement.
+		if (animationSource.equalsIgnoreCase("Stay")) {
+			for (uint32 loopIndex = 0; loopIndex < _sceneLoopTargets.size(); ++loopIndex) {
+				if (!_sceneLoopTargets[loopIndex].equalsIgnoreCase(playerRoot))
+					continue;
+				const NamedAnimationClip *clip = _playerScene.findClipBySource(
+					playerRoot, _sceneLoopSources[loopIndex]);
+				if (!clip)
+					continue;
+				playerSource = _sceneLoopSources[loopIndex];
+				const float firstFrame = (float)clip->data.startFrame;
+				const float lastFrame = (float)clip->data.endFrame;
+				const float frameCount = lastFrame >= firstFrame
+					? lastFrame - firstFrame + 1.0f : 1.0f;
+				const float elapsedFrames =
+					(float)(now - _sceneLoopStartMillis[loopIndex]) * 25.0f / 1000.0f;
+				playerFrame = firstFrame + std::fmod(elapsedFrames, frameCount);
+				break;
+			}
+
+			for (uint32 shotIndex = 0; shotIndex < _sceneOneShotTargets.size(); ++shotIndex) {
+				if (!_sceneOneShotTargets[shotIndex].equalsIgnoreCase(playerRoot))
+					continue;
+				const NamedAnimationClip *clip = _playerScene.findClipBySource(
+					playerRoot, _sceneOneShotSources[shotIndex]);
+				if (!clip)
+					continue;
+				const float firstFrame = (float)clip->data.startFrame;
+				const float lastFrame = (float)clip->data.endFrame;
+				const float elapsedFrames =
+					(float)(now - _sceneOneShotStartMillis[shotIndex]) * 25.0f / 1000.0f;
+				const float shotFrame = firstFrame + elapsedFrames;
+				if (shotFrame <= lastFrame) {
+					playerSource = _sceneOneShotSources[shotIndex];
+					playerFrame = shotFrame;
+				}
+				break;
+			}
+		}
+
+		if (!_playerScene.poseSkinnedGeometry(playerRoot, "Stay", playerSource, playerFrame))
 			warning("Zero Comico: could not evaluate player skeletal pose %s at %.2f",
-			        animationSource.c_str(), animationFrame);
+			        playerSource.c_str(), playerFrame);
 
 		Common::Array<Common::String> playerVisible;
-		_playerScene.visibleMeshesForSource(animationSource, animationFrame, playerVisible);
+		_playerScene.visibleMeshesForSource(playerSource, playerFrame, playerVisible);
 		if (!_playerHatVisible) {
 			for (uint32 visibleIndex = playerVisible.size(); visibleIndex > 0; --visibleIndex) {
 				Common::String lowerName = playerVisible[visibleIndex - 1];
@@ -3426,10 +3471,10 @@ bool ZeroComicoEngine::renderGameplayFrame(const RenderCamera &camera,
 		const float faceX = _playerFacingTarget.x - _playerPosition.x;
 		const float faceZ = _playerFacingTarget.z - _playerPosition.z;
 		playerActor.transform.yawRadians = std::atan2(faceX, faceZ);
-		if (!sampleRootTransform(_playerScene, playerRoot, animationSource, animationFrame,
+		if (!sampleRootTransform(_playerScene, playerRoot, playerSource, playerFrame,
 		                         playerActor.transform))
 			warning("Zero Comico: player %s root transform missing; using identity root pose",
-			        animationSource.c_str());
+			        playerSource.c_str());
 		_activeRenderActors.push_back(playerActor);
 	}
 
@@ -3466,14 +3511,15 @@ bool ZeroComicoEngine::renderGameplayFrame(const RenderCamera &camera,
 				character.bodyRoot, _sceneOneShotSources[shotIndex]);
 			if (!clip)
 				continue;
-			cpuSource = _sceneOneShotSources[shotIndex];
 			const float firstFrame = (float)clip->data.startFrame;
 			const float lastFrame = (float)clip->data.endFrame;
 			const float elapsedFrames =
 				(float)(now - _sceneOneShotStartMillis[shotIndex]) * 25.0f / 1000.0f;
-			cpuFrame = firstFrame + elapsedFrames;
-			if (cpuFrame > lastFrame)
-				cpuFrame = lastFrame;
+			const float shotFrame = firstFrame + elapsedFrames;
+			if (shotFrame <= lastFrame) {
+				cpuSource = _sceneOneShotSources[shotIndex];
+				cpuFrame = shotFrame;
+			}
 			break;
 		}
 

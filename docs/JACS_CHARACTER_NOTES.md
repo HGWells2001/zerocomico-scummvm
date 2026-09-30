@@ -136,6 +136,15 @@ signature `ennn` and forwards its three numeric arguments directly to the
 entity position setter. Astro's `Astro_X Astro_Y 8.218` values are therefore
 used as runtime coordinates with no scale conversion.
 
+Character-targeted `play` is treated as a transient one-shot: while the
+decoded ANJ clip is inside its start/end frame range it overrides the actor's
+idle pose, then the character falls back to its active `playl` loop or
+`Stay`. This is intentionally different from room-object `play`, whose
+final pose remains persistent for doors and other stateful geometry. The
+Mp1/Mp2/Mp3 companion `Stay_gia`, `Stay_gio` and `Stay_ald` clips are
+present in the supplied Giovanni/Aldo/Giacomo ANJ files and now render through
+this actor-specific path.
+
 ## Navigation
 
 The Mp1 start marker `r11_Start` resolves to the retail world position and
