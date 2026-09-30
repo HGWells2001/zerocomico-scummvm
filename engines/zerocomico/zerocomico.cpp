@@ -145,6 +145,23 @@ static bool parseScriptFloat(const Common::String &token, float &value) {
 	return true;
 }
 
+static void splitE3dCommand(const Common::String &command,
+                            Common::Array<Common::String> &tokens) {
+	tokens.clear();
+	Common::String current;
+	for (uint32 i = 0; i <= command.size(); ++i) {
+		const char ch = i < command.size() ? command[i] : ' ';
+		if (ch == ' ' || ch == '\t' || ch == ',') {
+			if (!current.empty()) {
+				tokens.push_back(current);
+				current.clear();
+			}
+			continue;
+		}
+		current += ch;
+	}
+}
+
 static bool removeIgnoreCase(Common::Array<Common::String> &values,
                              const Common::String &value) {
 	for (uint32 i = 0; i < values.size(); ++i) {
@@ -611,10 +628,16 @@ ZeroComicoEngine::ZeroComicoEngine(OSystem *syst, const ADGameDescription *desc)
 	  _interfaceDisabled(false), _3dEnabled(true), _portalsEnabled(true),
 	  _cameraMode(0), _cameraModeLocked(false), _playerNoCameraReset(false),
 	  _depthCueEnabled(false), _depthCueStart(0.0f), _depthCueEnd(0.0f),
-	  _spotHeight(85.0f), _spotMaxDeltaY(30.0f), _spotDistance(350.0f),
+	  _masterColorFadeSteps(0.0f), _masterColorFadeStartMillis(0),
+	  _masterColorFadeActive(false), _spotHeight(85.0f), _spotMaxDeltaY(30.0f), _spotDistance(350.0f),
 	  _spotMinDistance(25.0f), _spotSmooth(30.0f),
 	  _spotCameraInitialized(false), _dynamicCameraInitialized(false), _scriptKeyMask(0) {
 	_playerPosition.x = _playerPosition.y = _playerPosition.z = 0.0f;
+	for (int component = 0; component < 4; ++component) {
+		_masterColor[component] = 1.0f;
+		_masterColorFrom[component] = 1.0f;
+		_masterColorTo[component] = 1.0f;
+	}
 	_spotCameraPosition.x = _spotCameraPosition.y = _spotCameraPosition.z = 0.0f;
 	_dynamicCameraPosition.x = _dynamicCameraPosition.y = _dynamicCameraPosition.z = 0.0f;
 	_playerFacingTarget.x = _playerFacingTarget.y = _playerFacingTarget.z = 0.0f;
@@ -949,6 +972,7 @@ bool ZeroComicoEngine::playCutscene(const Common::String &name) {
 			}
 		}
 
+		applyMasterColor(frameSurface);
 		drawCutsceneSubtitle(frameSurface, subtitleSpeaker, subtitleText);
 		if (fadeStartFrame >= 0 && frame >= (float)fadeStartFrame) {
 			const float fadeProgress =
@@ -2504,8 +2528,68 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 		return true;
 	}
 
-	if (op.equalsIgnoreCase("e3d_Parse"))
+	if (op.equalsIgnoreCase("e3d_Parse")) {
+		if (instruction.args.empty())
+			return false;
+
+		Common::Array<Common::String> command;
+		splitE3dCommand(instruction.args[0], command);
+		if (command.empty())
+			return false;
+
+		if (command[0].equalsIgnoreCase("Master_Color")) {
+			if (command.size() < 5)
+				return false;
+			for (int component = 0; component < 4; ++component) {
+				float value = 0.0f;
+				if (!parseScriptFloat(command[(uint32)component + 1], value))
+					return false;
+				if (value < 0.0f)
+					value = 0.0f;
+				else if (value > 255.0f)
+					value = 255.0f;
+				_masterColor[component] = value / 255.0f;
+			}
+			_masterColorFadeActive = false;
+			debug(1, "Zero Comico: master color %.3f %.3f %.3f %.3f",
+			      _masterColor[0], _masterColor[1],
+			      _masterColor[2], _masterColor[3]);
+			return true;
+		}
+
+		if (command[0].equalsIgnoreCase("Master_Color_Fade_In") ||
+		    command[0].equalsIgnoreCase("Master_Color_Fade_Out")) {
+			if (command.size() < 2)
+				return false;
+			float steps = 0.0f;
+			if (!parseScriptFloat(command[1], steps))
+				return false;
+
+			for (int component = 0; component < 4; ++component)
+				_masterColorFrom[component] = _masterColor[component];
+
+			const bool fadeIn = command[0].equalsIgnoreCase("Master_Color_Fade_In");
+			_masterColorTo[0] = fadeIn ? 1.0f : 0.0f;
+			_masterColorTo[1] = fadeIn ? 1.0f : 0.0f;
+			_masterColorTo[2] = fadeIn ? 1.0f : 0.0f;
+			_masterColorTo[3] = 1.0f;
+			_masterColorFadeSteps = steps;
+			_masterColorFadeStartMillis = _system->getMillis();
+			_masterColorFadeActive = steps > 0.0f;
+			if (!_masterColorFadeActive)
+				for (int component = 0; component < 4; ++component)
+					_masterColor[component] = _masterColorTo[component];
+
+			debug(1, "Zero Comico: master-color fade %s over %.1f 70-Hz ticks",
+			      fadeIn ? "in" : "out", steps);
+			return true;
+		}
+
+		// Other retail e3d_Parse commands, notably set_usereffect_state, belong
+		// to a separate renderer-effect subsystem. Preserve their script boundary
+		// until that subsystem is reconstructed.
 		return true;
+	}
 
 	if (op.equalsIgnoreCase("csay")) {
 		if (instruction.args.size() < 2)
@@ -2675,6 +2759,37 @@ bool ZeroComicoEngine::yieldScriptExecution() {
 	// wait_frames and JACS timelines.
 	_system->delayMillis(40);
 	return !shouldQuit();
+}
+
+void ZeroComicoEngine::applyMasterColor(Graphics::ManagedSurface &surface) {
+	if (_masterColorFadeActive) {
+		const uint32 elapsedMillis = _system->getMillis() - _masterColorFadeStartMillis;
+		const float elapsedTicks = (float)elapsedMillis * 70.0f / 1000.0f;
+		float factor = _masterColorFadeSteps > 0.0f
+			? elapsedTicks / _masterColorFadeSteps : 1.0f;
+		if (factor >= 1.0f) {
+			factor = 1.0f;
+			_masterColorFadeActive = false;
+		}
+		for (int component = 0; component < 4; ++component)
+			_masterColor[component] =
+				_masterColorFrom[component] * (1.0f - factor) +
+				_masterColorTo[component] * factor;
+	}
+
+	if (std::fabs(_masterColor[0] - 1.0f) < 1.0e-6f &&
+	    std::fabs(_masterColor[1] - 1.0f) < 1.0e-6f &&
+	    std::fabs(_masterColor[2] - 1.0f) < 1.0e-6f)
+		return;
+
+	for (int y = 0; y < surface.h; ++y) {
+		byte *row = static_cast<byte *>(surface.getBasePtr(0, y));
+		for (int x = 0; x < surface.w; ++x) {
+			row[x * 4 + 0] = (byte)(row[x * 4 + 0] * _masterColor[2] + 0.5f);
+			row[x * 4 + 1] = (byte)(row[x * 4 + 1] * _masterColor[1] + 0.5f);
+			row[x * 4 + 2] = (byte)(row[x * 4 + 2] * _masterColor[0] + 0.5f);
+		}
+	}
 }
 
 void ZeroComicoEngine::startRoomMusic(const Common::String &fileName, float volume) {
@@ -2953,6 +3068,7 @@ bool ZeroComicoEngine::renderGameplayFrame(const RenderCamera &camera,
 	if (!rendered)
 		return false;
 
+	applyMasterColor(frame);
 	drawInventoryOverlay(frame, _inventoryObjects, _selectedInventoryObject,
 	                     _combineInventoryFirst);
 	_system->copyRectToScreen(frame.getPixels(), frame.pitch, 0, 0, frame.w, frame.h);
@@ -3268,6 +3384,14 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 	_depthCueEnabled = false;
 	_depthCueStart = 0.0f;
 	_depthCueEnd = 0.0f;
+	for (int component = 0; component < 4; ++component) {
+		_masterColor[component] = 1.0f;
+		_masterColorFrom[component] = 1.0f;
+		_masterColorTo[component] = 1.0f;
+	}
+	_masterColorFadeSteps = 0.0f;
+	_masterColorFadeStartMillis = 0;
+	_masterColorFadeActive = false;
 	_spotCameraInitialized = false;
 	_dynamicCameraInitialized = false;
 	_spotHeight = 85.0f;

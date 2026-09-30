@@ -86,3 +86,20 @@ Master-color `e3d_Parse` fades are not yet faithfully reproduced, camera
 roll is parsed but not applied, and `set_envsound` is parsed but not yet
 connected to persistent environmental audio. Later room/puzzle interaction
 also remains to be wired to the object scripts.
+
+
+## Master Color fades
+
+The JapoTek parser exposes `master_color`, `master_color_from`,
+`master_color_to`, `master_color_factor` and
+`master_color_blendsteps`. Direct DLL disassembly shows:
+
+- `Master_Color R G B A` stores RGBA normalized by 1/255.
+- `Master_Color_Fade_In N` interpolates from the current color to white.
+- `Master_Color_Fade_Out N` interpolates from the current color to black.
+- the blend factor advances by `deltaTicks / N`.
+- the engine timer is configured at 70 Hz, so N is measured in 70-Hz ticks.
+
+The runtime now mirrors this for the shipped Master Color commands and applies
+the color multiplier to both gameplay and 3D cutscene framebuffers before UI
+text/subtitles are drawn.

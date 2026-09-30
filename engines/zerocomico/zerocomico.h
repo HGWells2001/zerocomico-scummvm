@@ -79,6 +79,7 @@ private:
 	void playFilmIfPresent(const Common::Path &path);
 	void startRoomMusic(const Common::String &fileName, float volume);
 	void setEnvironmentSound(const Common::String &fileName, bool enabled);
+	void applyMasterColor(Graphics::ManagedSurface &surface);
 	bool loadMenuScene();
 	bool renderMenuFrame(int selection);
 	bool runMainPlacePreview(const Common::String &mainPlace);
@@ -201,6 +202,12 @@ private:
 	bool _depthCueEnabled;
 	float _depthCueStart;
 	float _depthCueEnd;
+	float _masterColor[4];
+	float _masterColorFrom[4];
+	float _masterColorTo[4];
+	float _masterColorFadeSteps;
+	uint32 _masterColorFadeStartMillis;
+	bool _masterColorFadeActive;
 	float _spotHeight;
 	float _spotMaxDeltaY;
 	float _spotDistance;
