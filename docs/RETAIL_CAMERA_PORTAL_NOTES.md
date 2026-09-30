@@ -318,27 +318,37 @@ handoff. Dynamic Subjective/Spot modes are left to their own runtime update.
 
 Mp2 uses `e3d_parse "set_usereffect_state ..."` 25 times. Direct
 `japotek3d.dll` disassembly shows that the command resolves the named 3D
-object, follows its attached user-effect pointer, and writes the supplied
-integer directly to the effect state field at offset `+0xCC`.
+material/object, follows its primary texture pointer at offset `+0x9C`, and
+writes the supplied integer directly to the texture state field at offset
+`+0xCC`. This state write is valid for any textured material; by itself it
+does not prove that the texture owns a registered user-effect callback.
 
 The shipped calls touch `r21_Scale`, `r21_ScaleG`, `r24_Scale`,
 `r24_ScaleG`, `r25_Scale`, `r25_ScaleG` and `r21_Rotte`, using only
-states 0 and 1.
+states 0 and 1. `r21_Rotte` occurs exactly once and is only assigned state 0.
 
-The retail P3D data identifies the six Scale/ScaleG objects as materials whose
-textures are `SCALE.FLC` and `SCALEG.FLC`. Both files live in
-`Mp2/backgrd` inside JFX1 wrappers and decode as Autodesk FLC streams:
-**64x64, 16 frames, 40 ms/frame**. The DLL render path tests the state field at
-`+0xCC` before invoking the user-effect update callback, so state 0 freezes
-the current effect state and state 1 advances it.
+The texture constructor clears its flags and user-effect index. In the MAT
+parser, the `UserEffect` token resolves a named effect, stores its index at
+`+0xD0`, and sets texture flag `0x4000`. The render/update path dispatches
+that registered callback only when flag `0x4000` is present and the state at
+`+0xCC` is non-zero.
 
-The runtime now decodes these textures through the existing
-`WrappedFlicDecoder`, caches their BGRA frames, and accumulates animation time
-only while the matching user effect is non-zero. Disabling and re-enabling
-Scale/ScaleG therefore pauses and resumes the animation instead of restarting
-it. `r21_Rotte` remains state-only: its material uses the static
-`SCALAF.TGA`, so its visual callback still requires separate reverse
-engineering rather than borrowing Scale semantics.
+A full decode of the 204 retail text/script files finds no `SCALAF` reference
+at all. In particular, `Mp2/backgrd/room2_1.mat` registers `usereffect film`
+for `LAGO.FLC`, `ARCOB.FLC`, `SCALE.FLC` and `SCALEG.FLC`, but never
+for `SCALAF.TGA`. The P3D material `r21_Rotte` references that static
+`SCALAF.TGA` texture, so it has no MAT-registered user-effect callback.
+Its sole retail `set_usereffect_state r21_Rotte 0` therefore performs the
+state write but cannot invoke a visual callback. There is no missing Rotte
+animation to reproduce.
+
+The six Scale/ScaleG materials do use the registered film effect. Their
+`SCALE.FLC` and `SCALEG.FLC` resources live in `Mp2/backgrd` inside
+JFX1 wrappers and decode as Autodesk FLC streams: **64x64, 16 frames,
+40 ms/frame**. The runtime decodes them through `WrappedFlicDecoder`, caches
+their BGRA frames, and accumulates animation time only while the matching user
+effect is non-zero. Disabling and re-enabling Scale/ScaleG therefore pauses
+and resumes the animation instead of restarting it.
 
 ## Retail depth cue
 
