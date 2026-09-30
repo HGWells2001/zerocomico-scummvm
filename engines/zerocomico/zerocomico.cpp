@@ -2264,6 +2264,7 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 		_playerScene = replacementScene;
 		_playerSequences = replacementSequences;
 		_playerAssetDirectory = directory;
+		_playerAnimSetName = animSet->name;
 		_playerHatVisible = true;
 		debug(1, "Zero Comico: switched MainPlayer animation set to %s (%s)",
 		      instruction.args[1].c_str(), animSet->bodyName.c_str());
@@ -3558,10 +3559,12 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 
 	const Common::Path characterPath(level + "/gameplay/char.isc");
 	Common::String playerAssetStem("Giovanni");
+	_playerAnimSetName.clear();
 	if (!_playerCharacterScript.load(characterPath)) {
 		warning("Zero Comico: cannot parse playable character metadata %s",
 		        characterPath.toString().c_str());
 	} else {
+		_playerAnimSetName = _playerCharacterScript.initialAnimSet;
 		const uint32 separator = _playerCharacterScript.initialBodyName.find('_');
 		if (separator != Common::String::npos &&
 		    separator + 1 < _playerCharacterScript.initialBodyName.size())

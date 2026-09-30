@@ -84,9 +84,15 @@ The original executable has three pickup slots. Its defaults are `pickdw`
 retail scripts override low and mid but never declare `take_high`.
 
 `CharacterScript` now preserves all three animation names and parameters per
-AnimSet instead of discarding them. This deliberately stops short of choosing
-low/mid from object geometry until that classifier has been verified against
-the executable.
+AnimSet instead of discarding them. The runtime also keeps the **currently
+active player AnimSet**: it starts from the character script's
+`initialAnimSet` and changes only after a successful `SetAnimSet` body/ANJ/SEQ
+swap. This matters because pickup metadata belongs to an AnimSet rather than to
+the character globally.
+
+The actual low/mid/high classifier is still intentionally not guessed. The
+original `take` path is being reconstructed before wiring these animations to
+object geometry.
 
 ## Navigation
 

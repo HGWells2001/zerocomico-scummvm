@@ -118,6 +118,7 @@ private:
 	SceneModel _loopCutScene;
 	SequenceScript _playerSequences;
 	Common::Path _playerAssetDirectory;
+	Common::String _playerAnimSetName;
 	CharacterScript _playerCharacterScript;
 	PuzzleScript _activePuzzle;
 	PuzzleScript _activeCameraTriggers;
