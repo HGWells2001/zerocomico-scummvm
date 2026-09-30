@@ -19,6 +19,9 @@ struct RenderCamera {
 	Vec3f target;
 	float focalPixels;
 	float rollRadians = 0.0f;
+	bool depthCueEnabled = false;
+	float depthCueStart = 0.0f;
+	float depthCueEnd = 0.0f;
 };
 
 struct RenderTransform {

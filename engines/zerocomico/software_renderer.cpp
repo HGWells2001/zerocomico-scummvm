@@ -262,7 +262,8 @@ static byte floatColor(float v) {
 
 static void drawTriangle(Graphics::ManagedSurface &target, Common::Array<float> &zBuffer,
                          const ProjectedVertex pv[3], const Vec2f uv[3], bool haveUv,
-                         const Graphics::ManagedSurface *texture, const MaterialData *material) {
+                         const Graphics::ManagedSurface *texture, const MaterialData *material,
+                         const RenderCamera &camera) {
 	const float area = edge(pv[0].x, pv[0].y, pv[1].x, pv[1].y, pv[2].x, pv[2].y);
 	if (std::fabs(area) < 1.0e-6f)
 		return;
@@ -338,6 +339,16 @@ static void drawTriangle(Graphics::ManagedSurface &target, Common::Array<float> 
 				r = floatColor(material->color1.x);
 				g = floatColor(material->color1.y);
 				b = floatColor(material->color1.z);
+			}
+
+			if (camera.depthCueEnabled && camera.depthCueEnd > camera.depthCueStart) {
+				const float cue = clamp01(
+					(depth - camera.depthCueStart) /
+					(camera.depthCueEnd - camera.depthCueStart));
+				const float keep = 1.0f - cue;
+				b = (byte)(b * keep + 0.5f);
+				g = (byte)(g * keep + 0.5f);
+				r = (byte)(r * keep + 0.5f);
 			}
 
 			byte *dst = static_cast<byte *>(target.getBasePtr(x, y));
@@ -424,7 +435,7 @@ static void renderFaceRange(const SceneModel &scene, const MeshData &mesh,
 			}
 		}
 
-		drawTriangle(target, zBuffer, projected, uv, haveUv, texturePtr, material);
+		drawTriangle(target, zBuffer, projected, uv, haveUv, texturePtr, material, camera);
 	}
 }
 

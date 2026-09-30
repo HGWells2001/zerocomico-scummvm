@@ -610,6 +610,7 @@ ZeroComicoEngine::ZeroComicoEngine(OSystem *syst, const ADGameDescription *desc)
 	  _loopCutActive(false), _scriptVM(this),
 	  _interfaceDisabled(false), _3dEnabled(true), _portalsEnabled(true),
 	  _cameraMode(0), _cameraModeLocked(false), _playerNoCameraReset(false),
+	  _depthCueEnabled(false), _depthCueStart(0.0f), _depthCueEnd(0.0f),
 	  _spotHeight(85.0f), _spotMaxDeltaY(30.0f), _spotDistance(350.0f),
 	  _spotMinDistance(25.0f), _spotSmooth(30.0f),
 	  _spotCameraInitialized(false), _dynamicCameraInitialized(false), _scriptKeyMask(0) {
@@ -1923,8 +1924,26 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 		return true;
 	}
 
-	if (op.equalsIgnoreCase("dcue_all"))
+	if (op.equalsIgnoreCase("dcue_all")) {
+		if (instruction.args.size() < 3)
+			return false;
+
+		float enabled = 0.0f;
+		float startMetres = 0.0f;
+		float endMetres = 0.0f;
+		if (!parseScriptFloat(instruction.args[0], enabled) ||
+		    !parseScriptFloat(instruction.args[1], startMetres) ||
+		    !parseScriptFloat(instruction.args[2], endMetres))
+			return false;
+
+		_depthCueEnabled = enabled != 0.0f;
+		_depthCueStart = startMetres * 100.0f;
+		_depthCueEnd = endMetres * 100.0f;
+		debug(1, "Zero Comico: depth cue %s from %.1f to %.1f world units",
+		      _depthCueEnabled ? "enabled" : "disabled",
+		      _depthCueStart, _depthCueEnd);
 		return true;
+	}
 
 	if (op.equalsIgnoreCase("portals_off")) {
 		_portalsEnabled = false;
@@ -2835,6 +2854,11 @@ bool ZeroComicoEngine::renderGameplayFrame(const RenderCamera &camera,
                                                 const Common::String &animationSource,
                                                 float animationFrame,
                                                 Graphics::ManagedSurface &frame) {
+	RenderCamera gameplayCamera = camera;
+	gameplayCamera.depthCueEnabled = _depthCueEnabled;
+	gameplayCamera.depthCueStart = _depthCueStart;
+	gameplayCamera.depthCueEnd = _depthCueEnd;
+
 	const uint32 now = _system->getMillis();
 	for (uint32 loopIndex = 0; loopIndex < _sceneLoopTargets.size(); ++loopIndex) {
 		const NamedAnimationClip *clip = _activeScene.findClipBySource(
@@ -2918,11 +2942,11 @@ bool ZeroComicoEngine::renderGameplayFrame(const RenderCamera &camera,
 			warning("Zero Comico: player %s root transform missing; using identity root pose",
 			        animationSource.c_str());
 
-		rendered = _gameplayRenderer.renderWithActor(_activeScene, camera, sceneDirectory, visibleMeshes,
+		rendered = _gameplayRenderer.renderWithActor(_activeScene, gameplayCamera, sceneDirectory, visibleMeshes,
 		                                    _playerScene, _playerAssetDirectory, playerVisible,
 		                                    playerTransform, frame, 800, 600);
 	} else {
-		rendered = _gameplayRenderer.render(_activeScene, camera, sceneDirectory, visibleMeshes,
+		rendered = _gameplayRenderer.render(_activeScene, gameplayCamera, sceneDirectory, visibleMeshes,
 		                           frame, 800, 600);
 	}
 
@@ -3241,6 +3265,9 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 	_cameraMode = 0;
 	_cameraModeLocked = false;
 	_playerNoCameraReset = false;
+	_depthCueEnabled = false;
+	_depthCueStart = 0.0f;
+	_depthCueEnd = 0.0f;
 	_spotCameraInitialized = false;
 	_dynamicCameraInitialized = false;
 	_spotHeight = 85.0f;

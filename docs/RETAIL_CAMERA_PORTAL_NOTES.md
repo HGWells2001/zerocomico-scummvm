@@ -314,6 +314,25 @@ Placed mode; while `_playerNoCameraReset` is active, it instead queues the
 last camera selected by `SetDialogCameras`, preserving that shot across the
 handoff. Dynamic Subjective/Spot modes are left to their own runtime update.
 
+## Retail depth cue
+
+The retail script corpus uses `dcue_all` exactly once, during Mp5 startup:
+
+```text
+e3d_Parse "Master_Color 0 0 0 255"
+e3d_Parse "Master_Color_Fade_In 200"
+dcue_all 1, 8.5, 14.5
+```
+
+The executable callback applies the first argument as the depth-cue state and
+converts the two ranges through the normal metre-to-world conversion. With
+`GlobalScaling: 1`, the shipped range is therefore **850..1450 world units**.
+
+The software renderer now carries that state on `RenderCamera` and performs
+linear per-pixel depth attenuation across the verified range. The only retail
+use selects black immediately beforehand, so RGB fades toward black while
+alpha and z-buffer behavior remain unchanged.
+
 ## Mp5 portals
 
 Mp5 declares ten directed logical room links but stores only five physical

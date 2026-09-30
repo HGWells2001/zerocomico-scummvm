@@ -198,6 +198,9 @@ private:
 	int _cameraMode;
 	bool _cameraModeLocked;
 	bool _playerNoCameraReset;
+	bool _depthCueEnabled;
+	float _depthCueStart;
+	float _depthCueEnd;
 	float _spotHeight;
 	float _spotMaxDeltaY;
 	float _spotDistance;
