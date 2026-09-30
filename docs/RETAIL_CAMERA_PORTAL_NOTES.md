@@ -386,6 +386,23 @@ runtime matches the active `Get`/`GetDown` event against that table, resolves
 sample id 2 through the current playable character's `Sample: 2 Take.mp3`
 declaration, and plays it at frame 15. No pickup sound filename is hard-coded.
 
+## Retail puzzle-object state
+
+The retail `addobjininv` handler does more than insert a name in the
+inventory list. Direct executable disassembly shows that it applies the literal
+state string `pickable FALSE examinable FALSE assigned TRUE` to the resolved
+inventory object before updating the inventory controller. Inventory objects
+such as `obj_lepego`, `obj_batteria` and `obj_occhio` are ordinary
+`puzzle.isc` Object declarations, so these flags are part of the same puzzle
+state rather than separate UI metadata.
+
+The runtime now mirrors those three side effects for both explicit
+`addobjininv` and the inventory-transfer event inside `wait_take`.
+`setobj` also updates every boolean Object field already decoded by
+`PuzzleScript`, including `collision` and `operated`; the retail corpus
+uses those two in addition to the previously handled `examinable` and
+`enabled` forms.
+
 ## Retail depth cue
 
 The retail script corpus uses `dcue_all` exactly once, during Mp5 startup:

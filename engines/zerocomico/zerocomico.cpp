@@ -204,6 +204,18 @@ static PuzzleObject *findPuzzleObjectForMesh(PuzzleScript &puzzle,
 	return nullptr;
 }
 
+static void markInventoryObjectAssigned(PuzzleScript &puzzle, const Common::String &name) {
+	PuzzleObject *object = puzzle.findObject(name);
+	if (!object)
+		return;
+
+	// Zero Comico.exe applies this exact state string in addobjininv:
+	// "pickable FALSE examinable FALSE assigned TRUE".
+	object->pickable = false;
+	object->examinable = false;
+	object->assigned = true;
+}
+
 static float dotVec3(const Vec3f &a, const Vec3f &b) {
 	return a.x * b.x + a.y * b.y + a.z * b.z;
 }
@@ -2103,6 +2115,7 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 		} else {
 			if (!containsIgnoreCase(_inventoryObjects, _pendingTakeInventoryObject))
 				_inventoryObjects.push_back(_pendingTakeInventoryObject);
+			markInventoryObjectAssigned(_activePuzzle, _pendingTakeInventoryObject);
 			_selectedInventoryObject = _pendingTakeInventoryObject;
 			_pendingTakeInventoryAdded = true;
 			debug(1, "Zero Comico: pickup %s has no animation class; inventory acquired immediately",
@@ -2120,6 +2133,7 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 				return;
 			if (!containsIgnoreCase(_inventoryObjects, _pendingTakeInventoryObject))
 				_inventoryObjects.push_back(_pendingTakeInventoryObject);
+			markInventoryObjectAssigned(_activePuzzle, _pendingTakeInventoryObject);
 			_selectedInventoryObject = _pendingTakeInventoryObject;
 			_pendingTakeInventoryAdded = true;
 			debug(1, "Zero Comico: inventory acquired %s at pickup event frame %d",
@@ -2233,6 +2247,7 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 		const Common::String &inventoryObject = instruction.args[1];
 		if (!containsIgnoreCase(_inventoryObjects, inventoryObject))
 			_inventoryObjects.push_back(inventoryObject);
+		markInventoryObjectAssigned(_activePuzzle, inventoryObject);
 		debug(1, "Zero Comico: inventory added %s", inventoryObject.c_str());
 		return true;
 	}
@@ -2274,14 +2289,54 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 
 		Common::String state = instruction.args[1];
 		state.toLowercase();
+		if (state.find("pickable true") != Common::String::npos)
+			object->pickable = true;
+		if (state.find("pickable false") != Common::String::npos)
+			object->pickable = false;
 		if (state.find("examinable true") != Common::String::npos)
 			object->examinable = true;
 		if (state.find("examinable false") != Common::String::npos)
 			object->examinable = false;
+		if (state.find("operated true") != Common::String::npos)
+			object->operated = true;
+		if (state.find("operated false") != Common::String::npos)
+			object->operated = false;
+		if (state.find("examinated true") != Common::String::npos)
+			object->examinated = true;
+		if (state.find("examinated false") != Common::String::npos)
+			object->examinated = false;
+		if (state.find("autocamera true") != Common::String::npos)
+			object->autoCamera = true;
+		if (state.find("autocamera false") != Common::String::npos)
+			object->autoCamera = false;
+		if (state.find("randompos true") != Common::String::npos)
+			object->randomPos = true;
+		if (state.find("randompos false") != Common::String::npos)
+			object->randomPos = false;
+		if (state.find("combined true") != Common::String::npos)
+			object->combined = true;
+		if (state.find("combined false") != Common::String::npos)
+			object->combined = false;
+		if (state.find("assigned true") != Common::String::npos)
+			object->assigned = true;
+		if (state.find("assigned false") != Common::String::npos)
+			object->assigned = false;
 		if (state.find("enabled true") != Common::String::npos)
 			object->enabled = true;
 		if (state.find("enabled false") != Common::String::npos)
 			object->enabled = false;
+		if (state.find("inside true") != Common::String::npos)
+			object->inside = true;
+		if (state.find("inside false") != Common::String::npos)
+			object->inside = false;
+		if (state.find("collision true") != Common::String::npos)
+			object->collision = true;
+		if (state.find("collision false") != Common::String::npos)
+			object->collision = false;
+		if (state.find("soundstate true") != Common::String::npos)
+			object->soundState = true;
+		if (state.find("soundstate false") != Common::String::npos)
+			object->soundState = false;
 		return true;
 	}
 
