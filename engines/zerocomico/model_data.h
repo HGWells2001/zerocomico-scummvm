@@ -40,6 +40,8 @@ struct MaterialData {
 	Common::String textureName;
 	Vec3f textureParams;
 	bool hasTexture;
+	int32 userEffectState;
+	uint32 userEffectElapsedMs;
 };
 
 struct CameraData {

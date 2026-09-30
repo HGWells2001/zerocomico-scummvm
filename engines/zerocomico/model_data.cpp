@@ -130,6 +130,8 @@ bool ModelDataDecoder::decodeMaterial(const ModelArchive &archive, const ModelRe
 	out.hasTexture = (out.flags & 0x0002) != 0;
 	out.textureName.clear();
 	out.textureParams.x = out.textureParams.y = out.textureParams.z = 0.0f;
+	out.userEffectState = 0;
+	out.userEffectElapsedMs = 0;
 
 	if (out.hasTexture) {
 		if (!r.readName(out.textureName) || !r.readVec3(out.textureParams))

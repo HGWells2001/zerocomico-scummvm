@@ -2596,17 +2596,23 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 				return false;
 			const int32 state = (int32)parsed;
 
+			const uint32 now = _system->getMillis();
 			bool found = false;
 			for (uint32 i = 0; i < _userEffectStateNames.size(); ++i) {
 				if (!_userEffectStateNames[i].equalsIgnoreCase(command[1]))
 					continue;
+				if (_userEffectStates[i] != 0)
+					_userEffectElapsedMs[i] += now - _userEffectStateChangedMillis[i];
 				_userEffectStates[i] = state;
+				_userEffectStateChangedMillis[i] = now;
 				found = true;
 				break;
 			}
 			if (!found) {
 				_userEffectStateNames.push_back(command[1]);
 				_userEffectStates.push_back(state);
+				_userEffectElapsedMs.push_back(0);
+				_userEffectStateChangedMillis.push_back(now);
 			}
 
 			debug(1, "Zero Comico: user effect %s state = %d",
@@ -3003,6 +3009,20 @@ bool ZeroComicoEngine::renderGameplayFrame(const RenderCamera &camera,
 	gameplayCamera.depthCueEnd = _depthCueEnd;
 
 	const uint32 now = _system->getMillis();
+	for (uint32 materialIndex = 0; materialIndex < _activeScene.materials.size(); ++materialIndex) {
+		NamedMaterial &material = _activeScene.materials[materialIndex];
+		material.data.userEffectState = 0;
+		material.data.userEffectElapsedMs = 0;
+		for (uint32 effectIndex = 0; effectIndex < _userEffectStateNames.size(); ++effectIndex) {
+			if (!material.name.equalsIgnoreCase(_userEffectStateNames[effectIndex]))
+				continue;
+			material.data.userEffectState = _userEffectStates[effectIndex];
+			material.data.userEffectElapsedMs = _userEffectElapsedMs[effectIndex];
+			if (_userEffectStates[effectIndex] != 0)
+				material.data.userEffectElapsedMs += now - _userEffectStateChangedMillis[effectIndex];
+			break;
+		}
+	}
 	for (uint32 loopIndex = 0; loopIndex < _sceneLoopTargets.size(); ++loopIndex) {
 		const NamedAnimationClip *clip = _activeScene.findClipBySource(
 			_sceneLoopTargets[loopIndex], _sceneLoopSources[loopIndex]);
@@ -3451,6 +3471,8 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 	_lightStateEnabled.clear();
 	_userEffectStateNames.clear();
 	_userEffectStates.clear();
+	_userEffectElapsedMs.clear();
+	_userEffectStateChangedMillis.clear();
 	_masterVolumeStack.clear();
 	_sceneLoopTargets.clear();
 	_sceneLoopSources.clear();

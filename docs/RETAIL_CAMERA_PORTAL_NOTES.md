@@ -323,9 +323,22 @@ integer directly to the effect state field at offset `+0xCC`.
 
 The shipped calls touch `r21_Scale`, `r21_ScaleG`, `r24_Scale`,
 `r24_ScaleG`, `r25_Scale`, `r25_ScaleG` and `r21_Rotte`, using only
-states 0 and 1. The runtime now preserves that name-to-state table exactly
-instead of silently discarding the commands. Rendering the actual Scale/Rotte
-effect remains a separate renderer-fidelity task.
+states 0 and 1.
+
+The retail P3D data identifies the six Scale/ScaleG objects as materials whose
+textures are `SCALE.FLC` and `SCALEG.FLC`. Both files live in
+`Mp2/backgrd` inside JFX1 wrappers and decode as Autodesk FLC streams:
+**64x64, 16 frames, 40 ms/frame**. The DLL render path tests the state field at
+`+0xCC` before invoking the user-effect update callback, so state 0 freezes
+the current effect state and state 1 advances it.
+
+The runtime now decodes these textures through the existing
+`WrappedFlicDecoder`, caches their BGRA frames, and accumulates animation time
+only while the matching user effect is non-zero. Disabling and re-enabling
+Scale/ScaleG therefore pauses and resumes the animation instead of restarting
+it. `r21_Rotte` remains state-only: its material uses the static
+`SCALAF.TGA`, so its visual callback still requires separate reverse
+engineering rather than borrowing Scale semantics.
 
 ## Retail depth cue
 

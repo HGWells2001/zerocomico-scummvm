@@ -4,10 +4,12 @@
 
 #include "zerocomico/software_renderer.h"
 #include "zerocomico/resource.h"
+#include "zerocomico/wrapped_flic.h"
 
 #include "graphics/pixelformat.h"
 
 #include <cmath>
+#include <cstring>
 
 namespace ZeroComico {
 
@@ -189,56 +191,113 @@ static bool projectVertex(const Vec3f &world, const RenderCamera &camera,
 	return true;
 }
 
+static void freeAnimatedFrames(AnimatedTextureCacheEntry &entry) {
+	for (uint32 i = 0; i < entry.frames.size(); ++i) {
+		if (entry.frames[i]) {
+			entry.frames[i]->free();
+			delete entry.frames[i];
+		}
+	}
+	entry.frames.clear();
+}
+
+static bool loadWrappedFlicFrames(const Common::Path &path,
+                                  const Common::String &key,
+                                  AnimatedTextureCacheEntry &entry) {
+	WrappedFlicDecoder decoder;
+	if (!decoder.loadJfxFile(path))
+		return false;
+	entry.key = key;
+	entry.frameDelayMs = 40;
+	const uint32 count = decoder.getFrameCount();
+	if (!count)
+		return false;
+
+	for (uint32 i = 0; i < count; ++i) {
+		const Graphics::Surface *frame = decoder.decodeNextFrame();
+		if (!frame) {
+			freeAnimatedFrames(entry);
+			return false;
+		}
+		if (i == 0 && decoder.getCurFrameDelay() > 0)
+			entry.frameDelayMs = (uint32)decoder.getCurFrameDelay();
+
+		Graphics::Surface *converted =
+			frame->convertTo(Graphics::PixelFormat::createFormatBGRA32(), decoder.getPalette());
+		if (!converted) {
+			freeAnimatedFrames(entry);
+			return false;
+		}
+		Graphics::ManagedSurface *stored = new Graphics::ManagedSurface();
+		stored->create(converted->w, converted->h, converted->format);
+		const uint32 rowBytes = (uint32)converted->w * (uint32)converted->format.bytesPerPixel;
+		for (int y = 0; y < converted->h; ++y)
+			memcpy(stored->getBasePtr(0, y), converted->getBasePtr(0, y), rowBytes);
+		converted->free();
+		delete converted;
+		entry.frames.push_back(stored);
+	}
+	return true;
+}
+
 static const Graphics::ManagedSurface *loadTextureCached(
 		const MaterialData &material, const Common::Path &directory,
 		Common::Array<Common::String> &cacheKeys,
-		Common::Array<Graphics::ManagedSurface *> &cache) {
+		Common::Array<Graphics::ManagedSurface *> &cache,
+		Common::Array<AnimatedTextureCacheEntry> &animatedCache) {
 	if (!material.hasTexture || material.textureName.empty())
 		return nullptr;
 
 	Common::String fileName = lowerAscii(material.textureName);
+	if (fileName.hasSuffixIgnoreCase(".flc")) {
+		const Common::String key = directory.toString() + "/" + fileName;
+		AnimatedTextureCacheEntry *entry = nullptr;
+		for (uint32 i = 0; i < animatedCache.size(); ++i) {
+			if (animatedCache[i].key.equalsIgnoreCase(key)) {
+				entry = &animatedCache[i];
+				break;
+			}
+		}
+		if (!entry) {
+			AnimatedTextureCacheEntry decoded;
+			bool loaded = loadWrappedFlicFrames(directory.appendComponent(fileName), key, decoded);
+			if (!loaded && fileName != material.textureName)
+				loaded = loadWrappedFlicFrames(directory.appendComponent(material.textureName), key, decoded);
+			if (!loaded)
+				return nullptr;
+			animatedCache.push_back(decoded);
+			entry = &animatedCache[animatedCache.size() - 1];
+		}
+		const uint32 delay = entry->frameDelayMs ? entry->frameDelayMs : 40;
+		const uint32 frameIndex = (material.userEffectElapsedMs / delay) % entry->frames.size();
+		return entry->frames[frameIndex];
+	}
 
-	// Mpx/bodies/interfaccia/interfaccia.mat replaces VETRO.TGA with the
-	// shipped int_vetro.tga. Keeping this one known override here reproduces
-	// the retail main-menu glass until the .mat evaluator is connected.
 	if (fileName.equalsIgnoreCase("vetro.tga"))
 		fileName = "int_vetro.tga";
-
 	const Common::String key = directory.toString() + "/" + fileName;
-	for (uint32 i = 0; i < cacheKeys.size(); ++i) {
+	for (uint32 i = 0; i < cacheKeys.size(); ++i)
 		if (cacheKeys[i].equalsIgnoreCase(key))
 			return cache[i];
-	}
 
 	Graphics::ManagedSurface *texture = new Graphics::ManagedSurface();
 	bool loaded =
 		ResourceReader::decodeJgfFile(directory.appendComponent(fileName), *texture) ||
 		ResourceReader::decodeJgfFile(directory.appendComponent(material.textureName), *texture);
-
-	// CloneEntity templates such as Mp2's Star_Star live under
-	// bodies/helpers, but once cloned they are rendered as room background
-	// meshes. The retail resource manager resolves textures independently of
-	// the current background directory, so mirror that behavior with a narrow
-	// helper fallback when the room lookup misses.
 	if (!loaded) {
 		const Common::String directoryName = directory.toString();
-		const uint32 backgroundMarker = directoryName.find("/backgrd");
-		if (backgroundMarker != Common::String::npos) {
-			const Common::Path helperDirectory =
-				Common::Path(directoryName.substr(0, backgroundMarker))
-					.appendComponent("bodies")
-					.appendComponent("helpers");
-			loaded =
-				ResourceReader::decodeJgfFile(helperDirectory.appendComponent(fileName), *texture) ||
-				ResourceReader::decodeJgfFile(helperDirectory.appendComponent(material.textureName), *texture);
+		const uint32 marker = directoryName.find("/backgrd");
+		if (marker != Common::String::npos) {
+			const Common::Path helper =
+				Common::Path(directoryName.substr(0, marker)).appendComponent("bodies").appendComponent("helpers");
+			loaded = ResourceReader::decodeJgfFile(helper.appendComponent(fileName), *texture) ||
+			         ResourceReader::decodeJgfFile(helper.appendComponent(material.textureName), *texture);
 		}
 	}
-
 	if (!loaded) {
 		delete texture;
 		return nullptr;
 	}
-
 	cacheKeys.push_back(key);
 	cache.push_back(texture);
 	return texture;
@@ -369,6 +428,7 @@ static void renderFaceRange(const SceneModel &scene, const MeshData &mesh,
                             const RenderTransform *instanceTransform,
                             Common::Array<Common::String> &textureCacheKeys,
                             Common::Array<Graphics::ManagedSurface *> &textureCache,
+                            Common::Array<AnimatedTextureCacheEntry> &animatedTextureCache,
                             Graphics::ManagedSurface &target, Common::Array<float> &zBuffer) {
 	uint32 firstFace = 0;
 	uint32 faceCount = mesh.faceCount;
@@ -384,7 +444,8 @@ static void renderFaceRange(const SceneModel &scene, const MeshData &mesh,
 			const Common::Path &materialDirectory =
 				named->sourceDirectory.empty() ? textureDirectory : named->sourceDirectory;
 			texturePtr = loadTextureCached(named->data, materialDirectory,
-			                               textureCacheKeys, textureCache);
+			                               textureCacheKeys, textureCache,
+			                               animatedTextureCache);
 		}
 	}
 
@@ -446,6 +507,7 @@ static bool renderScene(const SceneModel &scene, const Common::Path &textureDire
                         const RenderTransform *instanceTransform,
                         Common::Array<Common::String> &textureCacheKeys,
                         Common::Array<Graphics::ManagedSurface *> &textureCache,
+                        Common::Array<AnimatedTextureCacheEntry> &animatedTextureCache,
                         Graphics::ManagedSurface &target, Common::Array<float> &zBuffer) {
 	bool renderedAny = false;
 	for (uint32 meshIndex = 0; meshIndex < scene.meshes.size(); ++meshIndex) {
@@ -460,7 +522,7 @@ static bool renderScene(const SceneModel &scene, const Common::Path &textureDire
 		if (mesh.materials.empty()) {
 			renderFaceRange(scene, mesh, posedVertices, nullptr, textureDirectory, camera, right, up, forward,
 			                focalPixels, instanceTransform, textureCacheKeys, textureCache,
-			                target, zBuffer);
+			                animatedTextureCache, target, zBuffer);
 			renderedAny = true;
 			continue;
 		}
@@ -468,7 +530,7 @@ static bool renderScene(const SceneModel &scene, const Common::Path &textureDire
 		for (uint32 materialIndex = 0; materialIndex < mesh.materials.size(); ++materialIndex) {
 			renderFaceRange(scene, mesh, posedVertices, &mesh.materials[materialIndex], textureDirectory,
 			                camera, right, up, forward, focalPixels, instanceTransform,
-			                textureCacheKeys, textureCache, target, zBuffer);
+			                textureCacheKeys, textureCache, animatedTextureCache, target, zBuffer);
 			renderedAny = true;
 		}
 	}
@@ -489,6 +551,9 @@ SoftwareRenderer::~SoftwareRenderer() {
 	}
 	_textureCache.clear();
 	_textureCacheKeys.clear();
+	for (uint32 i = 0; i < _animatedTextureCache.size(); ++i)
+		freeAnimatedFrames(_animatedTextureCache[i]);
+	_animatedTextureCache.clear();
 }
 
 bool SoftwareRenderer::render(const SceneModel &scene, const Common::String &cameraName,
@@ -541,7 +606,7 @@ bool SoftwareRenderer::render(const SceneModel &scene, const RenderCamera &camer
 
 	return renderScene(scene, textureDirectory, visibleMeshes, camera, right, up, forward,
 	                   focalPixels, nullptr, _textureCacheKeys, _textureCache,
-	                   target, zBuffer);
+	                   _animatedTextureCache, target, zBuffer);
 }
 
 bool SoftwareRenderer::renderWithActor(const SceneModel &scene, const RenderCamera &camera,
@@ -573,11 +638,11 @@ bool SoftwareRenderer::renderWithActor(const SceneModel &scene, const RenderCame
 	const bool renderedRoom = renderScene(scene, textureDirectory, visibleMeshes, camera,
 	                                      right, up, forward, camera.focalPixels,
 	                                      nullptr, _textureCacheKeys, _textureCache,
-	                                      target, zBuffer);
+	                                      _animatedTextureCache, target, zBuffer);
 	const bool renderedActor = renderScene(actor, actorTextureDirectory, actorVisibleMeshes, camera,
 	                                       right, up, forward, camera.focalPixels,
 	                                       &actorTransform, _textureCacheKeys, _textureCache,
-	                                       target, zBuffer);
+	                                       _animatedTextureCache, target, zBuffer);
 	return renderedRoom || renderedActor;
 }
 

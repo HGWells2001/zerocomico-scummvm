@@ -24,6 +24,12 @@ struct RenderCamera {
 	float depthCueEnd = 0.0f;
 };
 
+struct AnimatedTextureCacheEntry {
+	Common::String key;
+	uint32 frameDelayMs;
+	Common::Array<Graphics::ManagedSurface *> frames;
+};
+
 struct RenderTransform {
 	// World placement supplied by the gameplay marker.
 	Vec3f translation;
@@ -80,6 +86,7 @@ private:
 	// frame. Keep decoded texture surfaces for the lifetime of this renderer.
 	mutable Common::Array<Common::String> _textureCacheKeys;
 	mutable Common::Array<Graphics::ManagedSurface *> _textureCache;
+	mutable Common::Array<AnimatedTextureCacheEntry> _animatedTextureCache;
 };
 
 } // namespace ZeroComico
