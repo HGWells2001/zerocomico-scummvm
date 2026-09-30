@@ -2142,12 +2142,39 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 			return true;
 		}
 
+		const CharacterAnimSet *activeAnimSet =
+			_playerCharacterScript.findAnimSet(_playerAnimSetName);
+		const CharacterDefinition *playerDefinition =
+			_playerCharacterScript.findCharacter(_playerCharacterScript.playerName);
+
 		const float frameRate = 25.0f;
 		float frameValue = startFrame;
 		int32 relativeFrame = 0;
 		while (!shouldQuit() && frameValue <= endFrame) {
 			if (!_pendingTakeInventoryAdded && relativeFrame >= _pendingTakeEventFrame)
 				acquirePendingTake();
+
+#ifdef USE_MAD
+			if (activeAnimSet && playerDefinition) {
+				for (uint32 eventIndex = 0; eventIndex < activeAnimSet->stepEvents.size(); ++eventIndex) {
+					const CharacterStepEvent &stepEvent = activeAnimSet->stepEvents[eventIndex];
+					if (!stepEvent.animation.equalsIgnoreCase(_pendingTakeAnimation) ||
+					    stepEvent.frame != relativeFrame)
+						continue;
+
+					for (uint32 sampleIndex = 0; sampleIndex < playerDefinition->samples.size(); ++sampleIndex) {
+						const CharacterSample &sample = playerDefinition->samples[sampleIndex];
+						if (sample.id != stepEvent.sampleId)
+							continue;
+						playNamedMp3(_mixer, Audio::Mixer::kSFXSoundType, sample.fileName, nullptr);
+						debug(2, "Zero Comico: pickup step event %s frame %d -> sample %d (%s)",
+						      _pendingTakeAnimation.c_str(), (int)relativeFrame,
+						      (int)sample.id, sample.fileName.c_str());
+						break;
+					}
+				}
+			}
+#endif
 
 			if (!renderGameplayFrame(_scriptDialogueCamera, _scriptDialogueSceneDirectory,
 			                         _scriptDialoguePlayerDirectory, _pendingTakeAnimation,

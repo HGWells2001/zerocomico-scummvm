@@ -18,6 +18,16 @@ static int32 parseAnimInteger(const Common::String &value, int32 fallback) {
 	return (int32)parsed;
 }
 
+static bool parseStepEventToken(const Common::String &value, int32 &frame, int32 &sampleId) {
+	const uint32 separator = value.find('#');
+	if (separator == Common::String::npos || separator == 0 || separator + 1 >= value.size())
+		return false;
+
+	frame = parseAnimInteger(value.substr(0, separator), -1);
+	sampleId = parseAnimInteger(value.substr(separator + 1), -1);
+	return frame >= 0 && sampleId >= 0;
+}
+
 } // namespace
 
 CharacterScript::CharacterScript()
@@ -82,6 +92,16 @@ bool CharacterScript::parse() {
 					inst.args[0].equalsIgnoreCase("TRUE") || inst.args[0] == "1";
 				continue;
 			}
+			if (inst.opcode.equalsIgnoreCase("Sample") && inst.args.size() >= 2) {
+				const int32 sampleId = parseAnimInteger(inst.args[0], -1);
+				if (sampleId >= 0) {
+					CharacterSample sample;
+					sample.id = sampleId;
+					sample.fileName = inst.args[1];
+					character.samples.push_back(sample);
+				}
+				continue;
+			}
 			if (inst.opcode.equalsIgnoreCase("AnimSet") && inst.args.size() >= 2) {
 				CharacterAnimSet animSet;
 				animSet.name = inst.args[0];
@@ -104,6 +124,28 @@ bool CharacterScript::parse() {
 					     property.depth <= animSetDepth) ||
 					    property.depth < animSetDepth)
 						break;
+
+					if (property.opcode.equalsIgnoreCase("step_events")) {
+						const int stepDepth = property.depth;
+						uint32 eventIndex = k + 1;
+						for (; eventIndex < end && instructions[eventIndex].depth > stepDepth; ++eventIndex) {
+							const ScriptInstruction &event = instructions[eventIndex];
+							for (uint32 tokenIndex = 0; tokenIndex < event.args.size(); ++tokenIndex) {
+								int32 frame = -1;
+								int32 sampleId = -1;
+								if (!parseStepEventToken(event.args[tokenIndex], frame, sampleId))
+									continue;
+								CharacterStepEvent stepEvent;
+								stepEvent.animation = event.opcode;
+								stepEvent.frame = frame;
+								stepEvent.sampleId = sampleId;
+								animSet.stepEvents.push_back(stepEvent);
+							}
+						}
+						if (eventIndex > k + 1)
+							k = eventIndex - 1;
+						continue;
+					}
 
 					Common::String *animation = nullptr;
 					int32 *eventFrame = nullptr;

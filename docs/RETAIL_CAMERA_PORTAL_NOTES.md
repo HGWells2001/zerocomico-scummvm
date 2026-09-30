@@ -359,10 +359,10 @@ values `0x55`, `0x56`, `0x57` and `0` respectively.
 
 All 357 `Object` declarations in the supplied `Mp1..Mp5/gameplay/puzzle.isc`
 files contain exactly one of these tokens: **297 none, 27 low, 33 mid and
-0 high**. The shipped character AnimSets independently provide the animation
-name and approach distance for each class. The runtime therefore records the
-object classification directly in `PuzzleObject`; selecting and playing the
-corresponding character pickup animation remains a separate runtime step.
+0 high**. The shipped character AnimSets independently provide the animation name and
+inventory event frame for each class. The runtime therefore records the object
+classification directly in `PuzzleObject` and resolves the matching animation
+and event timing from the active AnimSet.
 
 The second argument of each playable-character pickup declaration is also
 now identified. The executable stores the animation id for low/mid/high at
@@ -379,7 +379,12 @@ for Giovanni, Aldo and Giacomo. Their character `step_events` independently
 schedule sample 2 (`Take.mp3`) at frame 15. The runtime now plays the selected
 pickup clip at its established 25 fps cadence, transfers the inventory object
 at event frame 10, and keeps `wait_take` blocked until the clip reaches its
-final frame. Step-event audio remains a separate subsystem.
+final frame. The character parser now also preserves the data-driven `Sample` table and
+`step_events` rows. The syntax supports more than one event on a row, as seen
+in retail CPU animations such as `Stay { 205#0 240#1 }`. During a pickup the
+runtime matches the active `Get`/`GetDown` event against that table, resolves
+sample id 2 through the current playable character's `Sample: 2 Take.mp3`
+declaration, and plays it at frame 15. No pickup sound filename is hard-coded.
 
 ## Retail depth cue
 

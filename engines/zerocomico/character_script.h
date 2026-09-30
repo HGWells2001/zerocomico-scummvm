@@ -13,6 +13,17 @@
 
 namespace ZeroComico {
 
+struct CharacterSample {
+	int32 id;
+	Common::String fileName;
+};
+
+struct CharacterStepEvent {
+	Common::String animation;
+	int32 frame;
+	int32 sampleId;
+};
+
 struct CharacterAnimSet {
 	Common::String name;
 	Common::String bodyName;
@@ -22,6 +33,7 @@ struct CharacterAnimSet {
 	int32 takeLowEventFrame;
 	int32 takeMidEventFrame;
 	int32 takeHighEventFrame;
+	Common::Array<CharacterStepEvent> stepEvents;
 };
 
 struct CharacterDefinition {
@@ -36,6 +48,7 @@ struct CharacterDefinition {
 	Common::String mainPlace;
 	Common::String roomName;
 	bool breakLifeOnInitialize;
+	Common::Array<CharacterSample> samples;
 	Common::Array<CharacterAnimSet> animSets;
 };
 
