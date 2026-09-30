@@ -579,7 +579,8 @@ static void applyFadeToBlack(Graphics::ManagedSurface &surface, float amount) {
 
 #ifdef USE_MAD
 static bool playNamedMp3(Audio::Mixer *mixer, Audio::Mixer::SoundType type,
-                         const Common::String &name, Audio::SoundHandle *handle = nullptr) {
+                         const Common::String &name, Audio::SoundHandle *handle = nullptr,
+                         byte channelVolume = Audio::Mixer::kMaxChannelVolume) {
 	if (!mixer || name.empty())
 		return false;
 
@@ -610,7 +611,7 @@ static bool playNamedMp3(Audio::Mixer *mixer, Audio::Mixer::SoundType type,
 			return false;
 		}
 
-		mixer->playStream(type, handle, stream);
+		mixer->playStream(type, handle, stream, -1, channelVolume);
 		return true;
 	}
 
@@ -618,7 +619,8 @@ static bool playNamedMp3(Audio::Mixer *mixer, Audio::Mixer::SoundType type,
 }
 
 static bool playNamedMp3Looped(Audio::Mixer *mixer, Audio::Mixer::SoundType type,
-                               const Common::String &name, Audio::SoundHandle &handle) {
+                               const Common::String &name, Audio::SoundHandle &handle,
+                               byte channelVolume = Audio::Mixer::kMaxChannelVolume) {
 	if (!mixer || name.empty())
 		return false;
 
@@ -650,7 +652,7 @@ static bool playNamedMp3Looped(Audio::Mixer *mixer, Audio::Mixer::SoundType type
 		}
 
 		Audio::AudioStream *loop = Audio::makeLoopingAudioStream(stream, 0, 0, 0);
-		mixer->playStream(type, &handle, loop);
+		mixer->playStream(type, &handle, loop, -1, channelVolume);
 		return true;
 	}
 
@@ -938,7 +940,8 @@ bool ZeroComicoEngine::playCutscene(const Common::String &name) {
 						      name.c_str(), event.args[0].c_str(), event.frame);
 #ifdef USE_MAD
 						playNamedMp3(_mixer, Audio::Mixer::kSFXSoundType,
-						             event.args[0], &cutsceneSfxHandle);
+						             event.args[0], &cutsceneSfxHandle,
+						             retailChannelVolume(3, 100.0f, event.args[0]));
 #endif
 					}
 					break;
@@ -979,7 +982,8 @@ bool ZeroComicoEngine::playCutscene(const Common::String &name) {
 								Audio::makeMP3Stream(speechFile, DisposeAfterUse::YES);
 							if (stream)
 								_mixer->playStream(Audio::Mixer::kSpeechSoundType,
-								                   &cutsceneSpeechHandle, stream);
+								                   &cutsceneSpeechHandle, stream, -1,
+								                   retailChannelVolume(1, 100.0f, Common::String()));
 							else
 								delete speechFile;
 						}
@@ -2235,7 +2239,8 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 						const CharacterSample &sample = playerDefinition->samples[sampleIndex];
 						if (sample.id != stepEvent.sampleId)
 							continue;
-						playNamedMp3(_mixer, Audio::Mixer::kSFXSoundType, sample.fileName, nullptr);
+						playNamedMp3(_mixer, Audio::Mixer::kSFXSoundType, sample.fileName, nullptr,
+						             retailChannelVolume(2, 100.0f, sample.fileName));
 						debug(2, "Zero Comico: pickup step event %s frame %d -> sample %d (%s)",
 						      _pendingTakeAnimation.c_str(), (int)relativeFrame,
 						      (int)sample.id, sample.fileName.c_str());
@@ -3255,6 +3260,49 @@ void ZeroComicoEngine::applyMasterColor(Graphics::ManagedSurface &surface) {
 	}
 }
 
+float ZeroComicoEngine::retailSampleVolume(const Common::String &sampleName) const {
+	if (sampleName.empty())
+		return 100.0f;
+
+	Common::String key = sampleName;
+	key.toLowercase();
+	if (key.hasSuffix(".mp3"))
+		key = key.substr(0, key.size() - 4);
+
+	for (uint32 i = 0; i < _samplePlaybackParams.size(); ++i) {
+		Common::String candidate = _samplePlaybackParams[i].name;
+		candidate.toLowercase();
+		if (candidate.hasSuffix(".mp3"))
+			candidate = candidate.substr(0, candidate.size() - 4);
+		if (candidate == key)
+			return _samplePlaybackParams[i].volume;
+	}
+
+	return _sampleDefaultVolume;
+}
+
+byte ZeroComicoEngine::retailChannelVolume(int soundClass, float sourceVolume,
+                                           const Common::String &sampleName) const {
+	float master = _globalMasterVolume;
+	float classVolume = soundClass >= 0 && soundClass < 6
+		? _soundClassVolumes[soundClass] : 100.0f;
+	float source = sourceVolume;
+	float sample = sampleName.empty() ? 100.0f : retailSampleVolume(sampleName);
+
+	if (master < 0.0f) master = 0.0f;
+	if (master > 100.0f) master = 100.0f;
+	if (classVolume < 0.0f) classVolume = 0.0f;
+	if (classVolume > 100.0f) classVolume = 100.0f;
+	if (source < 0.0f) source = 0.0f;
+	if (source > 100.0f) source = 100.0f;
+	if (sample < 0.0f) sample = 0.0f;
+	if (sample > 100.0f) sample = 100.0f;
+
+	const float percent =
+		master * classVolume * source * sample / 1000000.0f;
+	return (byte)(percent * Audio::Mixer::kMaxChannelVolume / 100.0f + 0.5f);
+}
+
 void ZeroComicoEngine::startRoomMusic(const Common::String &fileName, float volume) {
 	if (fileName.empty()) {
 		if (_mixer->isSoundHandleActive(_musicHandle))
@@ -3269,7 +3317,7 @@ void ZeroComicoEngine::startRoomMusic(const Common::String &fileName, float volu
 	if (clampedVolume > 100.0f)
 		clampedVolume = 100.0f;
 	const byte mixerVolume =
-		(byte)(clampedVolume * Audio::Mixer::kMaxChannelVolume / 100.0f + 0.5f);
+		retailChannelVolume(0, clampedVolume, Common::String());
 
 	if (_currentMusicName.equalsIgnoreCase(fileName) &&
 	    _mixer->isSoundHandleActive(_musicHandle)) {
@@ -3304,7 +3352,9 @@ void ZeroComicoEngine::startRoomMusic(const Common::String &fileName, float volu
 	_mixer->playStream(Audio::Mixer::kMusicSoundType, &_musicHandle, loop,
 	                   -1, mixerVolume);
 	_currentMusicName = fileName;
-	debug(1, "Zero Comico: room music %s at %.1f%%", fileName.c_str(), clampedVolume);
+	debug(1, "Zero Comico: room music %s source %.1f%%, retail channel %u/%u",
+	      fileName.c_str(), clampedVolume, (uint)mixerVolume,
+	      (uint)Audio::Mixer::kMaxChannelVolume);
 #else
 	(void)volume;
 #endif
@@ -3371,7 +3421,8 @@ void ZeroComicoEngine::setEnvironmentSound(const Common::String &fileName, bool 
 
 	_environmentSoundName = fileName;
 	if (!playNamedMp3Looped(_mixer, Audio::Mixer::kSFXSoundType,
-	                       _environmentSoundName, _environmentSoundHandle))
+	                       _environmentSoundName, _environmentSoundHandle,
+	                       retailChannelVolume(5, 100.0f, _environmentSoundName)))
 		warning("Zero Comico: cannot start environment sound %s",
 		        _environmentSoundName.c_str());
 #else
@@ -3687,8 +3738,11 @@ bool ZeroComicoEngine::renderGameplayFrame(const RenderCamera &camera,
 					for (uint32 sampleIndex = 0; sampleIndex < definition->samples.size(); ++sampleIndex) {
 						if (definition->samples[sampleIndex].id != event.sampleId)
 							continue;
+						const Common::String &sampleName =
+							definition->samples[sampleIndex].fileName;
 						playNamedMp3(_mixer, Audio::Mixer::kSFXSoundType,
-						             definition->samples[sampleIndex].fileName);
+						             sampleName, nullptr,
+						             retailChannelVolume(2, 100.0f, sampleName));
 						break;
 					}
 #endif

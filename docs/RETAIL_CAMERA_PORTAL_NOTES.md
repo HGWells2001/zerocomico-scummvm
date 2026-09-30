@@ -445,13 +445,24 @@ the third and fourth are passed through the ordinary world conversion routine.
 With retail `GlobalScaling 1`, the stored range values are therefore
 `metres * 100`.
 
-The runtime now preserves the default sample pan/volume/range, named
+The runtime preserves the default sample pan/volume/range, named
 `smp_param` overrides, global master percentage and the six retail sound-class
 percentages. `BeginTime` also drives the already implemented
 `SetSpotCameraParameters`, user-effect state and hat visibility paths.
-Applying every class/sample percentage to individual ScummVM playback channels
-is deliberately kept as the next audio-routing step rather than collapsing the
-six retail classes into the smaller set of ScummVM mixer groups.
+
+Known retail classes are now applied as **per-channel volume**, rather than by
+overwriting ScummVM's global mixer preferences: class 0 for room music, class 1
+for speech, class 2 for playable/CPU character step events, class 3 for
+cutscene samples and class 5 for environment sound. Named `smp_param`
+volume overrides take precedence over the sample default. The effective
+channel level multiplies retail master, class, source and sample percentages;
+ScummVM's own sound-type volume remains an independent outer control.
+
+Generic script `PlaySample` calls are intentionally not forced into class 4.
+The retail comment names class 4 as combat effects, but the opcode appears in
+broader script contexts and needs call-site provenance before assigning a
+class. Pan and distance attenuation are likewise retained as decoded state for
+the later positional-audio pass.
 
 ## Retail depth cue
 

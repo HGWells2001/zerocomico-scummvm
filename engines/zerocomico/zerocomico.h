@@ -91,6 +91,9 @@ private:
 	bool renderLoopCutsceneFrame(const Common::String &name);
 	bool stopLoopCutscene(const Common::String &name);
 	void playFilmIfPresent(const Common::Path &path);
+	float retailSampleVolume(const Common::String &sampleName) const;
+	byte retailChannelVolume(int soundClass, float sourceVolume,
+	                         const Common::String &sampleName) const;
 	void startRoomMusic(const Common::String &fileName, float volume);
 	void setEnvironmentSound(const Common::String &fileName, bool enabled);
 	void applyMasterColor(Graphics::ManagedSurface &surface);
