@@ -147,4 +147,11 @@ const DialogSpeaker *DialogScript::findSpeakerByKey(const Common::String &key) c
 	return nullptr;
 }
 
+const DialogSpeaker *DialogScript::findSpeakerByName(const Common::String &name) const {
+	for (uint32 i = 0; i < speakers.size(); ++i)
+		if (speakers[i].name.equalsIgnoreCase(name))
+			return &speakers[i];
+	return nullptr;
+}
+
 } // namespace ZeroComico

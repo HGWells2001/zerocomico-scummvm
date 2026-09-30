@@ -288,6 +288,29 @@ kind of orientation marker, its line safely falls back to the first camera.
 Identical camera pairs remain naturally unchanged. Dialogue choice lists begin
 on the initiator/second camera and keep the most recent dialogue view.
 
+## Retail dialogue text timing and speaker colours
+
+The `speaker` declarations in `dialog.isc` carry both RGB subtitle colour
+and a final floating-point speed. Executable parsing stores those values in
+the character dialogue state. The no-voice text path then computes:
+
+```text
+ticks = trunc(strlen(text) * speakerSpeed * 70)
+ticks = max(ticks, 210)
+```
+
+At the retail 70 Hz dialogue timer this is approximately
+`max(3 seconds, strlen(text) * speakerSpeed seconds)`. The shipped speaker
+tables use 0.07 or 0.08. The previous runtime instead used several unrelated
+hard-coded millisecond multipliers and upper caps.
+
+Ordinary dialogue lines and synchronous scripted `say/csay` now resolve the
+speaker metadata, use the retail lifetime formula and render the declared RGB
+colour. Initial room `csay` presentation uses the same rule, and examination
+text follows the active playable speaker instead of always using Giovanni's
+colour. Cutscene speech remains on its separate frame-indexed
+`Videos.isc` path.
+
 ## Dialogue do blocks and SetNoCameraReset
 
 The retail dialogue files contain eight `do ... end` post-dialog blocks:

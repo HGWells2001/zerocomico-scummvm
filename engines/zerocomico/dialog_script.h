@@ -50,6 +50,7 @@ public:
 	const DialogDefinition *findDialog(const Common::String &name) const;
 	DialogDefinition *findDialogMutable(const Common::String &name);
 	const DialogSpeaker *findSpeakerByKey(const Common::String &key) const;
+	const DialogSpeaker *findSpeakerByName(const Common::String &name) const;
 
 	Common::Array<DialogSpeaker> speakers;
 	Common::Array<DialogDefinition> dialogs;

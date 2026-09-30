@@ -471,9 +471,21 @@ static float animationHorizontalSpeed(const SceneModel &scene, const Common::Str
 	return distance / durationSeconds;
 }
 
+static uint32 retailTextDurationMillis(const Common::String &text, float speakerSpeed) {
+	if (speakerSpeed <= 0.0f)
+		speakerSpeed = 0.07f;
+
+	// Retail: trunc(strlen * speakerSpeed * 70), clamped to at least 210 ticks.
+	uint32 ticks = (uint32)((float)text.size() * speakerSpeed * 70.0f);
+	if (ticks < 210U)
+		ticks = 210U;
+	return (uint32)(((uint64)ticks * 1000U) / 70U);
+}
+
 static void drawCutsceneSubtitle(Graphics::ManagedSurface &surface,
                                  const Common::String &speaker,
-                                 const Common::String &text) {
+                                 const Common::String &text,
+                                 const DialogSpeaker *speakerInfo = nullptr) {
 	if (text.empty())
 		return;
 
@@ -484,12 +496,18 @@ static void drawCutsceneSubtitle(Graphics::ManagedSurface &surface,
 		return;
 
 	uint32 color = surface.format.RGBToColor(255, 255, 255);
-	if (speaker.equalsIgnoreCase("Aldo"))
+	if (speakerInfo) {
+		const byte red = (byte)(speakerInfo->red > 255 ? 255 : speakerInfo->red);
+		const byte green = (byte)(speakerInfo->green > 255 ? 255 : speakerInfo->green);
+		const byte blue = (byte)(speakerInfo->blue > 255 ? 255 : speakerInfo->blue);
+		color = surface.format.RGBToColor(red, green, blue);
+	} else if (speaker.equalsIgnoreCase("Aldo")) {
 		color = surface.format.RGBToColor(0, 255, 0);
-	else if (speaker.equalsIgnoreCase("Giovanni"))
+	} else if (speaker.equalsIgnoreCase("Giovanni")) {
 		color = surface.format.RGBToColor(255, 255, 0);
-	else if (speaker.equalsIgnoreCase("Giacomo"))
+	} else if (speaker.equalsIgnoreCase("Giacomo")) {
 		color = surface.format.RGBToColor(0, 255, 255);
+	}
 
 	const uint32 shadow = surface.format.RGBToColor(0, 0, 0);
 	Common::Array<Common::String> lines;
@@ -3806,17 +3824,15 @@ bool ZeroComicoEngine::showScriptLine(const Common::String &speaker,
 	                         *_scriptDialogueFrame))
 		return false;
 
-	drawCutsceneSubtitle(*_scriptDialogueFrame, speaker, text);
+	const DialogSpeaker *speakerInfo = _activeDialog.findSpeakerByName(speaker);
+	drawCutsceneSubtitle(*_scriptDialogueFrame, speaker, text, speakerInfo);
 	_system->copyRectToScreen(_scriptDialogueFrame->getPixels(),
 	                          _scriptDialogueFrame->pitch, 0, 0,
 	                          _scriptDialogueFrame->w, _scriptDialogueFrame->h);
 	_system->updateScreen();
 
-	uint32 duration = (uint32)text.size() * 60U;
-	if (duration < 1000U)
-		duration = 1000U;
-	if (duration > 6500U)
-		duration = 6500U;
+	const uint32 duration =
+		retailTextDurationMillis(text, speakerInfo ? speakerInfo->speed : 0.07f);
 
 	const uint32 started = _system->getMillis();
 	bool advance = false;
@@ -3945,15 +3961,12 @@ bool ZeroComicoEngine::playDialogue(const Common::String &name,
 
 		if (!renderGameplayFrame(dialogueCamera, sceneDirectory, playerDirectory, "Stay", 0.0f, frame))
 			return false;
-		drawCutsceneSubtitle(frame, speakerName, line.text);
+		drawCutsceneSubtitle(frame, speakerName, line.text, speaker);
 		_system->copyRectToScreen(frame.getPixels(), frame.pitch, 0, 0, frame.w, frame.h);
 		_system->updateScreen();
 
-		uint32 duration = (uint32)line.text.size() * 65U;
-		if (duration < 1200U)
-			duration = 1200U;
-		if (duration > 8000U)
-			duration = 8000U;
+		const uint32 duration =
+			retailTextDurationMillis(line.text, speaker ? speaker->speed : 0.07f);
 
 		const uint32 started = _system->getMillis();
 		bool advance = false;
@@ -4690,15 +4703,14 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 	// line while the cutscene owns the screen; once C111 returns, show it over
 	// the first gameplay frame before handing control to the player.
 	if (!_pendingSayText.empty()) {
-		drawCutsceneSubtitle(frame, _pendingSaySpeaker, _pendingSayText);
+		const DialogSpeaker *pendingSpeaker =
+			_activeDialog.findSpeakerByName(_pendingSaySpeaker);
+		drawCutsceneSubtitle(frame, _pendingSaySpeaker, _pendingSayText, pendingSpeaker);
 		_system->copyRectToScreen(frame.getPixels(), frame.pitch, 0, 0, frame.w, frame.h);
 		_system->updateScreen();
 
-		uint32 sayDuration = (uint32)_pendingSayText.size() * 70U;
-		if (sayDuration < 1200U)
-			sayDuration = 1200U;
-		if (sayDuration > 5000U)
-			sayDuration = 5000U;
+		const uint32 sayDuration = retailTextDurationMillis(
+			_pendingSayText, pendingSpeaker ? pendingSpeaker->speed : 0.07f);
 
 		const uint32 sayStart = _system->getMillis();
 		bool dismissSay = false;
@@ -5215,7 +5227,13 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 					const PuzzleObject *object = findPuzzleObjectForMesh(
 						_activePuzzle, _activeScene, _activeRoomPrefix, pickedEntity);
 					if (object && !object->examineText.empty()) {
-						drawCutsceneSubtitle(frame, "Giovanni", object->examineText);
+						const Common::String examineSpeaker =
+							_playerCharacterScript.playerName.empty()
+								? Common::String("MainPlayer") : _playerCharacterScript.playerName;
+						const DialogSpeaker *examineSpeakerInfo =
+							_activeDialog.findSpeakerByName(examineSpeaker);
+						drawCutsceneSubtitle(frame, examineSpeaker, object->examineText,
+						                     examineSpeakerInfo);
 						_system->copyRectToScreen(frame.getPixels(), frame.pitch,
 						                          0, 0, frame.w, frame.h);
 						_system->updateScreen();
