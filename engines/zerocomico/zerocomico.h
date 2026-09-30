@@ -158,6 +158,8 @@ private:
 	Common::Array<Common::String> _environmentStateRooms;
 	Common::Array<Common::String> _environmentStateNames;
 	Common::Array<bool> _environmentStateEnabled;
+	Common::Array<Common::String> _lightStateNames;
+	Common::Array<bool> _lightStateEnabled;
 	Common::String _loopCutName;
 	Common::String _loopCutAssetStem;
 	float _loopCutStartFrame;

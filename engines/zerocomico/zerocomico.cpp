@@ -2455,6 +2455,36 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 		return true;
 	}
 
+	if (op.equalsIgnoreCase("SetLightState")) {
+		if (instruction.args.size() < 2)
+			return false;
+
+		int32 enabled = 0;
+		if (!_scriptVM.resolveValue(instruction.args[1], enabled))
+			return false;
+
+		bool found = false;
+		for (uint32 i = 0; i < _lightStateNames.size(); ++i) {
+			if (!_lightStateNames[i].equalsIgnoreCase(instruction.args[0]))
+				continue;
+			_lightStateEnabled[i] = enabled != 0;
+			found = true;
+			break;
+		}
+		if (!found) {
+			_lightStateNames.push_back(instruction.args[0]);
+			_lightStateEnabled.push_back(enabled != 0);
+		}
+
+		// Mpx/Interface.isc uses SetLightState 23 times to drive the seven menu
+		// highlight lights. The software renderer does not yet evaluate dynamic
+		// lights, but preserve the exact retail state instead of treating this as
+		// an unsupported script command.
+		debug(1, "Zero Comico: light %s = %d",
+		      instruction.args[0].c_str(), enabled != 0 ? 1 : 0);
+		return true;
+	}
+
 	if (op.equalsIgnoreCase("e3d_Parse"))
 		return true;
 
@@ -3201,6 +3231,8 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 	_environmentStateRooms.clear();
 	_environmentStateNames.clear();
 	_environmentStateEnabled.clear();
+	_lightStateNames.clear();
+	_lightStateEnabled.clear();
 	_sceneLoopTargets.clear();
 	_sceneLoopSources.clear();
 	_sceneLoopStartMillis.clear();
