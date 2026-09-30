@@ -672,11 +672,15 @@ ZeroComicoEngine::ZeroComicoEngine(OSystem *syst, const ADGameDescription *desc)
 	  _interfaceDisabled(false), _3dEnabled(true), _portalsEnabled(true),
 	  _cameraMode(0), _cameraModeLocked(false), _playerNoCameraReset(false),
 	  _depthCueEnabled(false), _depthCueStart(0.0f), _depthCueEnd(0.0f),
+	  _globalMasterVolume(100.0f), _sampleDefaultPan(0.0f), _sampleDefaultVolume(100.0f),
+	  _sampleDefaultMinRange(0.0f), _sampleDefaultMaxRange(0.0f),
 	  _masterColorFadeSteps(0.0f), _masterColorFadeStartMillis(0),
 	  _masterColorFadeActive(false), _spotHeight(85.0f), _spotMaxDeltaY(30.0f), _spotDistance(350.0f),
 	  _spotMinDistance(25.0f), _spotSmooth(30.0f),
 	  _spotCameraInitialized(false), _dynamicCameraInitialized(false), _scriptKeyMask(0) {
 	_playerPosition.x = _playerPosition.y = _playerPosition.z = 0.0f;
+	for (int soundClass = 0; soundClass < 6; ++soundClass)
+		_soundClassVolumes[soundClass] = 100.0f;
 	for (int component = 0; component < 4; ++component) {
 		_masterColor[component] = 1.0f;
 		_masterColorFrom[component] = 1.0f;
@@ -1682,8 +1686,14 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 	if (op.equalsIgnoreCase("hide_subobj") || op.equalsIgnoreCase("unhide_subobj")) {
 		if (instruction.args.size() >= 2 &&
 		    instruction.args[0].equalsIgnoreCase("gio_giovanni") &&
-		    instruction.args[1].equalsIgnoreCase("gio_cappello"))
-			_playerHatVisible = op.equalsIgnoreCase("unhide_subobj");
+		    instruction.args[1].equalsIgnoreCase("gio_cappello")) {
+			const CharacterAnimSet *activeAnimSet =
+				_playerCharacterScript.findAnimSet(_playerAnimSetName);
+			const Common::String &bodyName = activeAnimSet
+				? activeAnimSet->bodyName : _playerCharacterScript.initialBodyName;
+			if (bodyName.equalsIgnoreCase("gio_giovanni"))
+				_playerHatVisible = op.equalsIgnoreCase("unhide_subobj");
+		}
 		return true;
 	}
 
@@ -2577,6 +2587,100 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 		}
 
 		return setSceneEntityTranslation(instruction.args[0], position);
+	}
+
+	if (op.equalsIgnoreCase("ms_smp_default")) {
+		if (instruction.args.size() < 5)
+			return false;
+
+		float pan = 0.0f;
+		float volume = 0.0f;
+		float minRangeMetres = 0.0f;
+		float maxRangeMetres = 0.0f;
+		int32 applyExisting = 0;
+		if (!parseScriptFloat(instruction.args[0], pan) ||
+		    !parseScriptFloat(instruction.args[1], volume) ||
+		    !parseScriptFloat(instruction.args[2], minRangeMetres) ||
+		    !parseScriptFloat(instruction.args[3], maxRangeMetres) ||
+		    !_scriptVM.resolveValue(instruction.args[4], applyExisting))
+			return false;
+
+		_sampleDefaultPan = pan;
+		_sampleDefaultVolume = volume;
+		_sampleDefaultMinRange = minRangeMetres * 100.0f;
+		_sampleDefaultMaxRange = maxRangeMetres * 100.0f;
+		debug(1, "Zero Comico: sample defaults pan %.1f volume %.1f range %.1f..%.1f%s",
+		      _sampleDefaultPan, _sampleDefaultVolume,
+		      _sampleDefaultMinRange, _sampleDefaultMaxRange,
+		      applyExisting != 0 ? " (apply-active requested)" : "");
+		return true;
+	}
+
+	if (op.equalsIgnoreCase("smp_param")) {
+		if (instruction.args.size() < 5)
+			return false;
+
+		SamplePlaybackParams params;
+		params.name = instruction.args[0];
+		float minRangeMetres = 0.0f;
+		float maxRangeMetres = 0.0f;
+		if (!parseScriptFloat(instruction.args[1], params.pan) ||
+		    !parseScriptFloat(instruction.args[2], params.volume) ||
+		    !parseScriptFloat(instruction.args[3], minRangeMetres) ||
+		    !parseScriptFloat(instruction.args[4], maxRangeMetres))
+			return false;
+		params.minRange = minRangeMetres * 100.0f;
+		params.maxRange = maxRangeMetres * 100.0f;
+
+		bool found = false;
+		for (uint32 i = 0; i < _samplePlaybackParams.size(); ++i) {
+			if (!_samplePlaybackParams[i].name.equalsIgnoreCase(params.name))
+				continue;
+			_samplePlaybackParams[i] = params;
+			found = true;
+			break;
+		}
+		if (!found)
+			_samplePlaybackParams.push_back(params);
+
+		debug(1, "Zero Comico: sample params %s pan %.1f volume %.1f range %.1f..%.1f",
+		      params.name.c_str(), params.pan, params.volume,
+		      params.minRange, params.maxRange);
+		return true;
+	}
+
+	if (op.equalsIgnoreCase("setglobalmastervolume")) {
+		if (instruction.args.empty())
+			return false;
+		float volume = 0.0f;
+		if (!parseScriptFloat(instruction.args[0], volume))
+			return false;
+		if (volume < 0.0f)
+			volume = 0.0f;
+		else if (volume > 100.0f)
+			volume = 100.0f;
+		_globalMasterVolume = volume;
+		debug(1, "Zero Comico: retail global master volume %.1f%%", _globalMasterVolume);
+		return true;
+	}
+
+	if (op.equalsIgnoreCase("setclassvolume")) {
+		if (instruction.args.size() < 2)
+			return false;
+		int32 soundClass = -1;
+		float volume = 0.0f;
+		if (!_scriptVM.resolveValue(instruction.args[0], soundClass) ||
+		    soundClass < 0 || soundClass >= 6 ||
+		    !parseScriptFloat(instruction.args[1], volume))
+			return false;
+		if (volume < 0.0f)
+			volume = 0.0f;
+		else if (volume > 100.0f)
+			volume = 100.0f;
+		_soundClassVolumes[soundClass] = volume;
+		debug(1, "Zero Comico: retail sound class %d volume %.1f%%",
+		      (int)soundClass, volume);
+		return true;
 	}
 
 	if (op.equalsIgnoreCase("PlaySample")) {
@@ -3982,6 +4086,14 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 	_userEffectElapsedMs.clear();
 	_userEffectStateChangedMillis.clear();
 	_masterVolumeStack.clear();
+	_globalMasterVolume = 100.0f;
+	for (int soundClass = 0; soundClass < 6; ++soundClass)
+		_soundClassVolumes[soundClass] = 100.0f;
+	_sampleDefaultPan = 0.0f;
+	_sampleDefaultVolume = 100.0f;
+	_sampleDefaultMinRange = 0.0f;
+	_sampleDefaultMaxRange = 0.0f;
+	_samplePlaybackParams.clear();
 	_sceneLoopTargets.clear();
 	_sceneLoopSources.clear();
 	_sceneLoopStartMillis.clear();
@@ -4106,6 +4218,30 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 		      _playerCharacterScript.playerName.c_str(),
 		      _playerCharacterScript.initialBodyName.c_str(), playerAssetStem.c_str(),
 		      _playerCharacterScript.hasCombineBlock() ? "yes" : "no");
+	}
+
+	// BeginTime is a once-per-main-place initialization phase in the retail
+	// room script. It runs after startup variables exist and after the initial
+	// room/player identity is known, but before the main runtime thread.
+	uint32 beginTimeStart = roomProgram.instructions().size();
+	uint32 beginTimeEnd = roomProgram.instructions().size();
+	for (uint32 i = 0; i < roomProgram.instructions().size(); ++i) {
+		if (!roomProgram.instructions()[i].opcode.equalsIgnoreCase("BeginTime"))
+			continue;
+		beginTimeStart = i + 1;
+		for (uint32 j = beginTimeStart; j < roomProgram.instructions().size(); ++j) {
+			if (roomProgram.instructions()[j].opcode.equalsIgnoreCase("end")) {
+				beginTimeEnd = j;
+				break;
+			}
+		}
+		break;
+	}
+	if (beginTimeStart < beginTimeEnd) {
+		if (!_scriptVM.run(roomProgram, beginTimeStart, beginTimeEnd, 4096)) {
+			warning("Zero Comico: failed to execute %s BeginTime state", level.c_str());
+			return false;
+		}
 	}
 
 	Common::Path playerDirectory =

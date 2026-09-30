@@ -430,6 +430,29 @@ also routed through the same decoded Object state. The three shipped uses test
 CPU ControlCode scheduling can consume the same spatial truth rather than
 reimplementing range geometry.
 
+## Retail BeginTime and audio parameters
+
+Each shipped main-place room script has a `BeginTime:` block between
+`startup:` and `runtime:`. The previous runtime skipped that phase entirely.
+It is now executed once per main place after startup variables and the initial
+room/player identity are available.
+
+Executable registration strings confirm the four audio-control signatures used
+there: `ms_smp_default ffffn`, `smp_param sffff`,
+`SetClassVolume in` and `SetGlobalMasterVolume n`. Direct callback
+disassembly shows that the first two sample floats are stored directly while
+the third and fourth are passed through the ordinary world conversion routine.
+With retail `GlobalScaling 1`, the stored range values are therefore
+`metres * 100`.
+
+The runtime now preserves the default sample pan/volume/range, named
+`smp_param` overrides, global master percentage and the six retail sound-class
+percentages. `BeginTime` also drives the already implemented
+`SetSpotCameraParameters`, user-effect state and hat visibility paths.
+Applying every class/sample percentage to individual ScummVM playback channels
+is deliberately kept as the next audio-routing step rather than collapsing the
+six retail classes into the smaller set of ScummVM mixer groups.
+
 ## Retail depth cue
 
 The retail script corpus uses `dcue_all` exactly once, during Mp5 startup:

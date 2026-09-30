@@ -41,6 +41,14 @@ struct MixerVolumeSnapshot {
 	int speech;
 };
 
+struct SamplePlaybackParams {
+	Common::String name;
+	float pan;
+	float volume;
+	float minRange;
+	float maxRange;
+};
+
 struct CpuCharacterRuntime {
 	Common::String name;
 	Common::String roomName;
@@ -182,6 +190,13 @@ private:
 	Common::Array<uint32> _userEffectElapsedMs;
 	Common::Array<uint32> _userEffectStateChangedMillis;
 	Common::Array<MixerVolumeSnapshot> _masterVolumeStack;
+	float _globalMasterVolume;
+	float _soundClassVolumes[6];
+	float _sampleDefaultPan;
+	float _sampleDefaultVolume;
+	float _sampleDefaultMinRange;
+	float _sampleDefaultMaxRange;
+	Common::Array<SamplePlaybackParams> _samplePlaybackParams;
 	Common::String _loopCutName;
 	Common::String _loopCutAssetStem;
 	float _loopCutStartFrame;
