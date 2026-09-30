@@ -2520,11 +2520,48 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 		return true;
 	}
 
-	// The master-volume stack is preserved as an opcode boundary. Audio class
-	// routing will be connected when the sound runtime is added.
-	if (op.equalsIgnoreCase("mch_push_master_volume") ||
-	    op.equalsIgnoreCase("mch_pop_master_volume"))
+	if (op.equalsIgnoreCase("mch_push_master_volume")) {
+		if (instruction.args.empty() || !_mixer)
+			return false;
+
+		int32 requested = 0;
+		if (!_scriptVM.resolveValue(instruction.args[0], requested))
+			return false;
+
+		MixerVolumeSnapshot snapshot;
+		snapshot.plain = _mixer->getVolumeForSoundType(Audio::Mixer::kPlainSoundType);
+		snapshot.sfx = _mixer->getVolumeForSoundType(Audio::Mixer::kSFXSoundType);
+		snapshot.music = _mixer->getVolumeForSoundType(Audio::Mixer::kMusicSoundType);
+		snapshot.speech = _mixer->getVolumeForSoundType(Audio::Mixer::kSpeechSoundType);
+		_masterVolumeStack.push_back(snapshot);
+
+		int volume = (int)requested;
+		if (volume < 0)
+			volume = 0;
+		else if (volume > Audio::Mixer::kMaxMixerVolume)
+			volume = Audio::Mixer::kMaxMixerVolume;
+
+		_mixer->setVolumeForSoundType(Audio::Mixer::kPlainSoundType, volume);
+		_mixer->setVolumeForSoundType(Audio::Mixer::kSFXSoundType, volume);
+		_mixer->setVolumeForSoundType(Audio::Mixer::kMusicSoundType, volume);
+		_mixer->setVolumeForSoundType(Audio::Mixer::kSpeechSoundType, volume);
+		debug(1, "Zero Comico: pushed master volume and set mixer groups to %d", volume);
 		return true;
+	}
+
+	if (op.equalsIgnoreCase("mch_pop_master_volume")) {
+		if (!_mixer || _masterVolumeStack.empty())
+			return false;
+
+		const MixerVolumeSnapshot snapshot = _masterVolumeStack.back();
+		_masterVolumeStack.pop_back();
+		_mixer->setVolumeForSoundType(Audio::Mixer::kPlainSoundType, snapshot.plain);
+		_mixer->setVolumeForSoundType(Audio::Mixer::kSFXSoundType, snapshot.sfx);
+		_mixer->setVolumeForSoundType(Audio::Mixer::kMusicSoundType, snapshot.music);
+		_mixer->setVolumeForSoundType(Audio::Mixer::kSpeechSoundType, snapshot.speech);
+		debug(1, "Zero Comico: restored master volume snapshot");
+		return true;
+	}
 
 	return false;
 }
@@ -3233,6 +3270,7 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 	_environmentStateEnabled.clear();
 	_lightStateNames.clear();
 	_lightStateEnabled.clear();
+	_masterVolumeStack.clear();
 	_sceneLoopTargets.clear();
 	_sceneLoopSources.clear();
 	_sceneLoopStartMillis.clear();

@@ -34,6 +34,13 @@ struct DynamicSceneEntity {
 	Common::Array<NamedMaterial> materials;
 };
 
+struct MixerVolumeSnapshot {
+	int plain;
+	int sfx;
+	int music;
+	int speech;
+};
+
 struct CpuCharacterRuntime {
 	Common::String name;
 	Common::String roomName;
@@ -160,6 +167,7 @@ private:
 	Common::Array<bool> _environmentStateEnabled;
 	Common::Array<Common::String> _lightStateNames;
 	Common::Array<bool> _lightStateEnabled;
+	Common::Array<MixerVolumeSnapshot> _masterVolumeStack;
 	Common::String _loopCutName;
 	Common::String _loopCutAssetStem;
 	float _loopCutStartFrame;
