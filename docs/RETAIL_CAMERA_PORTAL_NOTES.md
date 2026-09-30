@@ -415,7 +415,14 @@ Mp3 height changes and Mp5 automatic cutscene/room-transition zones.
 gameplay the player position is tested against those shapes; crossing a
 boundary updates the Object's `INSIDE` flag and executes the corresponding
 retail script block through the normal ScriptVM. Room changes reset the spatial
-inside cache so the destination room is classified afresh.
+inside cache so the destination room is classified afresh. The puzzle files
+themselves do not contain nested `Room` declarations. A census of all 15
+spatial triggers shows that each trigger's Object/shape name carries the
+source room's `rXY_` prefix from `room.isc`: for example
+`r51_r52_collision00` belongs to `Room5_1`, whose Prefix is `r51_`.
+The runtime therefore filters spatial triggers by the active Room Prefix.
+Where a retail `roomscope` string exists, forms such as `" r41_*"` are
+normalized as prefix wildcards rather than compared to the logical room name.
 
 The character-side `ifCobjstate Character Object "STATE VALUE"` condition is
 also routed through the same decoded Object state. The three shipped uses test

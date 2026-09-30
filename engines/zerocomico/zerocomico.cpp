@@ -4490,12 +4490,31 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 			PuzzleObject &object = _activePuzzle.objects[objectIndex];
 			if (!object.enabled)
 				continue;
-			if (!object.roomScope.empty() && !object.roomScope.equalsIgnoreCase(_activeRoomName))
-				continue;
 
 			const Common::String regionName = !object.rangeShape.empty()
 				? object.rangeShape : object.polygon;
 			if (regionName.empty())
+				continue;
+
+			// puzzle.isc is a main-place-wide object table, not a set of Room
+			// blocks. The retail room association is carried by the same rXY_
+			// prefix declared as Room.Prefix in room.isc. A few ordinary objects
+			// additionally carry roomscope strings such as " r41_*"; normalize
+			// those as prefix wildcards rather than comparing them to Room4_1.
+			bool inRoomScope = true;
+			if (!object.roomScope.empty()) {
+				Common::String scope = object.roomScope;
+				scope.trim();
+				while (!scope.empty() && scope[scope.size() - 1] == '*')
+					scope.deleteLastChar();
+				inRoomScope = scope.empty() || startsWithIgnoreCase(_activeRoomPrefix, scope);
+			} else if (!_activeRoomPrefix.empty() &&
+			           (startsWithIgnoreCase(object.name, "r") ||
+			            startsWithIgnoreCase(regionName, "r"))) {
+				inRoomScope = startsWithIgnoreCase(object.name, _activeRoomPrefix) ||
+				              startsWithIgnoreCase(regionName, _activeRoomPrefix);
+			}
+			if (!inRoomScope)
 				continue;
 
 			const bool insideNow = _activeShapes.containsRegion(
