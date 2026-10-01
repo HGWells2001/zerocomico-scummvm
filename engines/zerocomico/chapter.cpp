@@ -9,6 +9,19 @@
 
 namespace ZeroComico {
 
+namespace {
+
+static bool parseRoomFloat(const Common::String &value, float &out) {
+	char *end = nullptr;
+	const double parsed = strtod(value.c_str(), &end);
+	if (!end || end == value.c_str() || *end != 0)
+		return false;
+	out = (float)parsed;
+	return true;
+}
+
+}
+
 bool ChapterDefinition::load(const Common::Path &roomScript) {
 	ScriptProgram program;
 	if (!program.load(roomScript))
@@ -74,6 +87,46 @@ bool ChapterDefinition::parse(const ScriptProgram &program) {
 				if (end && *end == 0 && parsed >= 0.0)
 					room.musicVolume = (float)parsed;
 			}
+		} else if (inst.opcode.equalsIgnoreCase("EnvSound") && inst.args.size() >= 3) {
+			RoomEnvironmentSound sound;
+			sound.name = inst.args[0];
+			sound.fileName.clear();
+			sound.entity.clear();
+			sound.emitter = false;
+			sound.enabled = true;
+			sound.farVolume = 100.0f;
+			sound.nearVolume = 100.0f;
+			sound.minRange = 0.0f;
+			sound.maxRange = 0.0f;
+
+			if (inst.args[1].equalsIgnoreCase("Emitter"))
+				sound.emitter = true;
+			else if (!inst.args[1].equalsIgnoreCase("In"))
+				continue;
+			sound.fileName = inst.args[2];
+
+			for (uint32 a = 3; a < inst.args.size(); ++a) {
+				const Common::String &token = inst.args[a];
+				if (token.equalsIgnoreCase("off")) {
+					sound.enabled = false;
+				} else if (token.equalsIgnoreCase("Entity") && a + 1 < inst.args.size()) {
+					sound.entity = inst.args[++a];
+				} else if (token.equalsIgnoreCase("Volumes") && a + 2 < inst.args.size()) {
+					parseRoomFloat(inst.args[++a], sound.farVolume);
+					parseRoomFloat(inst.args[++a], sound.nearVolume);
+				} else if (token.equalsIgnoreCase("Volume") && a + 1 < inst.args.size()) {
+					float volume = 100.0f;
+					if (parseRoomFloat(inst.args[++a], volume)) {
+						sound.nearVolume = volume;
+						sound.farVolume = sound.emitter ? 0.0f : volume;
+					}
+				} else if (token.equalsIgnoreCase("Ranges") && a + 2 < inst.args.size()) {
+					parseRoomFloat(inst.args[++a], sound.minRange);
+					parseRoomFloat(inst.args[++a], sound.maxRange);
+				}
+			}
+
+			room.environmentSounds.push_back(sound);
 		} else if (inst.opcode.equalsIgnoreCase("map") && !inst.args.empty()) {
 			room.maps.push_back(inst.args[0]);
 		} else if (inst.opcode.equalsIgnoreCase("cameramap") && !inst.args.empty()) {

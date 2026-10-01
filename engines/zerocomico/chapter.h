@@ -27,6 +27,18 @@ struct RoomCharacterSound {
 	Common::String fileName;
 };
 
+struct RoomEnvironmentSound {
+	Common::String name;
+	Common::String fileName;
+	Common::String entity;
+	bool emitter;
+	bool enabled;
+	float farVolume;
+	float nearVolume;
+	float minRange;
+	float maxRange;
+};
+
 struct RoomDefinition {
 	Common::String name;
 	Common::String prefix;
@@ -39,6 +51,7 @@ struct RoomDefinition {
 	Common::Array<Common::String> cameraMaps;
 	Common::Array<RoomPortal> portals;
 	Common::Array<RoomCharacterSound> characterSounds;
+	Common::Array<RoomEnvironmentSound> environmentSounds;
 	uint32 codeStart;
 	uint32 codeEnd;
 };
