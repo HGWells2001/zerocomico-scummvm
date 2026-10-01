@@ -43,6 +43,8 @@ struct CharacterDefinition {
 	bool castShadows;
 	Common::String initialAnimSet;
 	Common::String initialBodyName;
+	Common::String cloneSourceBodyName;
+	Common::String cloneTargetBodyName;
 	Common::String initialEntity;
 	Common::String initialVector;
 	Common::String mainPlace;

@@ -75,6 +75,8 @@ bool CharacterScript::parse() {
 		character.cpuPlayer = false;
 		character.castShadows = true;
 		character.breakLifeOnInitialize = false;
+		character.cloneSourceBodyName.clear();
+		character.cloneTargetBodyName.clear();
 		character.initializeStart = character.initializeEnd = 0xffffffffU;
 		character.controlStart = character.controlEnd = 0xffffffffU;
 		character.hidingStart = character.hidingEnd = 0xffffffffU;
@@ -93,6 +95,15 @@ bool CharacterScript::parse() {
 			if (inst.opcode.equalsIgnoreCase("CastShadows") && !inst.args.empty()) {
 				character.castShadows =
 					inst.args[0].equalsIgnoreCase("TRUE") || inst.args[0] == "1";
+				continue;
+			}
+			if (inst.opcode.equalsIgnoreCase("CloneEntityFrom") && inst.args.size() >= 2) {
+				// Retail character clones share the source body's P3D/ANJ resources
+				// but expose a distinct logical body root in char.isc. Mp3 ships only
+				// the original zog_zombieg asset while Zombieg1/Zombieg request
+				// zog1_zombieg/zog2_zombieg clones.
+				character.cloneSourceBodyName = inst.args[0];
+				character.cloneTargetBodyName = inst.args[1];
 				continue;
 			}
 			if (inst.opcode.equalsIgnoreCase("Sample") && inst.args.size() >= 2) {

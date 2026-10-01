@@ -1710,7 +1710,16 @@ bool ZeroComicoEngine::instantiateCpuCharacter(const Common::String &name) {
 	if (!definition || !definition->cpuPlayer || definition->initialBodyName.empty())
 		return false;
 
-	Common::String assetStem = definition->initialBodyName;
+	Common::String runtimeBodyRoot = definition->initialBodyName;
+	Common::String assetBodyRoot = runtimeBodyRoot;
+	if (!definition->cloneSourceBodyName.empty() &&
+	    (definition->cloneTargetBodyName.empty() ||
+	     runtimeBodyRoot.equalsIgnoreCase(definition->cloneTargetBodyName))) {
+		assetBodyRoot = definition->cloneSourceBodyName;
+		runtimeBodyRoot = definition->cloneSourceBodyName;
+	}
+
+	Common::String assetStem = assetBodyRoot;
 	const uint32 separator = assetStem.find('_');
 	if (separator != Common::String::npos && separator + 1 < assetStem.size())
 		assetStem = assetStem.substr(separator + 1);
@@ -1731,6 +1740,15 @@ bool ZeroComicoEngine::instantiateCpuCharacter(const Common::String &name) {
 		fileStems.push_back(lowerStem);
 	if (!name.equalsIgnoreCase(assetStem))
 		fileStems.push_back(name);
+	if (!definition->cloneSourceBodyName.empty()) {
+		for (uint32 i = 0; i < _playerCharacterScript.characters.size(); ++i) {
+			const CharacterDefinition &sourceDefinition = _playerCharacterScript.characters[i];
+			if (sourceDefinition.initialBodyName.equalsIgnoreCase(definition->cloneSourceBodyName) &&
+			    !sourceDefinition.name.equalsIgnoreCase(assetStem) &&
+			    !containsIgnoreCase(fileStems, sourceDefinition.name))
+				fileStems.push_back(sourceDefinition.name);
+		}
+	}
 
 	SceneModel body;
 	Common::Path bodyDirectory;
@@ -1745,8 +1763,11 @@ bool ZeroComicoEngine::instantiateCpuCharacter(const Common::String &name) {
 		}
 	}
 	if (!loaded) {
-		warning("Zero Comico: cannot load CPU body %s for %s",
-		        definition->initialBodyName.c_str(), name.c_str());
+		warning("Zero Comico: cannot load CPU body %s%s%s for %s",
+		        definition->initialBodyName.c_str(),
+		        definition->cloneSourceBodyName.empty() ? "" : " cloned from ",
+		        definition->cloneSourceBodyName.empty() ? "" : definition->cloneSourceBodyName.c_str(),
+		        name.c_str());
 		return false;
 	}
 
@@ -1755,7 +1776,7 @@ bool ZeroComicoEngine::instantiateCpuCharacter(const Common::String &name) {
 	CpuCharacterRuntime runtime;
 	runtime.name = definition->name;
 	runtime.roomName = definition->roomName;
-	runtime.bodyRoot = definition->initialBodyName;
+	runtime.bodyRoot = runtimeBodyRoot;
 	runtime.initialEntity = definition->initialEntity;
 	runtime.initialVector = definition->initialVector;
 	runtime.assetDirectory = bodyDirectory;
