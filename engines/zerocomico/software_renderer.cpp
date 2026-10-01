@@ -111,6 +111,14 @@ static bool isVisible(const Common::String &name, const Common::Array<Common::St
 	return false;
 }
 
+static bool containsIgnoreCase(const Common::Array<Common::String> &values,
+                               const Common::String &value) {
+	for (uint32 i = 0; i < values.size(); ++i)
+		if (values[i].equalsIgnoreCase(value))
+			return true;
+	return false;
+}
+
 static Vec3f transformVertex(const Vec3f &stored, const ObjectTransform &transform) {
 	// MeshData stores the retail loader's intermediate vertex value:
 	// filePosition + translation - pivot. Undo the translation component,
@@ -906,9 +914,35 @@ bool SoftwareRenderer::pickMeshWithActors(const SceneModel &scene, const RenderC
 		const RenderActor &actor = actors[actorIndex];
 		if (!actor.scene)
 			continue;
+
+		// Preserve direct sub-mesh picking for any caller that explicitly names
+		// actor geometry.
 		pickSceneMeshes(*actor.scene, camera, right, up, forward, screenX, screenY,
 		                candidates, &actor.transform, width, height,
 		                bestDepth, pickedName);
+
+		// Puzzle scripts normally name a CPU character by its JACS hierarchy root,
+		// not by one of the drawable child meshes. When that logical name is a
+		// candidate, hit-test the actor's currently visible geometry and report the
+		// hierarchy root back to the puzzle layer.
+		if (actor.interactionName.empty() ||
+		    !containsIgnoreCase(candidates, actor.interactionName))
+			continue;
+
+		Common::Array<Common::String> actorMeshes = actor.visibleMeshes;
+		if (actorMeshes.empty()) {
+			for (uint32 meshIndex = 0; meshIndex < actor.scene->meshes.size(); ++meshIndex) {
+				if (!actor.scene->meshes[meshIndex].data.isFlesh())
+					actorMeshes.push_back(actor.scene->meshes[meshIndex].name);
+			}
+		}
+
+		const float previousBestDepth = bestDepth;
+		pickSceneMeshes(*actor.scene, camera, right, up, forward, screenX, screenY,
+		                actorMeshes, &actor.transform, width, height,
+		                bestDepth, pickedName);
+		if (bestDepth < previousBestDepth)
+			pickedName = actor.interactionName;
 	}
 	return !pickedName.empty();
 }

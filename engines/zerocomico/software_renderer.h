@@ -48,6 +48,12 @@ struct RenderActor {
 	const SceneModel *scene;
 	Common::Path textureDirectory;
 	Common::Array<Common::String> visibleMeshes;
+
+	// Optional logical puzzle entity represented by this actor. Retail puzzle
+	// scripts address CPU characters by their JACS hierarchy root (for example
+	// coc_cocco), while the drawable geometry consists of child meshes.
+	Common::String interactionName;
+
 	RenderTransform transform;
 };
 
