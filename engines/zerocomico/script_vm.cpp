@@ -154,11 +154,24 @@ bool ScriptVM::resolveValue(const Common::String &token, int32 &value) const {
 	Common::String indexExpression;
 	if (splitReference(token, arrayName, indexExpression)) {
 		int32 index = 0;
-		if (!resolveValue(indexExpression, index) || index < 0)
+		if (!resolveValue(indexExpression, index))
 			return false;
 
 		ArrayMap::const_iterator it = _arrays.find(arrayName);
-		if (it == _arrays.end() || (uint32)index >= it->_value.size())
+		if (it == _arrays.end())
+			return false;
+
+		// Retail scripts deliberately use negative sentinel indices while an
+		// interactive selection is unarmed. Mp2's tube puzzle initializes PIndex
+		// to -2/-1 but still evaluates Tubi_IN(PIndex) before checking that state.
+		// The original expression resolver tolerates that read; treating it as a
+		// zero value lets the sentinel control flow proceed. Keep writes strict in
+		// setVariable(), and keep positive out-of-range reads as errors.
+		if (index < 0) {
+			value = 0;
+			return true;
+		}
+		if ((uint32)index >= it->_value.size())
 			return false;
 		value = it->_value[(uint32)index];
 		return true;
