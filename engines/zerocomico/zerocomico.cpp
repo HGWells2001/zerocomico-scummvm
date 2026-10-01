@@ -2020,7 +2020,17 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 			_playerPosition = marker->a;
 			_playerFacingTarget = marker->b;
 			_havePlayerStart = true;
-			_playerNavNode = -1;
+
+			// When the script teleports the player but does not have a different
+			// gameplay room queued, the current BSP remains authoritative and the
+			// new position can be snapped immediately. Mp5 bootstrap does exactly
+			// this after CSetPlace Mainplayer Room5_1. If a real room transition is
+			// pending, keep the node invalid until the destination BSP is loaded.
+			if (_pendingRoomName.empty() && !_activeWalkMap.graph.empty())
+				_playerNavNode = _activeWalkMap.nearestGraphNode(
+					_playerPosition.x, _playerPosition.z);
+			else
+				_playerNavNode = -1;
 			return true;
 		}
 
