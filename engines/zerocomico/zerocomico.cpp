@@ -717,7 +717,9 @@ ZeroComicoEngine::ZeroComicoEngine(OSystem *syst, const ADGameDescription *desc)
 }
 
 bool ZeroComicoEngine::hasFeature(EngineFeature f) const {
-	return f == kSupportsReturnToLauncher;
+	return f == kSupportsReturnToLauncher ||
+	       f == kSupportsSavingDuringRuntime ||
+	       f == kSupportsLoadingDuringRuntime;
 }
 
 bool ZeroComicoEngine::canSaveGameStateCurrently(Common::U32String *msg) {
