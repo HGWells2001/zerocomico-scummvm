@@ -2090,8 +2090,18 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 			_pendingRoomCutscene.clear();
 			_pendingRoomMapRoomName.clear();
 			_pendingRoomMapName.clear();
-			debug(2, "Zero Comico: SetPlace %s keeps the current room in place",
-			      _activeRoomName.c_str());
+
+			// A same-room SetPlace often follows SetCharPos_Vector. The latter
+			// deliberately invalidates the navigation node because the character
+			// has teleported. Since we keep the room/BSP in place here, resnap the
+			// new position to that existing graph instead of leaving gameplay with
+			// _playerNavNode == -1. Mp2's Fachiro/c241 sequence depends on this.
+			if (_playerNavNode < 0 && !_activeWalkMap.graph.empty())
+				_playerNavNode = _activeWalkMap.nearestGraphNode(
+					_playerPosition.x, _playerPosition.z);
+
+			debug(2, "Zero Comico: SetPlace %s keeps the current room in place at nav node %d",
+			      _activeRoomName.c_str(), _playerNavNode);
 			return true;
 		}
 
