@@ -701,7 +701,7 @@ ZeroComicoEngine::ZeroComicoEngine(OSystem *syst, const ADGameDescription *desc)
 	  _masterColorFadeActive(false), _spotHeight(85.0f), _spotMaxDeltaY(30.0f), _spotDistance(350.0f),
 	  _spotMinDistance(25.0f), _spotSmooth(30.0f),
 	  _spotCameraInitialized(false), _dynamicCameraInitialized(false), _scriptKeyMask(0),
-	  _scriptAudioClass(3), _pendingLoadActive(false) {
+	  _scriptAudioClass(3), _pendingLoadActive(false), _lastBackgroundScriptTick(0) {
 	_environmentSoundActive = false;
 	_playerPosition.x = _playerPosition.y = _playerPosition.z = 0.0f;
 	for (int soundClass = 0; soundClass < 6; ++soundClass)
@@ -3407,6 +3407,55 @@ bool ZeroComicoEngine::yieldScriptExecution() {
 	return !shouldQuit();
 }
 
+bool ZeroComicoEngine::scheduleScriptThread(const ScriptProgram &program,
+                                                 uint32 startIndex, uint32 endIndex) {
+	if (startIndex >= endIndex || endIndex > program.instructions().size())
+		return false;
+
+	BackgroundScriptThread thread;
+	thread.program = &program;
+	thread.pc = startIndex;
+	thread.endIndex = endIndex;
+	_backgroundScriptThreads.push_back(thread);
+
+	debug(1, "Zero Comico: scheduled background script thread [%u, %u)",
+	      startIndex, endIndex);
+	return true;
+}
+
+bool ZeroComicoEngine::runBackgroundScriptThreads() {
+	if (_backgroundScriptThreads.empty())
+		return true;
+
+	const uint32 now = _system->getMillis();
+	if (now - _lastBackgroundScriptTick < 40U)
+		return true;
+	_lastBackgroundScriptTick = now;
+
+	for (uint32 i = 0; i < _backgroundScriptThreads.size();) {
+		BackgroundScriptThread &thread = _backgroundScriptThreads[i];
+		if (!thread.program) {
+			_backgroundScriptThreads.remove_at(i);
+			continue;
+		}
+
+		bool finished = false;
+		if (!_scriptVM.runThreadStep(*thread.program, thread.pc,
+		                             thread.endIndex, finished, 256)) {
+			warning("Zero Comico: background script thread stopped on an unsupported opcode");
+			_backgroundScriptThreads.remove_at(i);
+			continue;
+		}
+
+		if (finished) {
+			_backgroundScriptThreads.remove_at(i);
+			continue;
+		}
+		++i;
+	}
+	return true;
+}
+
 void ZeroComicoEngine::applyMasterColor(Graphics::ManagedSurface &surface) {
 	if (_masterColorFadeActive) {
 		const uint32 elapsedMillis = _system->getMillis() - _masterColorFadeStartMillis;
@@ -4569,6 +4618,8 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 	_dynamicSceneEntities.clear();
 	_cpuCharacters.clear();
 	_deferredBrokenCpuCharacters.clear();
+	_backgroundScriptThreads.clear();
+	_lastBackgroundScriptTick = _system->getMillis();
 	_activeRenderActors.clear();
 
 	const Common::Path roomScript(level + "/gameplay/room.isc");
@@ -5488,6 +5539,17 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 	};
 
 	while (!shouldQuit() && !done) {
+		_scriptDialogueContextActive = true;
+		_scriptDialogueCamera = renderCamera;
+		_scriptDialogueSceneDirectory = sceneDirectory;
+		_scriptDialoguePlayerDirectory = playerDirectory;
+		_scriptDialogueFrame = &frame;
+		const bool backgroundOk = runBackgroundScriptThreads();
+		_scriptDialogueContextActive = false;
+		_scriptDialogueFrame = nullptr;
+		if (!backgroundOk)
+			return false;
+
 		if (!runCharacterControlCodes())
 			return false;
 		if (!runPuzzleRegionTransitions())
