@@ -8,6 +8,7 @@
 #include "common/array.h"
 #include "common/path.h"
 #include "common/str.h"
+#include "common/serializer.h"
 
 #include "zerocomico/script_program.h"
 
@@ -51,6 +52,7 @@ public:
 	DialogDefinition *findDialogMutable(const Common::String &name);
 	const DialogSpeaker *findSpeakerByKey(const Common::String &key) const;
 	const DialogSpeaker *findSpeakerByName(const Common::String &name) const;
+	void synchronizeState(Common::Serializer &s);
 
 	Common::Array<DialogSpeaker> speakers;
 	Common::Array<DialogDefinition> dialogs;

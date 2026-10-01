@@ -154,4 +154,44 @@ const DialogSpeaker *DialogScript::findSpeakerByName(const Common::String &name)
 	return nullptr;
 }
 
+void DialogScript::synchronizeState(Common::Serializer &s) {
+	uint32 dialogCount = s.isSaving() ? (uint32)dialogs.size() : 0;
+	s.syncAsUint32LE(dialogCount);
+
+	for (uint32 dialogIndex = 0; dialogIndex < dialogCount; ++dialogIndex) {
+		Common::String dialogName;
+		uint32 lineCount = 0;
+		uint32 choiceCount = 0;
+
+		if (s.isSaving()) {
+			dialogName = dialogs[dialogIndex].name;
+			lineCount = (uint32)dialogs[dialogIndex].lines.size();
+			choiceCount = (uint32)dialogs[dialogIndex].choices.size();
+		}
+
+		s.syncString(dialogName);
+		s.syncAsUint32LE(lineCount);
+		DialogDefinition *dialog = s.isLoading() ? findDialogMutable(dialogName) : &dialogs[dialogIndex];
+
+		for (uint32 lineIndex = 0; lineIndex < lineCount; ++lineIndex) {
+			Common::String text;
+			if (s.isSaving())
+				text = dialog->lines[lineIndex].text;
+			s.syncString(text);
+			if (s.isLoading() && dialog && lineIndex < dialog->lines.size())
+				dialog->lines[lineIndex].text = text;
+		}
+
+		s.syncAsUint32LE(choiceCount);
+		for (uint32 choiceIndex = 0; choiceIndex < choiceCount; ++choiceIndex) {
+			byte enabled = 0;
+			if (s.isSaving())
+				enabled = dialog->choices[choiceIndex].enabled ? 1 : 0;
+			s.syncAsByte(enabled);
+			if (s.isLoading() && dialog && choiceIndex < dialog->choices.size())
+				dialog->choices[choiceIndex].enabled = enabled != 0;
+		}
+	}
+}
+
 } // namespace ZeroComico

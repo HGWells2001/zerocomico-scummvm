@@ -8,6 +8,7 @@
 #include "common/array.h"
 #include "common/path.h"
 #include "common/str.h"
+#include "common/serializer.h"
 
 #include "zerocomico/script_program.h"
 
@@ -60,6 +61,7 @@ public:
 	PuzzleObject *findByEntity(const Common::String &entity);
 	const PuzzleObject *findByEntity(const Common::String &entity) const;
 	const ScriptProgram &program() const { return _program; }
+	void synchronizeState(Common::Serializer &s);
 
 	Common::Array<PuzzleObject> objects;
 

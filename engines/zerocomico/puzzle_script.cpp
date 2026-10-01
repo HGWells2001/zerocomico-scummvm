@@ -200,4 +200,53 @@ const PuzzleObject *PuzzleScript::findByEntity(const Common::String &entity) con
 	return nullptr;
 }
 
+void PuzzleScript::synchronizeState(Common::Serializer &s) {
+	uint32 count = s.isSaving() ? (uint32)objects.size() : 0;
+	s.syncAsUint32LE(count);
+
+	for (uint32 i = 0; i < count; ++i) {
+		Common::String name;
+		uint16 flags = 0;
+
+		if (s.isSaving()) {
+			const PuzzleObject &object = objects[i];
+			name = object.name;
+			flags |= object.enabled ?      (1U << 0) : 0;
+			flags |= object.examinable ?   (1U << 1) : 0;
+			flags |= object.pickable ?     (1U << 2) : 0;
+			flags |= object.operated ?     (1U << 3) : 0;
+			flags |= object.examinated ?   (1U << 4) : 0;
+			flags |= object.autoCamera ?   (1U << 5) : 0;
+			flags |= object.randomPos ?    (1U << 6) : 0;
+			flags |= object.combined ?     (1U << 7) : 0;
+			flags |= object.assigned ?     (1U << 8) : 0;
+			flags |= object.inside ?       (1U << 9) : 0;
+			flags |= object.collision ?    (1U << 10) : 0;
+			flags |= object.soundState ?   (1U << 11) : 0;
+		}
+
+		s.syncString(name);
+		s.syncAsUint16LE(flags);
+
+		if (!s.isLoading())
+			continue;
+
+		PuzzleObject *object = findObject(name);
+		if (!object)
+			continue;
+		object->enabled =    (flags & (1U << 0)) != 0;
+		object->examinable = (flags & (1U << 1)) != 0;
+		object->pickable =   (flags & (1U << 2)) != 0;
+		object->operated =   (flags & (1U << 3)) != 0;
+		object->examinated = (flags & (1U << 4)) != 0;
+		object->autoCamera = (flags & (1U << 5)) != 0;
+		object->randomPos =  (flags & (1U << 6)) != 0;
+		object->combined =   (flags & (1U << 7)) != 0;
+		object->assigned =   (flags & (1U << 8)) != 0;
+		object->inside =     (flags & (1U << 9)) != 0;
+		object->collision =  (flags & (1U << 10)) != 0;
+		object->soundState = (flags & (1U << 11)) != 0;
+	}
+}
+
 } // namespace ZeroComico
