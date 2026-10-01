@@ -1393,6 +1393,7 @@ bool ZeroComicoEngine::cloneSceneEntity(const Common::String &sourceName,
 	}
 
 	DynamicSceneEntity entity;
+	entity.sourceName = sourceName;
 	entity.name = cloneName;
 	entity.mesh = *source;
 	entity.mesh.name = cloneName;

@@ -28,6 +28,7 @@ struct ADGameDescription;
 namespace ZeroComico {
 
 struct DynamicSceneEntity {
+	Common::String sourceName;
 	Common::String name;
 	Common::String roomName;
 	NamedMesh mesh;
