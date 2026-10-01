@@ -3414,6 +3414,7 @@ bool ZeroComicoEngine::scheduleScriptThread(const ScriptProgram &program,
 
 	BackgroundScriptThread thread;
 	thread.program = &program;
+	thread.startIndex = startIndex;
 	thread.pc = startIndex;
 	thread.endIndex = endIndex;
 	_backgroundScriptThreads.push_back(thread);
@@ -3440,8 +3441,8 @@ bool ZeroComicoEngine::runBackgroundScriptThreads() {
 		}
 
 		bool finished = false;
-		if (!_scriptVM.runThreadStep(*thread.program, thread.pc,
-		                             thread.endIndex, finished, 256)) {
+		if (!_scriptVM.runThreadStep(*thread.program, thread.startIndex,
+		                             thread.pc, thread.endIndex, finished, 256)) {
 			warning("Zero Comico: background script thread stopped on an unsupported opcode");
 			_backgroundScriptThreads.remove_at(i);
 			continue;

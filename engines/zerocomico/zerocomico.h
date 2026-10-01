@@ -52,6 +52,7 @@ struct SamplePlaybackParams {
 
 struct BackgroundScriptThread {
 	const ScriptProgram *program;
+	uint32 startIndex;
 	uint32 pc;
 	uint32 endIndex;
 };
