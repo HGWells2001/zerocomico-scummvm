@@ -4351,7 +4351,11 @@ bool ZeroComicoEngine::renderGameplayFrame(const RenderCamera &camera,
 		cpuActor.scene = &character.scene;
 		cpuActor.textureDirectory = character.assetDirectory;
 		character.scene.visibleMeshesForSource(cpuSource, cpuFrame, cpuActor.visibleMeshes);
-		cpuActor.interactionName = character.bodyRoot;
+		const CharacterDefinition *interactionDefinition =
+			_playerCharacterScript.findCharacter(character.name);
+		cpuActor.interactionName =
+			(interactionDefinition && !interactionDefinition->cloneTargetBodyName.empty())
+				? interactionDefinition->cloneTargetBodyName : character.bodyRoot;
 		cpuActor.transform.translation = character.position;
 		cpuActor.transform.yawRadians = character.haveFacing
 			? std::atan2(character.facing.x, character.facing.z) : 0.0f;
