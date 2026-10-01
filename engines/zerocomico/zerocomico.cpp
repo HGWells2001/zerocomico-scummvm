@@ -4879,6 +4879,21 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 	_userEffectStates.clear();
 	_userEffectElapsedMs.clear();
 	_userEffectStateChangedMillis.clear();
+
+	// Chapter-end scripts (Mp1..Mp5) intentionally use
+	// mch_push_master_volume 0 before their AVI and then ChangeMainplace without
+	// a matching pop. The next main-place BeginTime reinitializes the retail
+	// logical volume, so also unwind any outstanding mixer snapshot here. This
+	// prevents a chapter transition from leaving ScummVM's sound-type mixers at
+	// zero while preserving the user's pre-push mixer settings.
+	if (_mixer && !_masterVolumeStack.empty()) {
+		const MixerVolumeSnapshot snapshot = _masterVolumeStack[0];
+		_mixer->setVolumeForSoundType(Audio::Mixer::kPlainSoundType, snapshot.plain);
+		_mixer->setVolumeForSoundType(Audio::Mixer::kSFXSoundType, snapshot.sfx);
+		_mixer->setVolumeForSoundType(Audio::Mixer::kMusicSoundType, snapshot.music);
+		_mixer->setVolumeForSoundType(Audio::Mixer::kSpeechSoundType, snapshot.speech);
+		debug(1, "Zero Comico: unwound master-volume stack at main-place boundary");
+	}
 	_masterVolumeStack.clear();
 	_globalMasterVolume = 100.0f;
 	for (int soundClass = 0; soundClass < 6; ++soundClass)
