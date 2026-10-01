@@ -6177,12 +6177,66 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 				continue;
 
 			Common::String operatedEntity;
+			const PuzzleObject *object = nullptr;
 			if (_gameplayRenderer.pickMeshWithActors(_activeScene, renderCamera,
 			                               event.mouse.x, event.mouse.y,
 			                               operateMeshes, _activeRenderActors, operatedEntity)) {
-				const PuzzleObject *object = findPuzzleObjectForMesh(
+				object = findPuzzleObjectForMesh(
 					_activePuzzle, _activeScene, _activeRoomPrefix, operatedEntity);
-				if (object && object->operateStart < object->operateEnd) {
+			}
+
+			// Some retail puzzle interactions are pure 2D range shapes with no
+			// drawable entity. Mp2 uses these around dangerous animals; operating
+			// the range after selecting the bombs is what reveals six required
+			// stars. If no mesh was hit, project the click onto the gameplay plane
+			// and resolve an enabled entity-less operate region.
+			if (!object) {
+				Vec3f interactionGround;
+				if (screenPointToGround(renderCamera, event.mouse.x, event.mouse.y,
+				                        800, 600, interactionGround)) {
+					for (uint32 objectIndex = 0;
+					     objectIndex < _activePuzzle.objects.size(); ++objectIndex) {
+						const PuzzleObject &candidate = _activePuzzle.objects[objectIndex];
+						if (!candidate.enabled || !candidate.entity.empty() ||
+						    candidate.operateStart == 0xffffffffU ||
+						    candidate.operateEnd == 0xffffffffU ||
+						    candidate.operateStart >= candidate.operateEnd)
+							continue;
+
+						const Common::String regionName = !candidate.rangeShape.empty()
+							? candidate.rangeShape : candidate.polygon;
+						if (regionName.empty())
+							continue;
+
+						bool inRoomScope = true;
+						if (!candidate.roomScope.empty()) {
+							Common::String scope = candidate.roomScope;
+							scope.trim();
+							while (!scope.empty() && scope[scope.size() - 1] == '*')
+								scope.deleteLastChar();
+							inRoomScope = scope.empty() ||
+							              startsWithIgnoreCase(_activeRoomPrefix, scope);
+						} else if ((startsWithIgnoreCase(candidate.name, "r") ||
+						            startsWithIgnoreCase(regionName, "r"))) {
+							inRoomScope =
+								startsWithIgnoreCase(candidate.name, _activeRoomPrefix) ||
+								startsWithIgnoreCase(regionName, _activeRoomPrefix);
+						}
+						if (!inRoomScope)
+							continue;
+
+						if (_activeShapes.containsRegion(
+								regionName, interactionGround.x, interactionGround.z)) {
+							object = &candidate;
+							debug(1, "Zero Comico: click selected puzzle region %s",
+							      candidate.name.c_str());
+							break;
+						}
+					}
+				}
+			}
+
+			if (object && object->operateStart < object->operateEnd) {
 					_pendingRoomName.clear();
 					_pendingRoomCutscene.clear();
 					_pendingSaySpeaker.clear();
@@ -6265,7 +6319,6 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 							renderGameplayFrame(renderCamera, sceneDirectory, playerDirectory,
 							                    "Stay", 0.0f, frame);
 					}
-				}
 				continue;
 			}
 
