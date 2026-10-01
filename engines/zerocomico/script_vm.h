@@ -38,6 +38,17 @@ public:
 	// host uses this hook to pump input and advance one script tick before the
 	// VM resumes at the requested label.
 	virtual bool yieldScriptExecution() { return true; }
+
+	// Retail begin_thread blocks containing scheduler jumps run asynchronously.
+	// The host owns their lifetime because ScriptProgram storage belongs to the
+	// active room/puzzle/character subsystem.
+	virtual bool scheduleScriptThread(const ScriptProgram &program,
+	                                  uint32 startIndex, uint32 endIndex) {
+		(void)program;
+		(void)startIndex;
+		(void)endIndex;
+		return false;
+	}
 };
 
 class ScriptVM {
@@ -48,6 +59,12 @@ public:
 
 	bool run(const ScriptProgram &program, uint32 startIndex = 0,
 	         uint32 endIndex = 0xffffffffU, uint32 maxSteps = 100000);
+
+	// Execute one asynchronous thread until it reaches a retail scheduler
+	// boundary (wjmp/wjmp_if_*), finishes, or errors. pc is preserved.
+	bool runThreadStep(const ScriptProgram &program, uint32 &pc,
+	                   uint32 endIndex, bool &finished,
+	                   uint32 maxSteps = 256);
 
 	bool getVariable(const Common::String &name, int32 &value) const;
 	bool setVariable(const Common::String &reference, int32 value);
@@ -71,6 +88,13 @@ private:
 
 	uint32 skipFalseBranch(const ScriptProgram &program, uint32 pc, uint32 endIndex) const;
 	uint32 skipElseBranch(const ScriptProgram &program, uint32 pc, uint32 endIndex) const;
+	bool runInternal(const ScriptProgram &program, uint32 &pc, uint32 endIndex,
+	                 uint32 maxSteps, bool stopAtSchedulerBoundary,
+	                 bool &finished);
+	bool threadBlockHasSchedulerJump(const ScriptProgram &program,
+	                                 uint32 startIndex, uint32 endIndex) const;
+	uint32 matchingThreadEnd(const ScriptProgram &program, uint32 pc,
+	                         uint32 endIndex) const;
 
 	bool splitReference(const Common::String &reference, Common::String &name,
 	                    Common::String &indexExpression) const;
