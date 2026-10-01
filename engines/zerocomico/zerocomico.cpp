@@ -2078,6 +2078,23 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 	if (op.equalsIgnoreCase("SetPlace")) {
 		if (instruction.args.empty())
 			return false;
+
+		// Setting the already active place is an in-place state assertion in the
+		// shipped scripts, not a request to reload its P3D/BSP data. Mp2 does this
+		// twice during bootstrap, including after permuting the 25 tube meshes. A
+		// deferred same-room reload would later replace those live transforms with
+		// the pristine Setp snapshot and desynchronize the physical puzzle from its
+		// Tubi_IN array.
+		if (instruction.args[0].equalsIgnoreCase(_activeRoomName)) {
+			_pendingRoomName.clear();
+			_pendingRoomCutscene.clear();
+			_pendingRoomMapRoomName.clear();
+			_pendingRoomMapName.clear();
+			debug(2, "Zero Comico: SetPlace %s keeps the current room in place",
+			      _activeRoomName.c_str());
+			return true;
+		}
+
 		_pendingRoomName = instruction.args[0];
 		_pendingRoomCutscene.clear();
 		_pendingRoomMapRoomName.clear();
@@ -2090,6 +2107,13 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 		// Mp5 bootstrap as "CSetPlace Mainplayer Room5_1".
 		if (instruction.args.size() < 2)
 			return false;
+		if (instruction.args[1].equalsIgnoreCase(_activeRoomName)) {
+			_pendingRoomName.clear();
+			_pendingRoomCutscene.clear();
+			_pendingRoomMapRoomName.clear();
+			_pendingRoomMapName.clear();
+			return true;
+		}
 		_pendingRoomName = instruction.args[1];
 		_pendingRoomCutscene.clear();
 		_pendingRoomMapRoomName.clear();
