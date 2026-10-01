@@ -597,6 +597,42 @@ saved main place before applying state. Runtime save/load still needs
 end-to-end playthrough validation across later chapters before it should be
 treated as production-complete.
 
+## Retail room shading and decoded point lights
+
+The room-definition parser now preserves and executes per-room `code:`
+blocks. A complete retail census shows that the only shipped room-code opcode
+is `E3D_parse "shade"`, used once in each of Mp1's five rooms. Other main
+places either have no room-code block or an empty one, so executing these
+blocks does not introduce unrelated startup behavior.
+
+The background/Setp P3D corpus contains **138 F002 light records**. Their
+decoded layout is internally consistent with the point-light path already
+exposed by the model decoder:
+
+- 133 records use flags `0x10`, three use `0x0`, and two use `0x110`;
+- every shipped background light has a zero direction vector;
+- `params[0]` is a positive scalar (commonly 0.5, 0.8, 1.0 or 1.5);
+- `params[1]` and `params[2]` form increasing inner/outer distance pairs;
+- `params[3]` and `params[4]` are zero in the complete census;
+- the two `0x110` records carry explicit lists of 44/45 room mesh names,
+  providing a concrete target filter for those lights.
+
+When retail room code enables `shade`, the software renderer now evaluates
+those decoded lights as point sources. It applies the scalar, linear
+attenuation between the two decoded ranges, RGB light colour and a diffuse
+Lambert term computed from the visible triangle side. Linked-light records
+only affect their named meshes. The room light set is also used when rendering
+the player and CPU actors so they share the room's lighting space.
+
+The implementation is intentionally conservative where the executable
+semantics are not yet proven: triangles receiving no valid light contribution
+retain the previous unshaded colour instead of being forced black, and no
+specular term or shadow map is invented. `SetLightState` overrides are now
+consulted by the light evaluator by name; lights remain enabled by default.
+
+This moves dynamic-light/shading from a missing feature to a fidelity feature
+that still needs visual comparison against the original renderer.
+
 ## Retail depth cue
 
 The retail script corpus uses `dcue_all` exactly once, during Mp5 startup:
