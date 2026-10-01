@@ -27,6 +27,23 @@ struct ADGameDescription;
 
 namespace ZeroComico {
 
+struct RoomDefinition;
+
+struct RoomEnvironmentRuntime {
+	Common::String roomName;
+	Common::String name;
+	Common::String fileName;
+	Common::String entity;
+	bool emitter;
+	bool defaultEnabled;
+	float farVolume;
+	float nearVolume;
+	float minRange;
+	float maxRange;
+	Audio::SoundHandle handle;
+	bool active;
+};
+
 struct DynamicSceneEntity {
 	Common::String sourceName;
 	Common::String name;
@@ -115,6 +132,9 @@ private:
 	                         float sourceDistance = 0.0f) const;
 	void startRoomMusic(const Common::String &fileName, float volume);
 	void setEnvironmentSound(const Common::String &fileName, bool enabled);
+	void stopRoomEnvironmentSounds();
+	void startRoomEnvironmentSounds(const RoomDefinition &room);
+	void updateRoomEnvironmentSounds();
 	void applyMasterColor(Graphics::ManagedSurface &surface);
 	bool loadMenuScene();
 	bool renderMenuFrame(int selection);
@@ -209,6 +229,7 @@ private:
 	Common::Array<Common::String> _environmentStateRooms;
 	Common::Array<Common::String> _environmentStateNames;
 	Common::Array<bool> _environmentStateEnabled;
+	Common::Array<RoomEnvironmentRuntime> _roomEnvironmentSounds;
 	Common::Array<Common::String> _lightStateNames;
 	Common::Array<bool> _lightStateEnabled;
 	Common::Array<Common::String> _userEffectStateNames;
