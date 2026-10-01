@@ -789,6 +789,11 @@ Common::Error ZeroComicoEngine::loadGameStream(Common::SeekableReadStream *strea
 	}
 
 	_pendingLoadActive = true;
+	// Make loads requested by ScummVM's global menu behave like F9: the
+	// interactive loop observes this transition request as soon as control
+	// returns to gameplay and rebuilds the saved main place before applying
+	// the staged payload.
+	_pendingMainPlace = _pendingLoadMainPlace;
 	debug(1, "Zero Comico: staged save restore for %s/%s (%u bytes)",
 	      _pendingLoadMainPlace.c_str(), _pendingLoadRoomName.c_str(),
 	      (uint)_pendingLoadData.size());
@@ -5715,6 +5720,12 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 	};
 
 	while (!shouldQuit() && !done) {
+		if (_pendingLoadActive && !_pendingLoadMainPlace.empty()) {
+			_pendingMainPlace = _pendingLoadMainPlace;
+			done = true;
+			break;
+		}
+
 		_scriptDialogueContextActive = true;
 		_scriptDialogueCamera = renderCamera;
 		_scriptDialogueSceneDirectory = sceneDirectory;
