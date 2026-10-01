@@ -39,6 +39,8 @@ struct RoomDefinition {
 	Common::Array<Common::String> cameraMaps;
 	Common::Array<RoomPortal> portals;
 	Common::Array<RoomCharacterSound> characterSounds;
+	uint32 codeStart;
+	uint32 codeEnd;
 };
 
 class ChapterDefinition {

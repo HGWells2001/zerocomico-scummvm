@@ -39,6 +39,7 @@ bool ChapterDefinition::parse(const ScriptProgram &program) {
 			RoomDefinition room;
 			room.name = inst.args[0];
 			room.musicVolume = 100.0f;
+			room.codeStart = room.codeEnd = 0xffffffffU;
 			rooms.push_back(room);
 			currentRoom = (int)rooms.size() - 1;
 			roomDepth = inst.depth;
@@ -86,6 +87,19 @@ bool ChapterDefinition::parse(const ScriptProgram &program) {
 				sound.sampleId = (int32)parsed;
 				sound.fileName = inst.args[2];
 				room.characterSounds.push_back(sound);
+			}
+		} else if (inst.opcode.equalsIgnoreCase("code") &&
+		           room.codeStart == 0xffffffffU) {
+			room.codeStart = i + 1;
+			for (uint32 j = room.codeStart; j < instructions.size(); ++j) {
+				if (instructions[j].opcode.equalsIgnoreCase("end") &&
+				    instructions[j].depth <= inst.depth) {
+					room.codeEnd = j;
+					break;
+				}
+				if (instructions[j].opcode.equalsIgnoreCase("Room") &&
+				    instructions[j].depth <= roomDepth)
+					break;
 			}
 		} else if (inst.opcode.equalsIgnoreCase("portal") && inst.args.size() >= 2) {
 			RoomPortal portal;
