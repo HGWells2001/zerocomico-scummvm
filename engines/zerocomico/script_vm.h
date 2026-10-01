@@ -9,6 +9,7 @@
 #include "common/hash-str.h"
 #include "common/hashmap.h"
 #include "common/random.h"
+#include "common/serializer.h"
 #include "common/scummsys.h"
 #include "common/str.h"
 
@@ -51,6 +52,11 @@ public:
 	bool getVariable(const Common::String &name, int32 &value) const;
 	bool setVariable(const Common::String &reference, int32 value);
 	bool resolveValue(const Common::String &token, int32 &value) const;
+
+	// Persistent snapshot used by the engine save/load layer. This serializes
+	// script scalar variables, arrays and the RNG seed, but not a currently
+	// executing program counter; foreground script calls are synchronous.
+	void synchronize(Common::Serializer &s);
 
 private:
 	typedef Common::HashMap<Common::String, int32, Common::IgnoreCase_Hash, Common::IgnoreCase_EqualTo> VariableMap;

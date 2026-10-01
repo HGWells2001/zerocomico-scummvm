@@ -40,6 +40,65 @@ void ScriptVM::reset() {
 	_arrays.clear();
 }
 
+void ScriptVM::synchronize(Common::Serializer &s) {
+	uint32 seed = _random.getSeed();
+	s.syncAsUint32LE(seed);
+	if (s.isLoading())
+		_random.setSeed(seed);
+
+	uint32 variableCount = s.isSaving() ? (uint32)_variables.size() : 0;
+	s.syncAsUint32LE(variableCount);
+	if (s.isLoading())
+		_variables.clear();
+
+	if (s.isSaving()) {
+		for (VariableMap::const_iterator it = _variables.begin(); it != _variables.end(); ++it) {
+			Common::String name = it->_key;
+			int32 value = it->_value;
+			s.syncString(name);
+			s.syncAsSint32LE(value);
+		}
+	} else {
+		for (uint32 i = 0; i < variableCount; ++i) {
+			Common::String name;
+			int32 value = 0;
+			s.syncString(name);
+			s.syncAsSint32LE(value);
+			_variables[name] = value;
+		}
+	}
+
+	uint32 arrayCount = s.isSaving() ? (uint32)_arrays.size() : 0;
+	s.syncAsUint32LE(arrayCount);
+	if (s.isLoading())
+		_arrays.clear();
+
+	if (s.isSaving()) {
+		for (ArrayMap::const_iterator it = _arrays.begin(); it != _arrays.end(); ++it) {
+			Common::String name = it->_key;
+			s.syncString(name);
+			uint32 valueCount = (uint32)it->_value.size();
+			s.syncAsUint32LE(valueCount);
+			for (uint32 i = 0; i < valueCount; ++i) {
+				int32 value = it->_value[i];
+				s.syncAsSint32LE(value);
+			}
+		}
+	} else {
+		for (uint32 arrayIndex = 0; arrayIndex < arrayCount; ++arrayIndex) {
+			Common::String name;
+			s.syncString(name);
+			uint32 valueCount = 0;
+			s.syncAsUint32LE(valueCount);
+			Common::Array<int32> values;
+			values.resize(valueCount);
+			for (uint32 i = 0; i < valueCount; ++i)
+				s.syncAsSint32LE(values[i]);
+			_arrays[name] = values;
+		}
+	}
+}
+
 bool ScriptVM::parseInteger(const Common::String &token, int32 &value) const {
 	if (token.empty())
 		return false;
