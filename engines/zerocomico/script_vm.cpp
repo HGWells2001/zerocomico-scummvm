@@ -414,9 +414,23 @@ bool ScriptVM::threadBlockHasSchedulerJump(const ScriptProgram &program,
 	return false;
 }
 
-bool ScriptVM::runInternal(const ScriptProgram &program, uint32 &pc, uint32 endIndex,
-                           uint32 maxSteps, bool stopAtSchedulerBoundary,
-                           bool &finished) {
+int ScriptVM::labelIndexInRange(const ScriptProgram &program, const Common::String &name,
+                                uint32 startIndex, uint32 endIndex) const {
+	const Common::Array<ScriptInstruction> &instructions = program.instructions();
+	if (endIndex > instructions.size())
+		endIndex = instructions.size();
+	for (uint32 i = startIndex; i < endIndex; ++i) {
+		if (instructions[i].opcode.equalsIgnoreCase("label") &&
+		    !instructions[i].args.empty() &&
+		    instructions[i].args[0].equalsIgnoreCase(name))
+			return (int)i;
+	}
+	return -1;
+}
+
+bool ScriptVM::runInternal(const ScriptProgram &program, uint32 rangeStart,
+                           uint32 &pc, uint32 endIndex, uint32 maxSteps,
+                           bool stopAtSchedulerBoundary, bool &finished) {
 	const Common::Array<ScriptInstruction> &instructions = program.instructions();
 	if (pc > instructions.size())
 		return false;
@@ -508,7 +522,7 @@ bool ScriptVM::runInternal(const ScriptProgram &program, uint32 &pc, uint32 endI
 		if (op.equalsIgnoreCase("jmp") || op.equalsIgnoreCase("wjmp")) {
 			if (instruction.args.empty())
 				return false;
-			const int target = program.labelIndex(instruction.args[0]);
+			const int target = labelIndexInRange(program, instruction.args[0], rangeStart, endIndex);
 			if (target < 0 || (uint32)target >= endIndex)
 				return false;
 			if (op.equalsIgnoreCase("wjmp")) {
@@ -530,7 +544,7 @@ bool ScriptVM::runInternal(const ScriptProgram &program, uint32 &pc, uint32 endI
 			if (!_host->evaluateScriptCondition(instruction, pressed))
 				return false;
 			if (pressed) {
-				const int target = program.labelIndex(instruction.args[1]);
+				const int target = labelIndexInRange(program, instruction.args[1], rangeStart, endIndex);
 				if (target < 0 || (uint32)target >= endIndex)
 					return false;
 				pc = (uint32)target + 1;
@@ -566,7 +580,7 @@ bool ScriptVM::runInternal(const ScriptProgram &program, uint32 &pc, uint32 endI
 				jump = left != right;
 
 			if (jump) {
-				const int target = program.labelIndex(instruction.args[2]);
+				const int target = labelIndexInRange(program, instruction.args[2], rangeStart, endIndex);
 				if (target < 0 || (uint32)target >= endIndex)
 					return false;
 				pc = (uint32)target + 1;
@@ -590,7 +604,7 @@ bool ScriptVM::runInternal(const ScriptProgram &program, uint32 &pc, uint32 endI
 				op.equalsIgnoreCase("jmp_if_z") || op.equalsIgnoreCase("wjmp_if_z");
 			const bool jump = testZero ? value == 0 : value != 0;
 			if (jump) {
-				const int target = program.labelIndex(instruction.args[1]);
+				const int target = labelIndexInRange(program, instruction.args[1], rangeStart, endIndex);
 				if (target < 0 || (uint32)target >= endIndex)
 					return false;
 				if (isWaitJump) {
@@ -630,13 +644,13 @@ bool ScriptVM::runInternal(const ScriptProgram &program, uint32 &pc, uint32 endI
 bool ScriptVM::run(const ScriptProgram &program, uint32 startIndex, uint32 endIndex, uint32 maxSteps) {
 	uint32 pc = startIndex;
 	bool finished = false;
-	return runInternal(program, pc, endIndex, maxSteps, false, finished) && finished;
+	return runInternal(program, startIndex, pc, endIndex, maxSteps, false, finished) && finished;
 }
 
-bool ScriptVM::runThreadStep(const ScriptProgram &program, uint32 &pc,
-                             uint32 endIndex, bool &finished,
+bool ScriptVM::runThreadStep(const ScriptProgram &program, uint32 startIndex,
+                             uint32 &pc, uint32 endIndex, bool &finished,
                              uint32 maxSteps) {
-	return runInternal(program, pc, endIndex, maxSteps, true, finished);
+	return runInternal(program, startIndex, pc, endIndex, maxSteps, true, finished);
 }
 
 } // namespace ZeroComico
