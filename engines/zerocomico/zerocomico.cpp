@@ -6711,6 +6711,22 @@ void ZeroComicoEngine::runMenu() {
 	int selection = 0;
 
 	while (!shouldQuit()) {
+		// A load requested from ScummVM's global menu can arrive without going
+		// through Zero Comico's own CARICA button. Consume the staged request
+		// here just like the native menu path.
+		if (_pendingLoadActive && !_pendingLoadMainPlace.empty()) {
+			Common::String nextMainPlace = _pendingLoadMainPlace;
+			while (!nextMainPlace.empty() && !shouldQuit()) {
+				_pendingMainPlace.clear();
+				if (!runMainPlacePreview(nextMainPlace))
+					break;
+				nextMainPlace = _pendingMainPlace;
+			}
+			if (!shouldQuit())
+				renderMenuFrame(selection);
+			continue;
+		}
+
 		Common::Event event;
 		while (_system->getEventManager()->pollEvent(event)) {
 			if (event.type == Common::EVENT_QUIT || event.type == Common::EVENT_RETURN_TO_LAUNCHER) {
