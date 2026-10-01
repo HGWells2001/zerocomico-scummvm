@@ -4335,6 +4335,33 @@ bool ZeroComicoEngine::applyStagedRestore(Common::Path &playerDirectory) {
 		                                _setpControllerPositions[i]);
 	}
 
+	// Recreate dynamic CloneEntity objects from their source template. Saved
+	// transforms are applied after cloning so moved/rotated stars and helpers
+	// return to exactly the state they had at save time.
+	Common::Array<DynamicSceneEntity> dynamicSnapshots = _dynamicSceneEntities;
+	_dynamicSceneEntities.clear();
+	for (uint32 i = 0; i < dynamicSnapshots.size(); ++i) {
+		const DynamicSceneEntity &snapshot = dynamicSnapshots[i];
+		if (snapshot.sourceName.empty() || snapshot.name.empty() ||
+		    !cloneSceneEntity(snapshot.sourceName, snapshot.name)) {
+			warning("Zero Comico: cannot restore dynamic clone %s from %s",
+			        snapshot.name.c_str(), snapshot.sourceName.c_str());
+			continue;
+		}
+
+		DynamicSceneEntity *restored = findDynamicSceneEntity(snapshot.name);
+		if (!restored)
+			continue;
+		restored->roomName = snapshot.roomName;
+		const ObjectTransform savedTransform = snapshot.mesh.data.transform;
+		translateRigidMesh(restored->mesh, savedTransform.translation);
+		restored->mesh.data.transform.pivot = savedTransform.pivot;
+		restored->mesh.data.transform.scale = savedTransform.scale;
+		for (int m = 0; m < 9; ++m)
+			restored->mesh.data.transform.matrix[m] = savedTransform.matrix[m];
+	}
+	installDynamicBackgroundForRoom(_activeRoomName);
+
 	// CPU runtime state stores transform/life state, while body resources are
 	// reconstructed from char.isc plus the saved body root.
 	for (uint32 cpuIndex = 0; cpuIndex < _cpuCharacters.size(); ++cpuIndex) {
@@ -6169,6 +6196,48 @@ void ZeroComicoEngine::synchronizePersistentState(Common::Serializer &s) {
 		if (s.isLoading()) {
 			_setpControllerNames.push_back(name);
 			_setpControllerPositions.push_back(position);
+		}
+	}
+
+	// Dynamic clones are reconstructed from their retail template. Persist only
+	// stable identity plus the final object transform, never duplicated geometry.
+	uint32 dynamicCount = s.isSaving() ? (uint32)_dynamicSceneEntities.size() : 0;
+	s.syncAsUint32LE(dynamicCount);
+	if (s.isLoading())
+		_dynamicSceneEntities.clear();
+	for (uint32 i = 0; i < dynamicCount; ++i) {
+		DynamicSceneEntity entity;
+		ObjectTransform transform;
+		if (s.isSaving()) {
+			entity = _dynamicSceneEntities[i];
+			transform = entity.mesh.data.transform;
+		} else {
+			transform.pivot.x = transform.pivot.y = transform.pivot.z = 0.0f;
+			transform.translation.x = transform.translation.y = transform.translation.z = 0.0f;
+			transform.scale.x = transform.scale.y = transform.scale.z = 1.0f;
+			for (int m = 0; m < 9; ++m)
+				transform.matrix[m] = (m == 0 || m == 4 || m == 8) ? 1.0f : 0.0f;
+		}
+
+		s.syncString(entity.sourceName);
+		s.syncString(entity.name);
+		s.syncString(entity.roomName);
+		s.syncAsFloatLE(transform.pivot.x);
+		s.syncAsFloatLE(transform.pivot.y);
+		s.syncAsFloatLE(transform.pivot.z);
+		for (int m = 0; m < 9; ++m)
+			s.syncAsFloatLE(transform.matrix[m]);
+		s.syncAsFloatLE(transform.translation.x);
+		s.syncAsFloatLE(transform.translation.y);
+		s.syncAsFloatLE(transform.translation.z);
+		s.syncAsFloatLE(transform.scale.x);
+		s.syncAsFloatLE(transform.scale.y);
+		s.syncAsFloatLE(transform.scale.z);
+
+		if (s.isLoading()) {
+			entity.mesh.name = entity.name;
+			entity.mesh.data.transform = transform;
+			_dynamicSceneEntities.push_back(entity);
 		}
 	}
 
