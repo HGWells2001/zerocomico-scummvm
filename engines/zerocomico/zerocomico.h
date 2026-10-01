@@ -43,8 +43,8 @@ struct MixerVolumeSnapshot {
 
 struct SamplePlaybackParams {
 	Common::String name;
-	float pan;
-	float volume;
+	float farVolume;
+	float nearVolume;
 	float minRange;
 	float maxRange;
 };
@@ -91,9 +91,11 @@ private:
 	bool renderLoopCutsceneFrame(const Common::String &name);
 	bool stopLoopCutscene(const Common::String &name);
 	void playFilmIfPresent(const Common::Path &path);
-	float retailSampleVolume(const Common::String &sampleName) const;
+	float retailSampleVolume(const Common::String &sampleName,
+	                         float sourceDistance = 0.0f) const;
 	byte retailChannelVolume(int soundClass, float sourceVolume,
-	                         const Common::String &sampleName) const;
+	                         const Common::String &sampleName,
+	                         float sourceDistance = 0.0f) const;
 	void startRoomMusic(const Common::String &fileName, float volume);
 	void setEnvironmentSound(const Common::String &fileName, bool enabled);
 	void applyMasterColor(Graphics::ManagedSurface &surface);
@@ -195,8 +197,8 @@ private:
 	Common::Array<MixerVolumeSnapshot> _masterVolumeStack;
 	float _globalMasterVolume;
 	float _soundClassVolumes[6];
-	float _sampleDefaultPan;
-	float _sampleDefaultVolume;
+	float _sampleDefaultFarVolume;
+	float _sampleDefaultNearVolume;
 	float _sampleDefaultMinRange;
 	float _sampleDefaultMaxRange;
 	Common::Array<SamplePlaybackParams> _samplePlaybackParams;

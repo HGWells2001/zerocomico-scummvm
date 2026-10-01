@@ -692,8 +692,8 @@ ZeroComicoEngine::ZeroComicoEngine(OSystem *syst, const ADGameDescription *desc)
 	  _interfaceDisabled(false), _3dEnabled(true), _portalsEnabled(true),
 	  _cameraMode(0), _cameraModeLocked(false), _playerNoCameraReset(false),
 	  _depthCueEnabled(false), _depthCueStart(0.0f), _depthCueEnd(0.0f),
-	  _globalMasterVolume(100.0f), _sampleDefaultPan(0.0f), _sampleDefaultVolume(100.0f),
-	  _sampleDefaultMinRange(0.0f), _sampleDefaultMaxRange(0.0f),
+	  _globalMasterVolume(100.0f), _sampleDefaultFarVolume(0.0f), _sampleDefaultNearVolume(100.0f),
+	  _sampleDefaultMinRange(0.0f), _sampleDefaultMaxRange(500.0f),
 	  _masterColorFadeSteps(0.0f), _masterColorFadeStartMillis(0),
 	  _masterColorFadeActive(false), _spotHeight(85.0f), _spotMaxDeltaY(30.0f), _spotDistance(350.0f),
 	  _spotMinDistance(25.0f), _spotSmooth(30.0f),
@@ -2681,24 +2681,24 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 		if (instruction.args.size() < 5)
 			return false;
 
-		float pan = 0.0f;
-		float volume = 0.0f;
+		float farVolume = 0.0f;
+		float nearVolume = 0.0f;
 		float minRangeMetres = 0.0f;
 		float maxRangeMetres = 0.0f;
 		int32 applyExisting = 0;
-		if (!parseScriptFloat(instruction.args[0], pan) ||
-		    !parseScriptFloat(instruction.args[1], volume) ||
+		if (!parseScriptFloat(instruction.args[0], farVolume) ||
+		    !parseScriptFloat(instruction.args[1], nearVolume) ||
 		    !parseScriptFloat(instruction.args[2], minRangeMetres) ||
 		    !parseScriptFloat(instruction.args[3], maxRangeMetres) ||
 		    !_scriptVM.resolveValue(instruction.args[4], applyExisting))
 			return false;
 
-		_sampleDefaultPan = pan;
-		_sampleDefaultVolume = volume;
+		_sampleDefaultFarVolume = farVolume;
+		_sampleDefaultNearVolume = nearVolume;
 		_sampleDefaultMinRange = minRangeMetres * 100.0f;
 		_sampleDefaultMaxRange = maxRangeMetres * 100.0f;
-		debug(1, "Zero Comico: sample defaults pan %.1f volume %.1f range %.1f..%.1f%s",
-		      _sampleDefaultPan, _sampleDefaultVolume,
+		debug(1, "Zero Comico: sample defaults far %.1f%% near %.1f%% range %.1f..%.1f%s",
+		      _sampleDefaultFarVolume, _sampleDefaultNearVolume,
 		      _sampleDefaultMinRange, _sampleDefaultMaxRange,
 		      applyExisting != 0 ? " (apply-active requested)" : "");
 		return true;
@@ -2712,8 +2712,8 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 		params.name = instruction.args[0];
 		float minRangeMetres = 0.0f;
 		float maxRangeMetres = 0.0f;
-		if (!parseScriptFloat(instruction.args[1], params.pan) ||
-		    !parseScriptFloat(instruction.args[2], params.volume) ||
+		if (!parseScriptFloat(instruction.args[1], params.farVolume) ||
+		    !parseScriptFloat(instruction.args[2], params.nearVolume) ||
 		    !parseScriptFloat(instruction.args[3], minRangeMetres) ||
 		    !parseScriptFloat(instruction.args[4], maxRangeMetres))
 			return false;
@@ -2731,8 +2731,8 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 		if (!found)
 			_samplePlaybackParams.push_back(params);
 
-		debug(1, "Zero Comico: sample params %s pan %.1f volume %.1f range %.1f..%.1f",
-		      params.name.c_str(), params.pan, params.volume,
+		debug(1, "Zero Comico: sample params %s far %.1f%% near %.1f%% range %.1f..%.1f",
+		      params.name.c_str(), params.farVolume, params.nearVolume,
 		      params.minRange, params.maxRange);
 		return true;
 	}
@@ -3343,34 +3343,54 @@ void ZeroComicoEngine::applyMasterColor(Graphics::ManagedSurface &surface) {
 	}
 }
 
-float ZeroComicoEngine::retailSampleVolume(const Common::String &sampleName) const {
-	if (sampleName.empty())
-		return 100.0f;
+float ZeroComicoEngine::retailSampleVolume(const Common::String &sampleName,
+                                                 float sourceDistance) const {
+	float farVolume = _sampleDefaultFarVolume;
+	float nearVolume = _sampleDefaultNearVolume;
+	float minRange = _sampleDefaultMinRange;
+	float maxRange = _sampleDefaultMaxRange;
 
-	Common::String key = sampleName;
-	key.toLowercase();
-	if (key.hasSuffix(".mp3"))
-		key = key.substr(0, key.size() - 4);
+	if (!sampleName.empty()) {
+		Common::String key = sampleName;
+		key.toLowercase();
+		if (key.hasSuffix(".mp3"))
+			key = key.substr(0, key.size() - 4);
 
-	for (uint32 i = 0; i < _samplePlaybackParams.size(); ++i) {
-		Common::String candidate = _samplePlaybackParams[i].name;
-		candidate.toLowercase();
-		if (candidate.hasSuffix(".mp3"))
-			candidate = candidate.substr(0, candidate.size() - 4);
-		if (candidate == key)
-			return _samplePlaybackParams[i].volume;
+		for (uint32 i = 0; i < _samplePlaybackParams.size(); ++i) {
+			Common::String candidate = _samplePlaybackParams[i].name;
+			candidate.toLowercase();
+			if (candidate.hasSuffix(".mp3"))
+				candidate = candidate.substr(0, candidate.size() - 4);
+			if (candidate != key)
+				continue;
+			farVolume = _samplePlaybackParams[i].farVolume;
+			nearVolume = _samplePlaybackParams[i].nearVolume;
+			minRange = _samplePlaybackParams[i].minRange;
+			maxRange = _samplePlaybackParams[i].maxRange;
+			break;
+		}
 	}
 
-	return _sampleDefaultVolume;
+	// Retail Zero Comico linearly interpolates from the near volume at/below
+	// minRange to the far volume at/above maxRange.
+	if (sourceDistance <= minRange || maxRange <= minRange)
+		return nearVolume;
+	if (sourceDistance >= maxRange)
+		return farVolume;
+
+	const float t = (sourceDistance - minRange) / (maxRange - minRange);
+	return nearVolume + (farVolume - nearVolume) * t;
 }
 
 byte ZeroComicoEngine::retailChannelVolume(int soundClass, float sourceVolume,
-                                           const Common::String &sampleName) const {
+                                           const Common::String &sampleName,
+                                           float sourceDistance) const {
 	float master = _globalMasterVolume;
 	float classVolume = soundClass >= 0 && soundClass < 6
 		? _soundClassVolumes[soundClass] : 100.0f;
 	float source = sourceVolume;
-	float sample = sampleName.empty() ? 100.0f : retailSampleVolume(sampleName);
+	float sample = sampleName.empty() ? 100.0f
+		: retailSampleVolume(sampleName, sourceDistance);
 
 	if (master < 0.0f) master = 0.0f;
 	if (master > 100.0f) master = 100.0f;
@@ -3823,9 +3843,14 @@ bool ZeroComicoEngine::renderGameplayFrame(const RenderCamera &camera,
 							continue;
 						const Common::String &sampleName =
 							definition->samples[sampleIndex].fileName;
+						const float dx = character.position.x - _playerPosition.x;
+						const float dy = character.position.y - _playerPosition.y;
+						const float dz = character.position.z - _playerPosition.z;
+						const float sourceDistance = std::sqrt(dx * dx + dy * dy + dz * dz);
 						playNamedMp3(_mixer, Audio::Mixer::kSFXSoundType,
 						             sampleName, nullptr,
-						             retailChannelVolume(2, 100.0f, sampleName));
+						             retailChannelVolume(2, 100.0f, sampleName,
+						                                 sourceDistance));
 						break;
 					}
 #endif
@@ -4221,10 +4246,10 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 	_globalMasterVolume = 100.0f;
 	for (int soundClass = 0; soundClass < 6; ++soundClass)
 		_soundClassVolumes[soundClass] = 100.0f;
-	_sampleDefaultPan = 0.0f;
-	_sampleDefaultVolume = 100.0f;
+	_sampleDefaultFarVolume = 0.0f;
+	_sampleDefaultNearVolume = 100.0f;
 	_sampleDefaultMinRange = 0.0f;
-	_sampleDefaultMaxRange = 0.0f;
+	_sampleDefaultMaxRange = 500.0f;
 	_samplePlaybackParams.clear();
 	_sceneLoopTargets.clear();
 	_sceneLoopSources.clear();

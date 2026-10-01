@@ -462,13 +462,15 @@ room/player identity are available.
 
 Executable registration strings confirm the four audio-control signatures used
 there: `ms_smp_default ffffn`, `smp_param sffff`,
-`SetClassVolume in` and `SetGlobalMasterVolume n`. Direct callback
-disassembly shows that the first two sample floats are stored directly while
-the third and fourth are passed through the ordinary world conversion routine.
-With retail `GlobalScaling 1`, the stored range values are therefore
-`metres * 100`.
+`SetClassVolume in` and `SetGlobalMasterVolume n`. Direct callback disassembly shows that the first two sample floats are stored
+as **far and near volume percentages**, while the third and fourth are passed
+through the ordinary world conversion routine. With retail `GlobalScaling 1`,
+the range values are therefore `metres * 100`. The sample update routine in
+the executable computes distance to the attached character/entity and linearly
+interpolates from near volume at `minRange` to far volume at `maxRange`,
+clamping outside that interval.
 
-The runtime preserves the default sample pan/volume/range, named
+The runtime now preserves the default far/near volume and range, named
 `smp_param` overrides, global master percentage and the six retail sound-class
 percentages. `BeginTime` also drives the already implemented
 `SetSpotCameraParameters`, user-effect state and hat visibility paths.
@@ -476,10 +478,13 @@ percentages. `BeginTime` also drives the already implemented
 Known retail classes are now applied as **per-channel volume**, rather than by
 overwriting ScummVM's global mixer preferences: class 0 for room music, class 1
 for speech, class 2 for playable/CPU character step events, class 3 for
-cutscene samples and class 5 for environment sound. Named `smp_param`
-volume overrides take precedence over the sample default. The effective
-channel level multiplies retail master, class, source and sample percentages;
-ScummVM's own sound-type volume remains an independent outer control.
+cutscene samples and class 5 for environment sound. Named `smp_param` attenuation overrides take precedence over the sample
+default. The effective channel level multiplies retail master, class, source
+and distance-derived sample percentages; ScummVM's own sound-type volume
+remains an independent outer control. CPU character step events use their
+runtime 3D distance from the player, which covers the retail `orca_in`,
+`orca_out` and `sputopirata` overrides. Player-local/cutscene samples are
+evaluated at zero source distance.
 
 Generic script `PlaySample` calls are intentionally not forced into class 4.
 The retail comment names class 4 as combat effects, but the opcode appears in
