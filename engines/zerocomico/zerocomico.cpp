@@ -3741,6 +3741,7 @@ bool ZeroComicoEngine::renderGameplayFrame(const RenderCamera &camera,
                                                 Graphics::ManagedSurface &frame) {
 	RenderCamera gameplayCamera = camera;
 	gameplayCamera.depthCueEnabled = _depthCueEnabled;
+	gameplayCamera.shadeEnabled = _shadeEnabled;
 	gameplayCamera.depthCueStart = _depthCueStart;
 	gameplayCamera.depthCueEnd = _depthCueEnd;
 
