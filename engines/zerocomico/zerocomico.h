@@ -125,6 +125,7 @@ private:
 	void waitForExit();
 	void updateScriptKeyState(const Common::Event &event);
 	void synchronizePersistentState(Common::Serializer &s);
+	bool applyStagedRestore(Common::Path &playerDirectory);
 	DynamicSceneEntity *findDynamicSceneEntity(const Common::String &name);
 	const DynamicSceneEntity *findDynamicSceneEntity(const Common::String &name) const;
 	bool cloneSceneEntity(const Common::String &sourceName, const Common::String &cloneName);
