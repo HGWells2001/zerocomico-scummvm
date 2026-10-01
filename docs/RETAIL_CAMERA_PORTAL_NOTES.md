@@ -426,6 +426,17 @@ The runtime now mirrors those three side effects for both explicit
 uses those two in addition to the previously handled `examinable` and
 `enabled` forms.
 
+Executable disassembly also pins down the state-string boolean parser.
+After tokenizing a property/value pair, the retail code clears the flag only
+when the value is case-insensitive `FALSE` or the literal `0`; every other
+token sets it. This matters for the one malformed shipped string in Mp5:
+
+`setobj r51_sarcofag02 "examinable false enabled flase"`
+
+The misspelled `flase` therefore evaluates to **true** in the original
+executable. The runtime now uses the same pair-wise parser instead of matching
+only precomposed `"property true/false"` substrings.
+
 ## Retail puzzle region transitions
 
 The supplied puzzle corpus contains **15** spatial `in:` blocks and **2**
@@ -593,9 +604,15 @@ restore so intro/cutscene/one-shot initialization does not replay.
 The retail **CARICA** menu item now opens ScummVM's load chooser. During the
 interactive gameplay loop, **F5** opens the save chooser and **F9** opens the
 load chooser; an F9 load exits the current room loop cleanly and rebuilds the
-saved main place before applying state. Runtime save/load still needs
-end-to-end playthrough validation across later chapters before it should be
-treated as production-complete.
+saved main place before applying state. Loads requested by ScummVM's global
+menu now feed the same staged main-place transition rather than waiting for
+the F9-specific path, including while the retail 3D menu is active.
+
+ScummVM launcher starts with a `save_slot` are also consumed explicitly in
+`run()`: a valid requested slot bypasses the retail intro/menu and enters the
+same two-phase room rebuild directly. Runtime save/load still needs end-to-end
+playthrough validation across later chapters before it should be treated as
+production-complete.
 
 ## Retail room shading and decoded point lights
 
