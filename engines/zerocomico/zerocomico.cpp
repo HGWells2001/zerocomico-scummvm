@@ -719,6 +719,17 @@ bool ZeroComicoEngine::hasFeature(EngineFeature f) const {
 	return f == kSupportsReturnToLauncher;
 }
 
+bool ZeroComicoEngine::canSaveGameStateCurrently(Common::U32String *msg) {
+	(void)msg;
+	return !_currentMainPlace.empty() && !_activeRoomName.empty() &&
+	       !_scriptDialogueContextActive && !_pendingTakeActive && !_loopCutActive;
+}
+
+bool ZeroComicoEngine::canLoadGameStateCurrently(Common::U32String *msg) {
+	(void)msg;
+	return true;
+}
+
 Common::Error ZeroComicoEngine::saveGameStream(Common::WriteStream *stream, bool isAutosave) {
 	(void)isAutosave;
 	if (!stream || _currentMainPlace.empty() || _activeRoomName.empty())
@@ -5457,6 +5468,19 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 				quitGame();
 				break;
 			}
+			if (event.type == Common::EVENT_KEYDOWN &&
+			    event.kbd.keycode == Common::KEYCODE_F5) {
+				saveGameDialog();
+				break;
+			}
+			if (event.type == Common::EVENT_KEYDOWN &&
+			    event.kbd.keycode == Common::KEYCODE_F9) {
+				if (loadGameDialog() && _pendingLoadActive) {
+					_pendingMainPlace = _pendingLoadMainPlace;
+					done = true;
+				}
+				break;
+			}
 			if (event.type == Common::EVENT_KEYDOWN && event.kbd.keycode == Common::KEYCODE_ESCAPE) {
 				done = true;
 				break;
@@ -6411,9 +6435,20 @@ void ZeroComicoEngine::runMenu() {
 			case 3: // ESCI
 				quitGame();
 				break;
-			case 4: // CARICA
-				debug(1, "Zero Comico: CARICA selected; save/load UI is not implemented yet");
+			case 4: { // CARICA
+				if (loadGameDialog() && _pendingLoadActive) {
+					Common::String nextMainPlace = _pendingLoadMainPlace;
+					while (!nextMainPlace.empty() && !shouldQuit()) {
+						_pendingMainPlace.clear();
+						if (!runMainPlacePreview(nextMainPlace))
+							break;
+						nextMainPlace = _pendingMainPlace;
+					}
+				}
+				if (!shouldQuit())
+					renderMenuFrame(selection);
 				break;
+			}
 			default:
 				break;
 			}

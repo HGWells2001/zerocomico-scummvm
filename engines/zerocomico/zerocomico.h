@@ -80,6 +80,8 @@ public:
 	bool hasFeature(EngineFeature f) const override;
 	Common::Error saveGameStream(Common::WriteStream *stream, bool isAutosave = false) override;
 	Common::Error loadGameStream(Common::SeekableReadStream *stream) override;
+	bool canSaveGameStateCurrently(Common::U32String *msg = nullptr) override;
+	bool canLoadGameStateCurrently(Common::U32String *msg = nullptr) override;
 
 	bool executeScriptOpcode(const ScriptInstruction &instruction) override;
 	bool evaluateScriptCondition(const ScriptInstruction &instruction,
