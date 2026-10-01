@@ -951,7 +951,7 @@ bool ZeroComicoEngine::runMainPlaceRuntime(const ScriptProgram &program) {
 	return runScriptWithAudioClass(program, runtimeStart, runtimeEnd, 8192, 3);
 }
 
-bool ZeroComicoEngine::playCutscene(const Common::String &name) {
+bool ZeroComicoEngine::playCutscene(const Common::String &name, bool leaveOpen) {
 	if (_currentMainPlace.empty() || name.empty())
 		return false;
 
@@ -1209,6 +1209,51 @@ bool ZeroComicoEngine::playCutscene(const Common::String &name) {
 		_mixer->stopHandle(cutsceneSfxHandle);
 	if (_mixer->isSoundHandleActive(cutsceneSpeechHandle))
 		_mixer->stopHandle(cutsceneSpeechHandle);
+
+	if (leaveOpen && !shouldQuit()) {
+		// play_open_cut differs from play_cut in shipped progression: its final
+		// scene remains part of the room. Mp1 relies on this for c121_pallina,
+		// c131_libro/cappello and later open-cut entities that do not exist in
+		// the base room P3D.
+		if (!scene.poseCutsceneGeometry(assetStem, endFrame))
+			warning("Zero Comico: open cutscene %s final pose failed at %.0f",
+			        name.c_str(), endFrame);
+
+		Common::Array<Common::String> finalVisible;
+		scene.visibleMeshesForSource(assetStem, endFrame, finalVisible);
+		for (uint32 meshIndex = 0; meshIndex < scene.meshes.size(); ++meshIndex) {
+			const NamedMesh &mesh = scene.meshes[meshIndex];
+			if (mesh.data.isFlesh())
+				continue;
+			if (containsIgnoreCase(finalVisible, mesh.name))
+				removeIgnoreCase(_hiddenSceneMeshes, mesh.name);
+			else if (!containsIgnoreCase(_hiddenSceneMeshes, mesh.name))
+				_hiddenSceneMeshes.push_back(mesh.name);
+		}
+
+		bool replaced = false;
+		for (uint32 i = 0; i < _openCutScenes.size(); ++i) {
+			OpenCutSceneRuntime &runtime = _openCutScenes[i];
+			if (!runtime.roomName.equalsIgnoreCase(_activeRoomName) ||
+			    !runtime.assetStem.equalsIgnoreCase(assetStem))
+				continue;
+			runtime.scene = scene;
+			replaced = true;
+			break;
+		}
+		if (!replaced) {
+			OpenCutSceneRuntime runtime;
+			runtime.roomName = _activeRoomName;
+			runtime.assetStem = assetStem;
+			runtime.scene = scene;
+			_openCutScenes.push_back(runtime);
+		}
+
+		_activeScene.mergeFrom(scene);
+		debug(1, "Zero Comico: kept open cutscene %s in room %s (%u meshes)",
+		      name.c_str(), _activeRoomName.c_str(), (uint)scene.meshes.size());
+	}
+
 	return !shouldQuit();
 }
 
@@ -1371,6 +1416,14 @@ bool ZeroComicoEngine::stopLoopCutscene(const Common::String &name) {
 	_loopCutStartMillis = 0;
 	_loopCutScene.clear();
 	return true;
+}
+
+void ZeroComicoEngine::installOpenCutScenesForRoom(const Common::String &roomName) {
+	for (uint32 i = 0; i < _openCutScenes.size(); ++i) {
+		const OpenCutSceneRuntime &runtime = _openCutScenes[i];
+		if (runtime.roomName.equalsIgnoreCase(roomName))
+			_activeScene.mergeFrom(runtime.scene);
+	}
 }
 
 DynamicSceneEntity *ZeroComicoEngine::findDynamicSceneEntity(const Common::String &name) {
@@ -1774,7 +1827,7 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 	if (op.equalsIgnoreCase("play_cut") || op.equalsIgnoreCase("play_open_cut")) {
 		if (instruction.args.empty())
 			return false;
-		return playCutscene(instruction.args[0]);
+		return playCutscene(instruction.args[0], op.equalsIgnoreCase("play_open_cut"));
 	}
 
 	// Ordinary play_cut is synchronous. The retail water puzzle additionally
@@ -4807,6 +4860,7 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 	_loopCutActive = false;
 	_loadedSetpAssets.clear();
 	_loadedSetpScenes.clear();
+	_openCutScenes.clear();
 	_setpControllerNames.clear();
 	_setpControllerPositions.clear();
 	_dynamicSceneEntities.clear();
@@ -5526,6 +5580,7 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 		}
 		for (uint32 setpIndex = 0; setpIndex < _loadedSetpScenes.size(); ++setpIndex)
 			_activeScene.mergeFrom(_loadedSetpScenes[setpIndex]);
+		installOpenCutScenesForRoom(room->name);
 
 		// Reapply controller offsets after the freshly loaded Setp asset records
 		// have been merged into the new room scene.

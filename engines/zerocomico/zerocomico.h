@@ -52,6 +52,12 @@ struct DynamicSceneEntity {
 	Common::Array<NamedMaterial> materials;
 };
 
+struct OpenCutSceneRuntime {
+	Common::String roomName;
+	Common::String assetStem;
+	SceneModel scene;
+};
+
 struct MixerVolumeSnapshot {
 	int plain;
 	int sfx;
@@ -120,7 +126,7 @@ private:
 	bool runBackgroundScriptThreads();
 	bool runScriptWithAudioClass(const ScriptProgram &program, uint32 startIndex,
 	                             uint32 endIndex, uint32 maxSteps, int audioClass);
-	bool playCutscene(const Common::String &name);
+	bool playCutscene(const Common::String &name, bool leaveOpen = false);
 	bool startLoopCutscene(const Common::String &name);
 	bool renderLoopCutsceneFrame(const Common::String &name);
 	bool stopLoopCutscene(const Common::String &name);
@@ -163,6 +169,7 @@ private:
 	const DynamicSceneEntity *findDynamicSceneEntity(const Common::String &name) const;
 	bool cloneSceneEntity(const Common::String &sourceName, const Common::String &cloneName);
 	void installDynamicBackgroundForRoom(const Common::String &roomName);
+	void installOpenCutScenesForRoom(const Common::String &roomName);
 	bool setSceneEntityTranslation(const Common::String &name, const Vec3f &position);
 	bool setSceneEntityVectorTransform(const Common::String &name, const ShapeMarker &marker);
 	CpuCharacterRuntime *findCpuCharacter(const Common::String &name);
@@ -268,6 +275,7 @@ private:
 	Common::Array<uint32> _sceneOneShotStartMillis;
 	Common::Array<Common::String> _loadedSetpAssets;
 	Common::Array<SceneModel> _loadedSetpScenes;
+	Common::Array<OpenCutSceneRuntime> _openCutScenes;
 	Common::Array<Common::String> _setpControllerNames;
 	Common::Array<Vec3f> _setpControllerPositions;
 	Common::Array<DynamicSceneEntity> _dynamicSceneEntities;
