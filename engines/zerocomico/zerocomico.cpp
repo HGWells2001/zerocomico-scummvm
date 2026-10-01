@@ -2947,6 +2947,7 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 		// ambient sound handle.
 		debug(1, "Zero Comico: environment emitter %s/%s = %d",
 		      roomName.c_str(), soundName.c_str(), state != 0 ? 1 : 0);
+		updateRoomEnvironmentSounds();
 		return true;
 	}
 
@@ -3682,6 +3683,125 @@ void ZeroComicoEngine::setEnvironmentSound(const Common::String &fileName, bool 
 	_environmentSoundName = enabled ? fileName : Common::String();
 	_environmentSoundActive = enabled && !fileName.empty();
 #endif
+}
+
+void ZeroComicoEngine::stopRoomEnvironmentSounds() {
+#ifdef USE_MAD
+	for (uint32 i = 0; i < _roomEnvironmentSounds.size(); ++i) {
+		RoomEnvironmentRuntime &sound = _roomEnvironmentSounds[i];
+		if (sound.active && _mixer->isSoundHandleActive(sound.handle))
+			_mixer->stopHandle(sound.handle);
+		sound.active = false;
+	}
+#endif
+	_roomEnvironmentSounds.clear();
+}
+
+void ZeroComicoEngine::startRoomEnvironmentSounds(const RoomDefinition &room) {
+	stopRoomEnvironmentSounds();
+
+	for (uint32 i = 0; i < room.environmentSounds.size(); ++i) {
+		const RoomEnvironmentSound &definition = room.environmentSounds[i];
+		RoomEnvironmentRuntime runtime;
+		runtime.roomName = room.name;
+		runtime.name = definition.name;
+		runtime.fileName = definition.fileName;
+		runtime.entity = definition.entity;
+		runtime.emitter = definition.emitter;
+		runtime.defaultEnabled = definition.enabled;
+		runtime.farVolume = definition.farVolume;
+		runtime.nearVolume = definition.nearVolume;
+		runtime.minRange = definition.minRange * 100.0f;
+		runtime.maxRange = definition.maxRange * 100.0f;
+		runtime.active = false;
+		_roomEnvironmentSounds.push_back(runtime);
+	}
+
+	updateRoomEnvironmentSounds();
+}
+
+void ZeroComicoEngine::updateRoomEnvironmentSounds() {
+	for (uint32 i = 0; i < _roomEnvironmentSounds.size(); ++i) {
+		RoomEnvironmentRuntime &sound = _roomEnvironmentSounds[i];
+
+		bool enabled = sound.defaultEnabled;
+		for (uint32 stateIndex = 0;
+		     stateIndex < _environmentStateNames.size() &&
+		     stateIndex < _environmentStateRooms.size() &&
+		     stateIndex < _environmentStateEnabled.size();
+		     ++stateIndex) {
+			if (_environmentStateRooms[stateIndex].equalsIgnoreCase(sound.roomName) &&
+			    _environmentStateNames[stateIndex].equalsIgnoreCase(sound.name)) {
+				enabled = _environmentStateEnabled[stateIndex];
+				break;
+			}
+		}
+
+		if (!enabled) {
+#ifdef USE_MAD
+			if (sound.active && _mixer->isSoundHandleActive(sound.handle))
+				_mixer->stopHandle(sound.handle);
+#endif
+			sound.active = false;
+			continue;
+		}
+
+		float sourceVolume = sound.nearVolume;
+		if (sound.emitter) {
+			const NamedMesh *sourceMesh = _activeScene.findMesh(sound.entity);
+			if (!sourceMesh) {
+				const DynamicSceneEntity *dynamic = findDynamicSceneEntity(sound.entity);
+				if (dynamic)
+					sourceMesh = &dynamic->mesh;
+			}
+
+			if (!sourceMesh) {
+				sourceVolume = 0.0f;
+			} else {
+				const Vec3f &source = sourceMesh->data.transform.translation;
+				const float dx = source.x - _playerPosition.x;
+				const float dy = source.y - _playerPosition.y;
+				const float dz = source.z - _playerPosition.z;
+				const float distance = std::sqrt(dx * dx + dy * dy + dz * dz);
+
+				if (sound.maxRange > sound.minRange) {
+					if (distance <= sound.minRange) {
+						sourceVolume = sound.nearVolume;
+					} else if (distance >= sound.maxRange) {
+						sourceVolume = sound.farVolume;
+					} else {
+						const float t =
+							(distance - sound.minRange) /
+							(sound.maxRange - sound.minRange);
+						sourceVolume =
+							sound.nearVolume +
+							(sound.farVolume - sound.nearVolume) * t;
+					}
+				}
+			}
+		}
+
+		const byte mixerVolume =
+			retailChannelVolume(5, sourceVolume, Common::String());
+
+#ifdef USE_MAD
+		if (!sound.active || !_mixer->isSoundHandleActive(sound.handle)) {
+			sound.active = playNamedMp3Looped(
+				_mixer, Audio::Mixer::kSFXSoundType,
+				sound.fileName, sound.handle, mixerVolume);
+			if (!sound.active) {
+				warning("Zero Comico: cannot start room environment sound %s (%s)",
+				        sound.name.c_str(), sound.fileName.c_str());
+				continue;
+			}
+		} else {
+			_mixer->setChannelVolume(sound.handle, mixerVolume);
+		}
+#else
+		sound.active = true;
+		(void)mixerVolume;
+#endif
+	}
 }
 
 bool ZeroComicoEngine::loadMenuScene() {
@@ -4609,6 +4729,7 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 	_combineInventorySecond.clear();
 	_inventoryObjects.clear();
 	_hiddenSceneMeshes.clear();
+	stopRoomEnvironmentSounds();
 	if (_mixer->isSoundHandleActive(_environmentSoundHandle))
 		_mixer->stopHandle(_environmentSoundHandle);
 	_environmentSoundName.clear();
@@ -4952,6 +5073,7 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 
 	if (restoringStagedSave && !applyStagedRestore(playerDirectory))
 		return false;
+	startRoomEnvironmentSounds(*room);
 
 	auto applyPendingCamera = [&]() -> bool {
 		if (_pendingCameraName.empty())
@@ -5343,6 +5465,7 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 			return true;
 		}
 
+		stopRoomEnvironmentSounds();
 		room = nextRoom;
 		_activeRoomName = room->name;
 		_activeRoomPrefix = room->prefix;
@@ -5419,6 +5542,7 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 		if (!runRoomCode(*room))
 			return false;
 		startRoomMusic(room->music, room->musicVolume);
+		startRoomEnvironmentSounds(*room);
 		cameraName = room->camera;
 
 		bool nextCameraReady = false;
@@ -5606,6 +5730,7 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 			return false;
 		if (!runPuzzleRegionTransitions())
 			return false;
+		updateRoomEnvironmentSounds();
 		if (!_pendingMainPlace.empty()) {
 			done = true;
 			break;
