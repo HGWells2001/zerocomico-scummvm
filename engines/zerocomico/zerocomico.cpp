@@ -2321,15 +2321,6 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 		return giveLifeToCharacter(instruction.args[0]);
 	}
 
-	if (op.equalsIgnoreCase("BreakLifeToChar")) {
-		if (instruction.args.empty())
-			return false;
-		CpuCharacterRuntime *character = findCpuCharacter(instruction.args[0]);
-		if (character)
-			character->lifeBroken = true;
-		return true;
-	}
-
 	if (op.equalsIgnoreCase("dcue_all")) {
 		if (instruction.args.size() < 3)
 			return false;
