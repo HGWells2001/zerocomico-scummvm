@@ -437,6 +437,27 @@ The misspelled `flase` therefore evaluates to **true** in the original
 executable. The runtime now uses the same pair-wise parser instead of matching
 only precomposed `"property true/false"` substrings.
 
+## MainPlayer HidingCode inventory actions
+
+A later-chapter audit found that `char.isc` has a second MainPlayer action
+block besides `combineobj`: `HidingCode`. It is shipped only in Mp4 and
+Mp5, and both uses are progression-relevant inventory actions rather than
+continuous character control.
+
+Mp4 tests `ifplace Room4_1/Room4_2` plus selection of `obj_spray`, then
+plays `c416` or `c425` and sets `usato_aglio` /
+`spruzzato_aglio`. Mp5 tests `Travestimento_Off`, `ifplace Room5_2`
+and selection of `obj_travesti`, then plays `c522`, repositions the
+MainPlayer and updates camera/place state.
+
+`CharacterScript` now preserves each character's HidingCode range, and the
+VM recognizes the one-argument `ifplace <room>` condition. The current
+keyboard inventory has no separate modal-close event, so selecting an item
+with TAB is the closest equivalent to the retail interface returning to
+gameplay; the MainPlayer HidingCode is therefore executed once immediately
+after that selection. Any room transition requested by the block is committed
+through the normal room-rebuild path.
+
 ## Retail puzzle region transitions
 
 The supplied puzzle corpus contains **15** spatial `in:` blocks and **2**
