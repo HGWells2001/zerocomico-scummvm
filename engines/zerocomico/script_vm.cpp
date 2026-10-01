@@ -33,11 +33,27 @@ static bool isConditionalOpcode(const Common::String &op) {
 } // namespace
 
 ScriptVM::ScriptVM(ScriptVMHost *host) : _host(host), _random("zerocomico-script-vm") {
+	reset();
 }
 
 void ScriptVM::reset() {
 	_variables.clear();
 	_arrays.clear();
+
+	// Zero Comico.exe registers these two engine-global arrays before loading
+	// any gameplay script. The registration call receives 10 elements for
+	// ge_Array and 5 for ge_toggle; both start zero-filled.
+	Common::Array<int32> geArray;
+	geArray.resize(10);
+	for (uint32 i = 0; i < geArray.size(); ++i)
+		geArray[i] = 0;
+	_arrays["ge_Array"] = geArray;
+
+	Common::Array<int32> geToggle;
+	geToggle.resize(5);
+	for (uint32 i = 0; i < geToggle.size(); ++i)
+		geToggle[i] = 0;
+	_arrays["ge_toggle"] = geToggle;
 }
 
 void ScriptVM::synchronize(Common::Serializer &s) {

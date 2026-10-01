@@ -504,6 +504,23 @@ classification. The legacy Mpx menu script is still replaced by the native
 ScummVM-facing menu implementation, so its private interface audio context is
 not required by gameplay.
 
+## Retail engine-global script arrays
+
+A cross-chapter executable/script audit exposed one Mp3-specific dependency
+that is not declared by `room.isc`: the scripts access `ge_Array(0..1)`
+and the scene shortcut references `ge_toggle(2)`.
+
+The retail executable registration sequence identifies both arrays directly.
+Immediately before registering the names it passes **10** for `ge_Array` and
+**5** for `ge_toggle`. They are engine globals rather than script-declared
+arrays. This matters because Mp3 startup executes `mov ge_Array(0) 0`;
+treating an undeclared array as an error can stop the startup program before
+the chapter runtime begins.
+
+`ScriptVM::reset()` now recreates the retail built-ins as zero-filled arrays
+of exactly those sizes. They subsequently participate in the ordinary VM
+serializer, so Mp3 dialog-minigame state also survives ZCOM saves.
+
 ## Retail dialogue do-block coverage
 
 A fresh decode of all shipped `Mp0..Mp5/gameplay/dialog.isc` files shows that
