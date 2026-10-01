@@ -5242,18 +5242,20 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 				                    "Stay", 0.0f, frame);
 
 				if (!_pendingSayText.empty() && !shouldQuit()) {
-					drawCutsceneSubtitle(frame,
-					                     _pendingSaySpeaker.empty() ? Common::String("Giovanni") : _pendingSaySpeaker,
-					                     _pendingSayText);
+					const Common::String effectiveSpeaker =
+						_pendingSaySpeaker.empty()
+							? (_playerCharacterScript.playerName.empty()
+								? Common::String("MainPlayer") : _playerCharacterScript.playerName)
+							: _pendingSaySpeaker;
+					const DialogSpeaker *speakerInfo =
+						_activeDialog.findSpeakerByName(effectiveSpeaker);
+					drawCutsceneSubtitle(frame, effectiveSpeaker, _pendingSayText, speakerInfo);
 					_system->copyRectToScreen(frame.getPixels(), frame.pitch,
 					                          0, 0, frame.w, frame.h);
 					_system->updateScreen();
 
-					uint32 sayDuration = (uint32)_pendingSayText.size() * 60U;
-					if (sayDuration < 1000U)
-						sayDuration = 1000U;
-					if (sayDuration > 5000U)
-						sayDuration = 5000U;
+					const uint32 sayDuration = retailTextDurationMillis(
+						_pendingSayText, speakerInfo ? speakerInfo->speed : 0.07f);
 
 					const uint32 sayStart = _system->getMillis();
 					bool dismissSay = false;
@@ -5393,16 +5395,20 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 					}
 
 					if (!_pendingSayText.empty() && !done && !shouldQuit()) {
-						drawCutsceneSubtitle(frame, _pendingSaySpeaker, _pendingSayText);
+						const Common::String effectiveSpeaker =
+							_pendingSaySpeaker.empty()
+								? (_playerCharacterScript.playerName.empty()
+									? Common::String("MainPlayer") : _playerCharacterScript.playerName)
+								: _pendingSaySpeaker;
+						const DialogSpeaker *speakerInfo =
+							_activeDialog.findSpeakerByName(effectiveSpeaker);
+						drawCutsceneSubtitle(frame, effectiveSpeaker, _pendingSayText, speakerInfo);
 						_system->copyRectToScreen(frame.getPixels(), frame.pitch,
 						                          0, 0, frame.w, frame.h);
 						_system->updateScreen();
 
-						uint32 sayDuration = (uint32)_pendingSayText.size() * 70U;
-						if (sayDuration < 1200U)
-							sayDuration = 1200U;
-						if (sayDuration > 5000U)
-							sayDuration = 5000U;
+						const uint32 sayDuration = retailTextDurationMillis(
+							_pendingSayText, speakerInfo ? speakerInfo->speed : 0.07f);
 						const uint32 sayStart = _system->getMillis();
 						bool dismissSay = false;
 						while (!shouldQuit() && !dismissSay &&
