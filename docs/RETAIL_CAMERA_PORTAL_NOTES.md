@@ -504,6 +504,18 @@ classification. The legacy Mpx menu script is still replaced by the native
 ScummVM-facing menu implementation, so its private interface audio context is
 not required by gameplay.
 
+## Retail dialogue do-block coverage
+
+A fresh decode of all shipped `Mp0..Mp5/gameplay/dialog.isc` files shows that
+dialogue `do ... end` blocks use only two executable opcodes: **8 `mov`**
+instructions and **4 `SetNoCameraReset`** instructions. Both already execute
+through the normal ScriptVM/host paths.
+
+This removes "unknown dialogue do-block opcode" as a remaining compatibility
+risk. Dialogue work that remains is behavioral validation of nested choices,
+camera transitions and later-chapter branches, rather than missing foreground
+VM vocabulary.
+
 ## Save/load groundwork
 
 The engine still does **not** advertise runtime save/load to ScummVM yet. The
