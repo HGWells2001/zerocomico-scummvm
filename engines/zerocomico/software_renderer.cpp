@@ -319,10 +319,99 @@ static byte floatColor(float v) {
 	return (byte)(clamp01(v) * 255.0f + 0.5f);
 }
 
+static bool lightTargetsMesh(const LightData &light, const Common::String &meshName) {
+	if (light.linkedNames.empty())
+		return true;
+	for (uint32 i = 0; i < light.linkedNames.size(); ++i)
+		if (light.linkedNames[i].equalsIgnoreCase(meshName))
+			return true;
+	return false;
+}
+
+static Vec3f evaluateFaceLighting(const SceneModel &lightingScene,
+                                  const Common::String &meshName,
+                                  const Vec3f world[3],
+                                  const RenderCamera &camera) {
+	Vec3f centroid = {
+		(world[0].x + world[1].x + world[2].x) / 3.0f,
+		(world[0].y + world[1].y + world[2].y) / 3.0f,
+		(world[0].z + world[1].z + world[2].z) / 3.0f
+	};
+
+	const Vec3f edge0 = sub3(world[1], world[0]);
+	const Vec3f edge1 = sub3(world[2], world[0]);
+	Vec3f normal = cross3(edge0, edge1);
+	if (!normalize3(normal)) {
+		Vec3f unlit = {1.0f, 1.0f, 1.0f};
+		return unlit;
+	}
+
+	// The software rasterizer is two-sided. Orient the geometric face normal
+	// toward the visible side before evaluating diffuse lighting.
+	const Vec3f toCamera = sub3(camera.position, centroid);
+	if (dot3(normal, toCamera) < 0.0f) {
+		normal.x = -normal.x;
+		normal.y = -normal.y;
+		normal.z = -normal.z;
+	}
+
+	Vec3f accumulated = {0.0f, 0.0f, 0.0f};
+	bool contributed = false;
+
+	for (uint32 i = 0; i < lightingScene.lights.size(); ++i) {
+		const LightData &light = lightingScene.lights[i].data;
+		if (!lightTargetsMesh(light, meshName))
+			continue;
+
+		const float intensity = light.params[0];
+		const float innerRange = light.params[1];
+		const float outerRange = light.params[2];
+		if (intensity <= 0.0f || outerRange <= 0.0f)
+			continue;
+
+		Vec3f toLight = sub3(light.position, centroid);
+		const float distance2 = dot3(toLight, toLight);
+		if (distance2 <= 1.0e-10f)
+			continue;
+		const float distance = std::sqrt(distance2);
+		if (distance >= outerRange)
+			continue;
+		if (!normalize3(toLight))
+			continue;
+
+		float attenuation = 1.0f;
+		if (distance > innerRange && outerRange > innerRange)
+			attenuation = (outerRange - distance) / (outerRange - innerRange);
+		attenuation = clamp01(attenuation);
+
+		const float diffuse = dot3(normal, toLight);
+		if (diffuse <= 0.0f)
+			continue;
+
+		const float factor = intensity * attenuation * diffuse;
+		accumulated.x += light.color.x * factor;
+		accumulated.y += light.color.y * factor;
+		accumulated.z += light.color.z * factor;
+		contributed = true;
+	}
+
+	// Conservative fallback: geometry that receives no decoded light keeps the
+	// previous unshaded appearance instead of becoming black due to an
+	// incomplete light-model interpretation.
+	if (!contributed) {
+		accumulated.x = accumulated.y = accumulated.z = 1.0f;
+	} else {
+		accumulated.x = clamp01(accumulated.x);
+		accumulated.y = clamp01(accumulated.y);
+		accumulated.z = clamp01(accumulated.z);
+	}
+	return accumulated;
+}
+
 static void drawTriangle(Graphics::ManagedSurface &target, Common::Array<float> &zBuffer,
                          const ProjectedVertex pv[3], const Vec2f uv[3], bool haveUv,
                          const Graphics::ManagedSurface *texture, const MaterialData *material,
-                         const RenderCamera &camera) {
+                         const RenderCamera &camera, const Vec3f &shade) {
 	const float area = edge(pv[0].x, pv[0].y, pv[1].x, pv[1].y, pv[2].x, pv[2].y);
 	if (std::fabs(area) < 1.0e-6f)
 		return;
@@ -400,6 +489,12 @@ static void drawTriangle(Graphics::ManagedSurface &target, Common::Array<float> 
 				b = floatColor(material->color1.z);
 			}
 
+			if (camera.shadeEnabled) {
+				r = (byte)((float)r * shade.x + 0.5f);
+				g = (byte)((float)g * shade.y + 0.5f);
+				b = (byte)((float)b * shade.z + 0.5f);
+			}
+
 			if (camera.depthCueEnabled && camera.depthCueEnd > camera.depthCueStart) {
 				const float cue = clamp01(
 					(depth - camera.depthCueStart) /
@@ -420,7 +515,8 @@ static void drawTriangle(Graphics::ManagedSurface &target, Common::Array<float> 
 	}
 }
 
-static void renderFaceRange(const SceneModel &scene, const MeshData &mesh,
+static void renderFaceRange(const SceneModel &scene, const SceneModel &lightingScene,
+                            const Common::String &meshName, const MeshData &mesh,
                             const Common::Array<Vec3f> *posedVertices,
                             const MeshMaterialRange *range, const Common::Path &textureDirectory,
                             const RenderCamera &camera, const Vec3f &right, const Vec3f &up,
@@ -455,6 +551,7 @@ static void renderFaceRange(const SceneModel &scene, const MeshData &mesh,
 			break;
 
 		ProjectedVertex projected[3];
+		Vec3f worldVertices[3];
 		Vec2f uv[3];
 		bool valid = true;
 		for (uint32 i = 0; i < 3; ++i) {
@@ -475,6 +572,7 @@ static void renderFaceRange(const SceneModel &scene, const MeshData &mesh,
 				meshWorld = transformVertex(mesh.vertices[vertexIndex], mesh.transform);
 			}
 			const Vec3f world = applyInstanceTransform(meshWorld, instanceTransform);
+			worldVertices[i] = world;
 			if (!projectVertex(world, camera, right, up, forward, focalPixels,
 			                   target.w, target.h, projected[i])) {
 				valid = false;
@@ -496,11 +594,15 @@ static void renderFaceRange(const SceneModel &scene, const MeshData &mesh,
 			}
 		}
 
-		drawTriangle(target, zBuffer, projected, uv, haveUv, texturePtr, material, camera);
+		Vec3f shade = {1.0f, 1.0f, 1.0f};
+		if (camera.shadeEnabled)
+			shade = evaluateFaceLighting(lightingScene, meshName, worldVertices, camera);
+		drawTriangle(target, zBuffer, projected, uv, haveUv, texturePtr, material, camera, shade);
 	}
 }
 
-static bool renderScene(const SceneModel &scene, const Common::Path &textureDirectory,
+static bool renderScene(const SceneModel &scene, const SceneModel &lightingScene,
+                        const Common::Path &textureDirectory,
                         const Common::Array<Common::String> &visibleMeshes,
                         const RenderCamera &camera, const Vec3f &right, const Vec3f &up,
                         const Vec3f &forward, float focalPixels,
@@ -520,7 +622,7 @@ static bool renderScene(const SceneModel &scene, const Common::Path &textureDire
 			namedMesh.posedVertices.empty() ? nullptr : &namedMesh.posedVertices;
 
 		if (mesh.materials.empty()) {
-			renderFaceRange(scene, mesh, posedVertices, nullptr, textureDirectory, camera, right, up, forward,
+			renderFaceRange(scene, lightingScene, namedMesh.name, mesh, posedVertices, nullptr, textureDirectory, camera, right, up, forward,
 			                focalPixels, instanceTransform, textureCacheKeys, textureCache,
 			                animatedTextureCache, target, zBuffer);
 			renderedAny = true;
@@ -528,7 +630,7 @@ static bool renderScene(const SceneModel &scene, const Common::Path &textureDire
 		}
 
 		for (uint32 materialIndex = 0; materialIndex < mesh.materials.size(); ++materialIndex) {
-			renderFaceRange(scene, mesh, posedVertices, &mesh.materials[materialIndex], textureDirectory,
+			renderFaceRange(scene, lightingScene, namedMesh.name, mesh, posedVertices, &mesh.materials[materialIndex], textureDirectory,
 			                camera, right, up, forward, focalPixels, instanceTransform,
 			                textureCacheKeys, textureCache, animatedTextureCache, target, zBuffer);
 			renderedAny = true;
@@ -604,7 +706,7 @@ bool SoftwareRenderer::render(const SceneModel &scene, const RenderCamera &camer
 	for (uint32 i = 0; i < zBuffer.size(); ++i)
 		zBuffer[i] = 1.0e30f;
 
-	return renderScene(scene, textureDirectory, visibleMeshes, camera, right, up, forward,
+	return renderScene(scene, scene, textureDirectory, visibleMeshes, camera, right, up, forward,
 	                   focalPixels, nullptr, _textureCacheKeys, _textureCache,
 	                   _animatedTextureCache, target, zBuffer);
 }
@@ -652,7 +754,7 @@ bool SoftwareRenderer::renderWithActors(const SceneModel &scene, const RenderCam
 	for (uint32 i = 0; i < zBuffer.size(); ++i)
 		zBuffer[i] = 1.0e30f;
 
-	bool rendered = renderScene(scene, textureDirectory, visibleMeshes, camera,
+	bool rendered = renderScene(scene, scene, textureDirectory, visibleMeshes, camera,
 	                            right, up, forward, camera.focalPixels,
 	                            nullptr, _textureCacheKeys, _textureCache,
 	                            _animatedTextureCache, target, zBuffer);
@@ -661,7 +763,7 @@ bool SoftwareRenderer::renderWithActors(const SceneModel &scene, const RenderCam
 		const RenderActor &actor = actors[actorIndex];
 		if (!actor.scene)
 			continue;
-		rendered = renderScene(*actor.scene, actor.textureDirectory, actor.visibleMeshes,
+		rendered = renderScene(*actor.scene, scene, actor.textureDirectory, actor.visibleMeshes,
 		                       camera, right, up, forward, camera.focalPixels,
 		                       &actor.transform, _textureCacheKeys, _textureCache,
 		                       _animatedTextureCache, target, zBuffer) || rendered;
