@@ -99,13 +99,24 @@ bool ChapterDefinition::parse(const ScriptProgram &program) {
 			sound.minRange = 0.0f;
 			sound.maxRange = 0.0f;
 
-			if (inst.args[1].equalsIgnoreCase("Emitter"))
-				sound.emitter = true;
-			else if (!inst.args[1].equalsIgnoreCase("In"))
+			// ScriptProgram preserves inline braces as arguments. Retail room.isc
+			// writes EnvSound almost exclusively as:
+			//   EnvSound name { In/Emitter file ... }
+			// so locate the mode token rather than assuming a fixed offset.
+			uint32 modeIndex = 1;
+			while (modeIndex < inst.args.size() &&
+			       (inst.args[modeIndex] == "{" || inst.args[modeIndex] == "}"))
+				++modeIndex;
+			if (modeIndex + 1 >= inst.args.size())
 				continue;
-			sound.fileName = inst.args[2];
 
-			for (uint32 a = 3; a < inst.args.size(); ++a) {
+			if (inst.args[modeIndex].equalsIgnoreCase("Emitter"))
+				sound.emitter = true;
+			else if (!inst.args[modeIndex].equalsIgnoreCase("In"))
+				continue;
+			sound.fileName = inst.args[modeIndex + 1];
+
+			for (uint32 a = modeIndex + 2; a < inst.args.size(); ++a) {
 				const Common::String &token = inst.args[a];
 				if (token.equalsIgnoreCase("off")) {
 					sound.enabled = false;
