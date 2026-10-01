@@ -4266,6 +4266,11 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 	    (level[1] == 'p' || level[1] == 'P'))
 		level = Common::String("Mp") + level.substr(2);
 
+	const bool restoringStagedSave =
+		_pendingLoadActive && _pendingLoadMainPlace.equalsIgnoreCase(level);
+	const Common::String stagedRoomName =
+		restoringStagedSave ? _pendingLoadRoomName : Common::String();
+
 	_currentMainPlace = level;
 	_activeRoomName.clear();
 	_activeRoomPrefix.clear();
@@ -4391,9 +4396,12 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 		}
 	}
 
-	const RoomDefinition *room = chapter.findRoom(chapter.startRoom);
+	const Common::String initialRoomName =
+		restoringStagedSave ? stagedRoomName : chapter.startRoom;
+	const RoomDefinition *room = chapter.findRoom(initialRoomName);
 	if (!room) {
-		warning("Zero Comico: start room %s is not declared", chapter.startRoom.c_str());
+		warning("Zero Comico: %s room %s is not declared",
+		        restoringStagedSave ? "saved" : "start", initialRoomName.c_str());
 		return false;
 	}
 
@@ -4856,8 +4864,10 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 		return true;
 	};
 
-	if (!runMainPlaceRuntime(roomProgram))
-		warning("Zero Comico: main-place runtime block did not complete cleanly");
+	if (!restoringStagedSave) {
+		if (!runMainPlaceRuntime(roomProgram))
+			warning("Zero Comico: main-place runtime block did not complete cleanly");
+	}
 	applyPendingCamera();
 	updateAutoCamera();
 	updateDynamicCamera("Stay", 0.0f);
