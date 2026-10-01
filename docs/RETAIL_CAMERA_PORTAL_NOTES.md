@@ -504,6 +504,30 @@ classification. The legacy Mpx menu script is still replaced by the native
 ScummVM-facing menu implementation, so its private interface audio context is
 not required by gameplay.
 
+## Save/load groundwork
+
+The engine still does **not** advertise runtime save/load to ScummVM yet. The
+critical persistence layer is now separated from scene assets first, so a
+future save will not embed decoded P3D/ANJ/JGF data.
+
+Three mutable layers have explicit serializers:
+
+- `ScriptVM`: scalar variables, arrays and RNG seed;
+- `PuzzleScript` / `DialogScript`: object flags, choice enable state and
+  `ModifySentence` text mutations, keyed by retail object/dialog names;
+- engine runtime state: current main place/room, player position and facing,
+  active AnimSet, inventory/combine state, camera/interface switches, hidden
+  meshes, environment/light/user-effect state and the current music/environment
+  identifiers.
+
+The remaining blocker before exposing `saveGameStream/loadGameStream` is
+architectural rather than data-format related: `runMainPlacePreview()`
+currently combines asset loading, main-place initialization and the interactive
+loop in one function. Loading a save must first reconstruct the target
+main-place/room assets and only then apply the serialized mutable state. The
+next save/load step is therefore to split that initialization from the loop,
+not to deserialize over whatever room happens to be active.
+
 ## Retail depth cue
 
 The retail script corpus uses `dcue_all` exactly once, during Mp5 startup:
