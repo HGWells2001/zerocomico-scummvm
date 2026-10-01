@@ -2562,56 +2562,50 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 		if (!object)
 			return false;
 
-		Common::String state = instruction.args[1];
-		state.toLowercase();
-		if (state.find("pickable true") != Common::String::npos)
-			object->pickable = true;
-		if (state.find("pickable false") != Common::String::npos)
-			object->pickable = false;
-		if (state.find("examinable true") != Common::String::npos)
-			object->examinable = true;
-		if (state.find("examinable false") != Common::String::npos)
-			object->examinable = false;
-		if (state.find("operated true") != Common::String::npos)
-			object->operated = true;
-		if (state.find("operated false") != Common::String::npos)
-			object->operated = false;
-		if (state.find("examinated true") != Common::String::npos)
-			object->examinated = true;
-		if (state.find("examinated false") != Common::String::npos)
-			object->examinated = false;
-		if (state.find("autocamera true") != Common::String::npos)
-			object->autoCamera = true;
-		if (state.find("autocamera false") != Common::String::npos)
-			object->autoCamera = false;
-		if (state.find("randompos true") != Common::String::npos)
-			object->randomPos = true;
-		if (state.find("randompos false") != Common::String::npos)
-			object->randomPos = false;
-		if (state.find("combined true") != Common::String::npos)
-			object->combined = true;
-		if (state.find("combined false") != Common::String::npos)
-			object->combined = false;
-		if (state.find("assigned true") != Common::String::npos)
-			object->assigned = true;
-		if (state.find("assigned false") != Common::String::npos)
-			object->assigned = false;
-		if (state.find("enabled true") != Common::String::npos)
-			object->enabled = true;
-		if (state.find("enabled false") != Common::String::npos)
-			object->enabled = false;
-		if (state.find("inside true") != Common::String::npos)
-			object->inside = true;
-		if (state.find("inside false") != Common::String::npos)
-			object->inside = false;
-		if (state.find("collision true") != Common::String::npos)
-			object->collision = true;
-		if (state.find("collision false") != Common::String::npos)
-			object->collision = false;
-		if (state.find("soundstate true") != Common::String::npos)
-			object->soundState = true;
-		if (state.find("soundstate false") != Common::String::npos)
-			object->soundState = false;
+		Common::Array<Common::String> stateTokens;
+		splitE3dCommand(instruction.args[1], stateTokens);
+		if (stateTokens.empty() || (stateTokens.size() & 1U) != 0)
+			return false;
+
+		for (uint32 i = 0; i < stateTokens.size(); i += 2) {
+			const Common::String &property = stateTokens[i];
+			const Common::String &valueToken = stateTokens[i + 1];
+
+			// The retail object-state parser has deliberately loose boolean
+			// semantics: only the literal FALSE (case-insensitive) and "0"
+			// clear a flag; every other successfully tokenized value sets it.
+			// This preserves the shipped Mp5 typo "enabled flase", which the
+			// original executable therefore treats as true.
+			const bool value =
+				!valueToken.equalsIgnoreCase("FALSE") && valueToken != "0";
+
+			if (property.equalsIgnoreCase("pickable"))
+				object->pickable = value;
+			else if (property.equalsIgnoreCase("examinable"))
+				object->examinable = value;
+			else if (property.equalsIgnoreCase("operated"))
+				object->operated = value;
+			else if (property.equalsIgnoreCase("examinated"))
+				object->examinated = value;
+			else if (property.equalsIgnoreCase("autocamera"))
+				object->autoCamera = value;
+			else if (property.equalsIgnoreCase("randompos"))
+				object->randomPos = value;
+			else if (property.equalsIgnoreCase("combined"))
+				object->combined = value;
+			else if (property.equalsIgnoreCase("assigned"))
+				object->assigned = value;
+			else if (property.equalsIgnoreCase("enabled"))
+				object->enabled = value;
+			else if (property.equalsIgnoreCase("inside"))
+				object->inside = value;
+			else if (property.equalsIgnoreCase("collision"))
+				object->collision = value;
+			else if (property.equalsIgnoreCase("soundstate"))
+				object->soundState = value;
+			else
+				return false;
+		}
 		return true;
 	}
 
