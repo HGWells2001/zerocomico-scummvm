@@ -5528,7 +5528,7 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 	// they ever reached it. Mp1's coc_cocco (Room1_4) and ope_operaio (Room1_5)
 	// are progression-critical examples.
 	auto interactionEntityAvailable = [&](const Common::String &entity) -> bool {
-		if (_activeScene.findMesh(entity))
+		if (_activeScene.findMesh(entity) || _activeScene.hasHierarchy(entity))
 			return true;
 		for (uint32 cpuIndex = 0; cpuIndex < _cpuCharacters.size(); ++cpuIndex) {
 			const CpuCharacterRuntime &character = _cpuCharacters[cpuIndex];

@@ -780,6 +780,19 @@ bool SceneModel::hasHierarchy(const Common::String &name) const {
 	return findHierarchy(*this, name) != nullptr;
 }
 
+void SceneModel::meshesForHierarchy(const Common::String &name,
+                                    Common::Array<Common::String> &meshNames) const {
+	meshNames.clear();
+	const HierarchyData *hierarchy = findHierarchy(*this, name);
+	if (!hierarchy)
+		return;
+
+	for (uint32 i = 0; i < meshes.size(); ++i) {
+		if (hierarchyContains(*hierarchy, name, meshes[i].name))
+			meshNames.push_back(meshes[i].name);
+	}
+}
+
 bool SceneModel::translateHierarchy(const Common::String &name, const Vec3f &delta) {
 	const HierarchyData *hierarchy = findHierarchy(*this, name);
 	if (!hierarchy)

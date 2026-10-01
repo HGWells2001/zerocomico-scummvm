@@ -805,67 +805,79 @@ static void pickSceneMeshes(const SceneModel &scene, const RenderCamera &camera,
 	const float py = (float)screenY + 0.5f;
 
 	for (uint32 candidateIndex = 0; candidateIndex < candidates.size(); ++candidateIndex) {
-		const NamedMesh *namedMesh = scene.findMesh(candidates[candidateIndex]);
-		if (!namedMesh || namedMesh->data.isFlesh())
-			continue;
+		Common::Array<Common::String> candidateMeshes;
+		if (scene.findMesh(candidates[candidateIndex])) {
+			candidateMeshes.push_back(candidates[candidateIndex]);
+		} else {
+			// Retail puzzle objects may target a JACS hierarchy root rather than a
+			// drawable mesh. Room1_4's r14_esplor is the progression-critical Mp1
+			// example: its geometry lives in r14_espc*/esps*/espd* child meshes.
+			scene.meshesForHierarchy(candidates[candidateIndex], candidateMeshes);
+		}
 
-		const MeshData &mesh = namedMesh->data;
-		const Common::Array<Vec3f> *posed =
-			namedMesh->posedVertices.empty() ? nullptr : &namedMesh->posedVertices;
-		const uint32 vertexCount = posed ? posed->size() : mesh.vertices.size();
-		if (vertexCount == 0 || mesh.indices.size() < 3)
-			continue;
+		for (uint32 meshIndex = 0; meshIndex < candidateMeshes.size(); ++meshIndex) {
+			const NamedMesh *namedMesh = scene.findMesh(candidateMeshes[meshIndex]);
+			if (!namedMesh || namedMesh->data.isFlesh())
+				continue;
 
-		for (uint32 corner = 0; corner + 2 < mesh.indices.size(); corner += 3) {
-			ProjectedVertex projected[3];
-			bool valid = true;
-			for (uint32 i = 0; i < 3; ++i) {
-				const uint32 vertexIndex = mesh.indices[corner + i];
-				if (vertexIndex >= vertexCount) {
-					valid = false;
-					break;
+			const MeshData &mesh = namedMesh->data;
+			const Common::Array<Vec3f> *posed =
+				namedMesh->posedVertices.empty() ? nullptr : &namedMesh->posedVertices;
+			const uint32 vertexCount = posed ? posed->size() : mesh.vertices.size();
+			if (vertexCount == 0 || mesh.indices.size() < 3)
+				continue;
+
+			for (uint32 corner = 0; corner + 2 < mesh.indices.size(); corner += 3) {
+				ProjectedVertex projected[3];
+				bool valid = true;
+				for (uint32 i = 0; i < 3; ++i) {
+					const uint32 vertexIndex = mesh.indices[corner + i];
+					if (vertexIndex >= vertexCount) {
+						valid = false;
+						break;
+					}
+
+					Vec3f world;
+					if (posed)
+						world = (*posed)[vertexIndex];
+					else if (mesh.isSkinnedParent())
+						world = mesh.vertices[vertexIndex];
+					else
+						world = transformVertex(mesh.vertices[vertexIndex], mesh.transform);
+					world = applyInstanceTransform(world, instanceTransform);
+
+					if (!projectVertex(world, camera, right, up, forward, camera.focalPixels,
+					                   width, height, projected[i])) {
+						valid = false;
+						break;
+					}
 				}
+				if (!valid)
+					continue;
 
-				Vec3f world;
-				if (posed)
-					world = (*posed)[vertexIndex];
-				else if (mesh.isSkinnedParent())
-					world = mesh.vertices[vertexIndex];
-				else
-					world = transformVertex(mesh.vertices[vertexIndex], mesh.transform);
-				world = applyInstanceTransform(world, instanceTransform);
+				const float area = edge(projected[0].x, projected[0].y,
+				                        projected[1].x, projected[1].y,
+				                        projected[2].x, projected[2].y);
+				if (std::fabs(area) < 1.0e-6f)
+					continue;
 
-				if (!projectVertex(world, camera, right, up, forward, camera.focalPixels,
-				                   width, height, projected[i])) {
-					valid = false;
-					break;
+				const float w0 = edge(projected[1].x, projected[1].y,
+				                      projected[2].x, projected[2].y, px, py) / area;
+				const float w1 = edge(projected[2].x, projected[2].y,
+				                      projected[0].x, projected[0].y, px, py) / area;
+				const float w2 = 1.0f - w0 - w1;
+				if (w0 < -0.0025f || w1 < -0.0025f || w2 < -0.0025f)
+					continue;
+
+				const float invDepth =
+					w0 / projected[0].z + w1 / projected[1].z + w2 / projected[2].z;
+				if (invDepth <= 0.0f)
+					continue;
+				const float depth = 1.0f / invDepth;
+				if (depth < bestDepth) {
+					bestDepth = depth;
+					pickedName = candidates[candidateIndex];
 				}
-			}
-			if (!valid)
-				continue;
-
-			const float area = edge(projected[0].x, projected[0].y,
-			                        projected[1].x, projected[1].y,
-			                        projected[2].x, projected[2].y);
-			if (std::fabs(area) < 1.0e-6f)
-				continue;
-
-			const float w0 = edge(projected[1].x, projected[1].y,
-			                      projected[2].x, projected[2].y, px, py) / area;
-			const float w1 = edge(projected[2].x, projected[2].y,
-			                      projected[0].x, projected[0].y, px, py) / area;
-			const float w2 = 1.0f - w0 - w1;
-			if (w0 < -0.0025f || w1 < -0.0025f || w2 < -0.0025f)
-				continue;
-
-			const float invDepth =
-				w0 / projected[0].z + w1 / projected[1].z + w2 / projected[2].z;
-			if (invDepth <= 0.0f)
-				continue;
-			const float depth = 1.0f / invDepth;
-			if (depth < bestDepth) {
-				bestDepth = depth;
-				pickedName = namedMesh->name;
 			}
 		}
 	}
