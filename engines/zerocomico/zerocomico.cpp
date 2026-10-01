@@ -11,6 +11,7 @@
 #include "zerocomico/shape_script.h"
 #include "zerocomico/software_renderer.h"
 
+#include "common/config-manager.h"
 #include "common/events.h"
 #include "common/file.h"
 #include "common/serializer.h"
@@ -813,6 +814,39 @@ Common::Error ZeroComicoEngine::run() {
 		warning("Zero Comico: Config.gsc has no StartMainplace");
 	} else {
 		debug(1, "Zero Comico: StartMainplace = %s", mainPlace.c_str());
+	}
+
+	// ScummVM's launcher can request a specific save slot before run(). Engine
+	// does not consume that setting automatically for every engine, so honor it
+	// here and go straight to the staged main-place rebuild instead of replaying
+	// the retail intro/menu first.
+	if (ConfMan.hasKey("save_slot")) {
+		const int slot = ConfMan.getInt("save_slot");
+		const Common::Error loadError = loadGameState(slot);
+		if (loadError.getCode() == Common::kNoError &&
+		    _pendingLoadActive && !_pendingLoadMainPlace.empty()) {
+			debug(1, "Zero Comico: launcher requested save slot %d", slot);
+			Common::String nextMainPlace = _pendingLoadMainPlace;
+			while (!nextMainPlace.empty() && !shouldQuit()) {
+				_pendingMainPlace.clear();
+				if (!runMainPlacePreview(nextMainPlace))
+					break;
+				nextMainPlace = _pendingMainPlace;
+			}
+
+			if (shouldQuit())
+				return Common::kNoError;
+
+			if (loadMenuScene() && renderMenuFrame(0))
+				runMenu();
+			else {
+				showBootstrapScreen();
+				waitForExit();
+			}
+			return Common::kNoError;
+		}
+
+		warning("Zero Comico: could not load launcher save slot %d; continuing normally", slot);
 	}
 
 	// Execute the actual Mp0 room startup sequence rather than hard-coding the
