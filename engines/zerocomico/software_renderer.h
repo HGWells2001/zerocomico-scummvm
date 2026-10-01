@@ -21,6 +21,8 @@ struct RenderCamera {
 	float rollRadians = 0.0f;
 	bool depthCueEnabled = false;
 	bool shadeEnabled = false;
+	const Common::Array<Common::String> *lightStateNames = nullptr;
+	const Common::Array<bool> *lightStateEnabled = nullptr;
 	float depthCueStart = 0.0f;
 	float depthCueEnd = 0.0f;
 };

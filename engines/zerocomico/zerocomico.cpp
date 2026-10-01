@@ -3081,10 +3081,8 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 			_lightStateEnabled.push_back(enabled != 0);
 		}
 
-		// Mpx/Interface.isc uses SetLightState 23 times to drive the seven menu
-		// highlight lights. The software renderer does not yet evaluate dynamic
-		// lights, but preserve the exact retail state instead of treating this as
-		// an unsupported script command.
+		// Mpx/Interface.isc uses SetLightState to drive highlight lights. Runtime
+		// render cameras now pass these overrides to the decoded-light evaluator.
 		debug(1, "Zero Comico: light %s = %d",
 		      instruction.args[0].c_str(), enabled != 0 ? 1 : 0);
 		return true;
@@ -3742,6 +3740,8 @@ bool ZeroComicoEngine::renderGameplayFrame(const RenderCamera &camera,
 	RenderCamera gameplayCamera = camera;
 	gameplayCamera.depthCueEnabled = _depthCueEnabled;
 	gameplayCamera.shadeEnabled = _shadeEnabled;
+	gameplayCamera.lightStateNames = &_lightStateNames;
+	gameplayCamera.lightStateEnabled = &_lightStateEnabled;
 	gameplayCamera.depthCueStart = _depthCueStart;
 	gameplayCamera.depthCueEnd = _depthCueEnd;
 

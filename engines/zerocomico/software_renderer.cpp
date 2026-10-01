@@ -359,8 +359,22 @@ static Vec3f evaluateFaceLighting(const SceneModel &lightingScene,
 	bool contributed = false;
 
 	for (uint32 i = 0; i < lightingScene.lights.size(); ++i) {
-		const LightData &light = lightingScene.lights[i].data;
-		if (!lightTargetsMesh(light, meshName))
+		const NamedLight &namedLight = lightingScene.lights[i];
+		const LightData &light = namedLight.data;
+
+		bool enabled = true;
+		if (camera.lightStateNames && camera.lightStateEnabled) {
+			const uint32 overrideCount =
+				camera.lightStateNames->size() < camera.lightStateEnabled->size()
+					? camera.lightStateNames->size() : camera.lightStateEnabled->size();
+			for (uint32 stateIndex = 0; stateIndex < overrideCount; ++stateIndex) {
+				if ((*camera.lightStateNames)[stateIndex].equalsIgnoreCase(namedLight.name)) {
+					enabled = (*camera.lightStateEnabled)[stateIndex];
+					break;
+				}
+			}
+		}
+		if (!enabled || !lightTargetsMesh(light, meshName))
 			continue;
 
 		const float intensity = light.params[0];
