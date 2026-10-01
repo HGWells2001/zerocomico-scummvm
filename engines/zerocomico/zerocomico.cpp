@@ -743,7 +743,7 @@ Common::Error ZeroComicoEngine::saveGameStream(Common::WriteStream *stream, bool
 
 	static const char kMagic[4] = {'Z', 'C', 'O', 'M'};
 	stream->write(kMagic, sizeof(kMagic));
-	stream->writeUint32LE(1);
+	stream->writeUint32LE(2);
 	stream->writeUint32LE((uint32)payload.size());
 	if (payload.size() != 0)
 		stream->write(payload.getData(), payload.size());
@@ -762,7 +762,7 @@ Common::Error ZeroComicoEngine::loadGameStream(Common::SeekableReadStream *strea
 
 	const uint32 version = stream->readUint32LE();
 	const uint32 payloadSize = stream->readUint32LE();
-	if (stream->err() || version != 1 || payloadSize == 0 ||
+	if (stream->err() || version != 2 || payloadSize == 0 ||
 	    payloadSize > 16U * 1024U * 1024U)
 		return Common::kReadingFailed;
 
