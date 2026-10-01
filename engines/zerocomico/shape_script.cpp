@@ -190,8 +190,6 @@ bool ShapeScript::containsRegion(const Common::String &name, float x, float z) c
 	return x >= minX && x <= maxX && z >= minZ && z <= maxZ;
 }
 
-} // namespace ZeroComico
-
 
 bool ShapeScript::segmentIntersectsRegion(const Common::String &name,
                                           float fromX, float fromZ,
@@ -225,3 +223,5 @@ bool ShapeScript::segmentIntersectsRegion(const Common::String &name,
 	       segmentIntersection2d(fromX, fromZ, toX, toZ, maxX, maxZ, minX, maxZ) ||
 	       segmentIntersection2d(fromX, fromZ, toX, toZ, minX, maxZ, minX, minZ);
 }
+
+} // namespace ZeroComico
