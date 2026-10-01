@@ -701,7 +701,8 @@ ZeroComicoEngine::ZeroComicoEngine(OSystem *syst, const ADGameDescription *desc)
 	  _masterColorFadeActive(false), _spotHeight(85.0f), _spotMaxDeltaY(30.0f), _spotDistance(350.0f),
 	  _spotMinDistance(25.0f), _spotSmooth(30.0f),
 	  _spotCameraInitialized(false), _dynamicCameraInitialized(false), _scriptKeyMask(0),
-	  _scriptAudioClass(3), _pendingLoadActive(false), _environmentSoundActive(false) {
+	  _scriptAudioClass(3), _pendingLoadActive(false) {
+	_environmentSoundActive = false;
 	_playerPosition.x = _playerPosition.y = _playerPosition.z = 0.0f;
 	for (int soundClass = 0; soundClass < 6; ++soundClass)
 		_soundClassVolumes[soundClass] = 100.0f;
