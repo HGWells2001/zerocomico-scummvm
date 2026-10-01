@@ -697,7 +697,8 @@ ZeroComicoEngine::ZeroComicoEngine(OSystem *syst, const ADGameDescription *desc)
 	  _masterColorFadeSteps(0.0f), _masterColorFadeStartMillis(0),
 	  _masterColorFadeActive(false), _spotHeight(85.0f), _spotMaxDeltaY(30.0f), _spotDistance(350.0f),
 	  _spotMinDistance(25.0f), _spotSmooth(30.0f),
-	  _spotCameraInitialized(false), _dynamicCameraInitialized(false), _scriptKeyMask(0) {
+	  _spotCameraInitialized(false), _dynamicCameraInitialized(false), _scriptKeyMask(0),
+	  _scriptAudioClass(3) {
 	_playerPosition.x = _playerPosition.y = _playerPosition.z = 0.0f;
 	for (int soundClass = 0; soundClass < 6; ++soundClass)
 		_soundClassVolumes[soundClass] = 100.0f;
@@ -750,6 +751,16 @@ Common::Error ZeroComicoEngine::run() {
 	return Common::kNoError;
 }
 
+bool ZeroComicoEngine::runScriptWithAudioClass(const ScriptProgram &program,
+                                                    uint32 startIndex, uint32 endIndex,
+                                                    uint32 maxSteps, int audioClass) {
+	const int previousClass = _scriptAudioClass;
+	_scriptAudioClass = audioClass;
+	const bool ok = _scriptVM.run(program, startIndex, endIndex, maxSteps);
+	_scriptAudioClass = previousClass;
+	return ok;
+}
+
 bool ZeroComicoEngine::runStartupScript(const Common::String &mainPlace) {
 	if (mainPlace.empty())
 		return false;
@@ -788,7 +799,7 @@ bool ZeroComicoEngine::runStartupScript(const Common::String &mainPlace) {
 	}
 
 	_scriptVM.reset();
-	if (!_scriptVM.run(program, runtimeStart, runtimeEnd, 4096))
+	if (!runScriptWithAudioClass(program, runtimeStart, runtimeEnd, 4096, 3))
 		return false;
 
 	int32 menuFlag = 0;
@@ -819,7 +830,7 @@ bool ZeroComicoEngine::runMainPlaceRuntime(const ScriptProgram &program) {
 		}
 	}
 
-	return _scriptVM.run(program, runtimeStart, runtimeEnd, 8192);
+	return runScriptWithAudioClass(program, runtimeStart, runtimeEnd, 8192, 3);
 }
 
 bool ZeroComicoEngine::playCutscene(const Common::String &name) {
@@ -1559,8 +1570,9 @@ bool ZeroComicoEngine::instantiateCpuCharacter(const Common::String &name) {
 	if (definition->initializeStart != 0xffffffffU &&
 	    definition->initializeEnd != 0xffffffffU &&
 	    definition->initializeStart < definition->initializeEnd) {
-		if (!_scriptVM.run(_playerCharacterScript.program(),
-		                   definition->initializeStart, definition->initializeEnd, 128)) {
+		if (!runScriptWithAudioClass(_playerCharacterScript.program(),
+		                             definition->initializeStart, definition->initializeEnd,
+		                             128, 3)) {
 			warning("Zero Comico: CPU initialize block for %s stopped early",
 			        definition->name.c_str());
 		}
@@ -2776,7 +2788,9 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 			return false;
 #ifdef USE_MAD
 		return playNamedMp3(_mixer, Audio::Mixer::kSFXSoundType,
-		                    instruction.args[0], nullptr);
+		                    instruction.args[0], nullptr,
+		                    retailChannelVolume(_scriptAudioClass, 100.0f,
+		                                        instruction.args[0]));
 #else
 		return true;
 #endif
@@ -4084,8 +4098,8 @@ bool ZeroComicoEngine::playDialogue(const Common::String &name,
 
 	if (dialog->doStart != 0xffffffffU && dialog->doEnd != 0xffffffffU &&
 	    dialog->doStart < dialog->doEnd) {
-		if (!_scriptVM.run(_activeDialog.program(), dialog->doStart,
-		                   dialog->doEnd, 256)) {
+		if (!runScriptWithAudioClass(_activeDialog.program(), dialog->doStart,
+		                             dialog->doEnd, 256, 3)) {
 			warning("Zero Comico: dialogue %s do-block stopped on an unsupported opcode",
 			        dialog->name.c_str());
 			return false;
@@ -4194,6 +4208,7 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 	_activeRoomCameraMaps.clear();
 	_activeAutoCameraTrigger.clear();
 	_scriptKeyMask = 0;
+	_scriptAudioClass = 3;
 	_portalsEnabled = true;
 	_cameraMode = 0;
 	_cameraModeLocked = false;
@@ -4305,7 +4320,7 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 	}
 	if (startupStart < startupEnd) {
 		_scriptVM.reset();
-		if (!_scriptVM.run(roomProgram, startupStart, startupEnd, 4096)) {
+		if (!runScriptWithAudioClass(roomProgram, startupStart, startupEnd, 4096, 3)) {
 			warning("Zero Comico: failed to execute %s startup state", level.c_str());
 			return false;
 		}
@@ -4395,7 +4410,7 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 		break;
 	}
 	if (beginTimeStart < beginTimeEnd) {
-		if (!_scriptVM.run(roomProgram, beginTimeStart, beginTimeEnd, 4096)) {
+		if (!runScriptWithAudioClass(roomProgram, beginTimeStart, beginTimeEnd, 4096, 3)) {
 			warning("Zero Comico: failed to execute %s BeginTime state", level.c_str());
 			return false;
 		}
@@ -4622,8 +4637,9 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 		if (activeTrigger->enterStart != 0xffffffffU &&
 		    activeTrigger->enterEnd != 0xffffffffU &&
 		    activeTrigger->enterStart < activeTrigger->enterEnd) {
-			if (!_scriptVM.run(_activeCameraTriggers.program(),
-			                   activeTrigger->enterStart, activeTrigger->enterEnd, 64)) {
+			if (!runScriptWithAudioClass(_activeCameraTriggers.program(),
+			                             activeTrigger->enterStart, activeTrigger->enterEnd,
+			                             64, 3)) {
 				warning("Zero Comico: automatic camera trigger %s failed",
 				        activeTrigger->name.c_str());
 				return false;
@@ -5104,7 +5120,8 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 			_scriptDialogueSceneDirectory = sceneDirectory;
 			_scriptDialoguePlayerDirectory = playerDirectory;
 			_scriptDialogueFrame = &frame;
-			const bool regionOk = _scriptVM.run(_activePuzzle.program(), start, end, 8192);
+			const bool regionOk =
+				runScriptWithAudioClass(_activePuzzle.program(), start, end, 8192, 2);
 			_scriptDialogueContextActive = false;
 			_scriptDialogueFrame = nullptr;
 			if (!regionOk)
@@ -5161,9 +5178,9 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 			_scriptDialogueSceneDirectory = sceneDirectory;
 			_scriptDialoguePlayerDirectory = playerDirectory;
 			_scriptDialogueFrame = &frame;
-			const bool ok = _scriptVM.run(_playerCharacterScript.program(),
-			                              definition.controlStart,
-			                              definition.controlEnd, 512);
+			const bool ok = runScriptWithAudioClass(_playerCharacterScript.program(),
+			                                        definition.controlStart,
+			                                        definition.controlEnd, 512, 2);
 			_scriptDialogueContextActive = false;
 			_scriptDialogueFrame = nullptr;
 			if (!ok) {
@@ -5253,9 +5270,9 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 				_scriptDialogueSceneDirectory = sceneDirectory;
 				_scriptDialoguePlayerDirectory = playerDirectory;
 				_scriptDialogueFrame = &frame;
-				const bool combineOk = _scriptVM.run(_playerCharacterScript.program(),
-				                                     _playerCharacterScript.combineStart,
-				                                     _playerCharacterScript.combineEnd, 4096);
+				const bool combineOk = runScriptWithAudioClass(
+					_playerCharacterScript.program(), _playerCharacterScript.combineStart,
+					_playerCharacterScript.combineEnd, 4096, 3);
 				_scriptDialogueContextActive = false;
 				_scriptDialogueFrame = nullptr;
 				if (!combineOk)
@@ -5392,8 +5409,9 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 					_scriptDialogueSceneDirectory = sceneDirectory;
 					_scriptDialoguePlayerDirectory = playerDirectory;
 					_scriptDialogueFrame = &frame;
-					const bool operateOk = _scriptVM.run(
-						_activePuzzle.program(), object->operateStart, object->operateEnd, 4096);
+					const bool operateOk = runScriptWithAudioClass(
+						_activePuzzle.program(), object->operateStart, object->operateEnd,
+						4096, 2);
 					_scriptDialogueContextActive = false;
 					_scriptDialogueFrame = nullptr;
 					if (!operateOk) {

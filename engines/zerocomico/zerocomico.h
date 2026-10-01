@@ -86,6 +86,8 @@ public:
 private:
 	bool runStartupScript(const Common::String &mainPlace);
 	bool runMainPlaceRuntime(const ScriptProgram &program);
+	bool runScriptWithAudioClass(const ScriptProgram &program, uint32 startIndex,
+	                             uint32 endIndex, uint32 maxSteps, int audioClass);
 	bool playCutscene(const Common::String &name);
 	bool startLoopCutscene(const Common::String &name);
 	bool renderLoopCutsceneFrame(const Common::String &name);
@@ -258,6 +260,7 @@ private:
 	bool _dynamicCameraInitialized;
 	Vec3f _dynamicCameraPosition;
 	uint32 _scriptKeyMask;
+	int _scriptAudioClass;
 };
 
 } // namespace ZeroComico

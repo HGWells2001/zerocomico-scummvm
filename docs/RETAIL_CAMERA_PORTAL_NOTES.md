@@ -486,11 +486,23 @@ runtime 3D distance from the player, which covers the retail `orca_in`,
 `orca_out` and `sputopirata` overrides. Player-local/cutscene samples are
 evaluated at zero source distance.
 
-Generic script `PlaySample` calls are intentionally not forced into class 4.
-The retail comment names class 4 as combat effects, but the opcode appears in
-broader script contexts and needs call-site provenance before assigning a
-class. Pan and distance attenuation are likewise retained as decoded state for
-the later positional-audio pass.
+Generic script `PlaySample` is registered by the executable with signature
+`Si`: a resolved sample object plus the explicit loop integer seen in the
+scripts. Its callback does **not** receive the sound class as a script
+argument; it reads the class stored on the currently compiled code block.
+Reverse engineering of the code-block compiler establishes the classes used by
+the retail paths represented here: character `initialize`, room/dialog/camera
+and `combineobj` blocks use class 3; character `ControlCode` and puzzle
+`operate/in/out` blocks use class 2; dedicated combat code is compiled with
+class 4.
+
+The runtime now carries that class through ScriptVM execution and routes
+`PlaySample` through the same per-channel retail class-volume calculation.
+This covers the shipped gameplay uses such as Astro's `hig.mp3`, the Mp2
+panel/water sounds and the Mp4/Mp5 puzzle effects without filename-based
+classification. The legacy Mpx menu script is still replaced by the native
+ScummVM-facing menu implementation, so its private interface audio context is
+not required by gameplay.
 
 ## Retail depth cue
 
