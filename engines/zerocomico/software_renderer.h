@@ -20,6 +20,7 @@ struct RenderCamera {
 	float focalPixels;
 	float rollRadians = 0.0f;
 	bool depthCueEnabled = false;
+	bool shadeEnabled = false;
 	float depthCueStart = 0.0f;
 	float depthCueEnd = 0.0f;
 };
