@@ -13,6 +13,7 @@
 
 #include "common/events.h"
 #include "common/file.h"
+#include "common/serializer.h"
 #include "common/system.h"
 #include "engines/advancedDetector.h"
 #include "engines/util.h"
@@ -5817,6 +5818,140 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 	}
 
 	return !shouldQuit();
+}
+
+void ZeroComicoEngine::synchronizePersistentState(Common::Serializer &s) {
+	auto syncStringArray = [&](Common::Array<Common::String> &values) {
+		uint32 count = s.isSaving() ? (uint32)values.size() : 0;
+		s.syncAsUint32LE(count);
+		if (s.isLoading())
+			values.clear();
+		for (uint32 i = 0; i < count; ++i) {
+			Common::String value;
+			if (s.isSaving())
+				value = values[i];
+			s.syncString(value);
+			if (s.isLoading())
+				values.push_back(value);
+		}
+	};
+
+	auto syncBoolArray = [&](Common::Array<bool> &values) {
+		uint32 count = s.isSaving() ? (uint32)values.size() : 0;
+		s.syncAsUint32LE(count);
+		if (s.isLoading())
+			values.clear();
+		for (uint32 i = 0; i < count; ++i) {
+			byte value = s.isSaving() && values[i] ? 1 : 0;
+			s.syncAsByte(value);
+			if (s.isLoading())
+				values.push_back(value != 0);
+		}
+	};
+
+	auto syncIntArray = [&](Common::Array<int32> &values) {
+		uint32 count = s.isSaving() ? (uint32)values.size() : 0;
+		s.syncAsUint32LE(count);
+		if (s.isLoading())
+			values.clear();
+		for (uint32 i = 0; i < count; ++i) {
+			int32 value = s.isSaving() ? values[i] : 0;
+			s.syncAsSint32LE(value);
+			if (s.isLoading())
+				values.push_back(value);
+		}
+	};
+
+	s.syncString(_currentMainPlace);
+	s.syncString(_activeRoomName);
+	s.syncString(_activeRoomPrefix);
+	s.syncString(_playerAnimSetName);
+
+	s.syncAsFloatLE(_playerPosition.x);
+	s.syncAsFloatLE(_playerPosition.y);
+	s.syncAsFloatLE(_playerPosition.z);
+	s.syncAsFloatLE(_playerFacingTarget.x);
+	s.syncAsFloatLE(_playerFacingTarget.y);
+	s.syncAsFloatLE(_playerFacingTarget.z);
+
+	byte havePlayerStart = _havePlayerStart ? 1 : 0;
+	byte playerHatVisible = _playerHatVisible ? 1 : 0;
+	s.syncAsByte(havePlayerStart);
+	s.syncAsByte(playerHatVisible);
+	if (s.isLoading()) {
+		_havePlayerStart = havePlayerStart != 0;
+		_playerHatVisible = playerHatVisible != 0;
+	}
+
+	int32 navNode = _playerNavNode;
+	s.syncAsSint32LE(navNode);
+	if (s.isLoading())
+		_playerNavNode = navNode;
+
+	syncStringArray(_inventoryObjects);
+	s.syncString(_selectedInventoryObject);
+	s.syncString(_combineInventoryFirst);
+	s.syncString(_combineInventorySecond);
+	s.syncAsSint32LE(_lastDialogueChoice);
+
+	byte interfaceDisabled = _interfaceDisabled ? 1 : 0;
+	byte enabled3d = _3dEnabled ? 1 : 0;
+	byte portalsEnabled = _portalsEnabled ? 1 : 0;
+	byte cameraLocked = _cameraModeLocked ? 1 : 0;
+	byte noCameraReset = _playerNoCameraReset ? 1 : 0;
+	byte depthCueEnabled = _depthCueEnabled ? 1 : 0;
+	s.syncAsByte(interfaceDisabled);
+	s.syncAsByte(enabled3d);
+	s.syncAsByte(portalsEnabled);
+	s.syncAsSint32LE(_cameraMode);
+	s.syncAsByte(cameraLocked);
+	s.syncAsByte(noCameraReset);
+	s.syncAsByte(depthCueEnabled);
+	s.syncAsFloatLE(_depthCueStart);
+	s.syncAsFloatLE(_depthCueEnd);
+	if (s.isLoading()) {
+		_interfaceDisabled = interfaceDisabled != 0;
+		_3dEnabled = enabled3d != 0;
+		_portalsEnabled = portalsEnabled != 0;
+		_cameraModeLocked = cameraLocked != 0;
+		_playerNoCameraReset = noCameraReset != 0;
+		_depthCueEnabled = depthCueEnabled != 0;
+	}
+
+	for (int component = 0; component < 4; ++component)
+		s.syncAsFloatLE(_masterColor[component]);
+
+	syncStringArray(_hiddenSceneMeshes);
+	syncStringArray(_environmentStateRooms);
+	syncStringArray(_environmentStateNames);
+	syncBoolArray(_environmentStateEnabled);
+	syncStringArray(_lightStateNames);
+	syncBoolArray(_lightStateEnabled);
+	syncStringArray(_userEffectStateNames);
+	syncIntArray(_userEffectStates);
+
+	uint32 userEffectCount = s.isSaving() ? (uint32)_userEffectElapsedMs.size() : 0;
+	s.syncAsUint32LE(userEffectCount);
+	if (s.isLoading()) {
+		_userEffectElapsedMs.clear();
+		_userEffectStateChangedMillis.clear();
+	}
+	for (uint32 i = 0; i < userEffectCount; ++i) {
+		uint32 elapsed = s.isSaving() ? _userEffectElapsedMs[i] : 0;
+		s.syncAsUint32LE(elapsed);
+		if (s.isLoading()) {
+			_userEffectElapsedMs.push_back(elapsed);
+			_userEffectStateChangedMillis.push_back(_system->getMillis());
+		}
+	}
+
+	s.syncString(_environmentSoundName);
+	s.syncString(_currentMusicName);
+
+	_scriptVM.synchronize(s);
+	_activePuzzle.synchronizeState(s);
+	_activeCameraTriggers.synchronizeState(s);
+	_activeDialog.synchronizeState(s);
 }
 
 void ZeroComicoEngine::showImageModal(const Common::Path &path) {
