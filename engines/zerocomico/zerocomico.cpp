@@ -4256,6 +4256,149 @@ bool ZeroComicoEngine::playDialogue(const Common::String &name,
 	return nestedOk;
 }
 
+bool ZeroComicoEngine::applyStagedRestore(Common::Path &playerDirectory) {
+	if (!_pendingLoadActive || _pendingLoadData.empty())
+		return false;
+
+	const Common::String expectedMainPlace = _pendingLoadMainPlace;
+	const Common::String expectedRoomName = _pendingLoadRoomName;
+
+	Common::MemoryReadStream restoreStream(_pendingLoadData.data(), _pendingLoadData.size());
+	Common::Serializer restoreSerializer(&restoreStream, nullptr);
+	synchronizePersistentState(restoreSerializer);
+	if (restoreSerializer.err() ||
+	    !_currentMainPlace.equalsIgnoreCase(expectedMainPlace) ||
+	    !_activeRoomName.equalsIgnoreCase(expectedRoomName)) {
+		warning("Zero Comico: staged restore payload does not match %s/%s",
+		        expectedMainPlace.c_str(), expectedRoomName.c_str());
+		return false;
+	}
+
+	// Rebuild the playable body from the saved AnimSet. Decoded P3D/ANJ/SEQ
+	// resources are intentionally not part of the save payload.
+	const CharacterAnimSet *savedAnimSet =
+		_playerCharacterScript.findAnimSet(_playerAnimSetName);
+	if (savedAnimSet) {
+		Common::String assetStem = savedAnimSet->bodyName;
+		const uint32 separator = assetStem.find('_');
+		if (separator != Common::String::npos && separator + 1 < assetStem.size())
+			assetStem = assetStem.substr(separator + 1);
+
+		Common::Path directory =
+			Common::Path("Mpx/bodies").appendComponent(assetStem);
+		SceneModel replacementScene;
+		bool loaded = replacementScene.loadPair(
+			directory.appendComponent(assetStem + ".p3d"),
+			directory.appendComponent(assetStem + ".anj"));
+		if (!loaded) {
+			Common::String lowerFolder = assetStem;
+			lowerFolder.toLowercase();
+			directory = Common::Path("Mpx/bodies").appendComponent(lowerFolder);
+			loaded = replacementScene.loadPair(
+				directory.appendComponent(assetStem + ".p3d"),
+				directory.appendComponent(assetStem + ".anj"));
+		}
+
+		SequenceScript replacementSequences;
+		if (!loaded ||
+		    !replacementSequences.load(directory.appendComponent(assetStem + ".seq"))) {
+			warning("Zero Comico: cannot restore playable AnimSet %s",
+			        _playerAnimSetName.c_str());
+			return false;
+		}
+
+		_playerScene = replacementScene;
+		_playerSequences = replacementSequences;
+		_playerAssetDirectory = directory;
+		playerDirectory = directory;
+	}
+
+	// Setp saves retain only stable asset names and controller positions.
+	_loadedSetpScenes.clear();
+	const Common::Path setpDirectory(_currentMainPlace + "/backgrd");
+	for (uint32 i = 0; i < _loadedSetpAssets.size(); ++i) {
+		const Common::String &assetStem = _loadedSetpAssets[i];
+		SceneModel asset;
+		if (!asset.loadPair(setpDirectory.appendComponent(assetStem + ".p3d"),
+		                    setpDirectory.appendComponent(assetStem + ".anj"))) {
+			warning("Zero Comico: cannot restore Setp asset %s", assetStem.c_str());
+			continue;
+		}
+		_activeScene.mergeFrom(asset);
+		_loadedSetpScenes.push_back(asset);
+	}
+	for (uint32 i = 0;
+	     i < _setpControllerNames.size() && i < _setpControllerPositions.size();
+	     ++i) {
+		_activeScene.translateHierarchy(_setpControllerNames[i],
+		                                _setpControllerPositions[i]);
+	}
+
+	// CPU runtime state stores transform/life state, while body resources are
+	// reconstructed from char.isc plus the saved body root.
+	for (uint32 cpuIndex = 0; cpuIndex < _cpuCharacters.size(); ++cpuIndex) {
+		CpuCharacterRuntime &runtime = _cpuCharacters[cpuIndex];
+		Common::String assetStem = runtime.bodyRoot;
+		if (assetStem.empty()) {
+			const CharacterDefinition *definition =
+				_playerCharacterScript.findCharacter(runtime.name);
+			if (definition)
+				assetStem = definition->initialBodyName;
+		}
+		const uint32 separator = assetStem.find('_');
+		if (separator != Common::String::npos && separator + 1 < assetStem.size())
+			assetStem = assetStem.substr(separator + 1);
+
+		Common::String lowerStem = assetStem;
+		lowerStem.toLowercase();
+		Common::Array<Common::Path> directories;
+		directories.push_back(
+			Common::Path(_currentMainPlace + "/bodies").appendComponent(lowerStem));
+		directories.push_back(Common::Path("Mpx/bodies").appendComponent(lowerStem));
+		directories.push_back(Common::Path("Mpx/bodies").appendComponent(assetStem));
+		directories.push_back(Common::Path("Mpx/bodies").appendComponent(runtime.name));
+
+		Common::Array<Common::String> fileStems;
+		fileStems.push_back(assetStem);
+		if (lowerStem != assetStem)
+			fileStems.push_back(lowerStem);
+		if (!runtime.name.equalsIgnoreCase(assetStem))
+			fileStems.push_back(runtime.name);
+
+		bool loaded = false;
+		for (uint32 directoryIndex = 0;
+		     directoryIndex < directories.size() && !loaded; ++directoryIndex) {
+			for (uint32 stemIndex = 0;
+			     stemIndex < fileStems.size() && !loaded; ++stemIndex) {
+				SceneModel body;
+				loaded = body.loadPair(
+					directories[directoryIndex].appendComponent(fileStems[stemIndex] + ".p3d"),
+					directories[directoryIndex].appendComponent(fileStems[stemIndex] + ".anj"));
+				if (loaded) {
+					body.resolveSkinnedGeometry();
+					runtime.scene = body;
+					runtime.assetDirectory = directories[directoryIndex];
+				}
+			}
+		}
+		if (!loaded)
+			warning("Zero Comico: cannot restore CPU body %s for %s",
+			        runtime.bodyRoot.c_str(), runtime.name.c_str());
+	}
+
+	installCpuCharactersForRoom(_activeRoomName);
+	_playerNavNode = _activeWalkMap.graph.empty()
+		? -1 : _activeWalkMap.nearestGraphNode(_playerPosition.x, _playerPosition.z);
+
+	_pendingLoadData.clear();
+	_pendingLoadMainPlace.clear();
+	_pendingLoadRoomName.clear();
+	_pendingLoadActive = false;
+	debug(1, "Zero Comico: applied staged restore in %s/%s",
+	      _currentMainPlace.c_str(), _activeRoomName.c_str());
+	return true;
+}
+
 bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 	if (mainPlace.empty())
 		return false;
@@ -4633,6 +4776,9 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 	}
 
 	startRoomMusic(room->music, room->musicVolume);
+
+	if (restoringStagedSave && !applyStagedRestore(playerDirectory))
+		return false;
 
 	auto applyPendingCamera = [&]() -> bool {
 		if (_pendingCameraName.empty())
