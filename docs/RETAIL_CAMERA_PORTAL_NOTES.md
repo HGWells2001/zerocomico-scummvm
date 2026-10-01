@@ -504,6 +504,37 @@ classification. The legacy Mpx menu script is still replaced by the native
 ScummVM-facing menu implementation, so its private interface audio context is
 not required by gameplay.
 
+## Scoped labels and asynchronous retail threads
+
+A full executable-range audit of Mp1..Mp5 exposed two VM assumptions that can
+break later progression even though every opcode itself is implemented.
+
+First, retail labels are **block-local in practice**, not globally unique.
+Mp3's puzzle script reuses `LoopReset`, `Loop` and `FineLoop` five times,
+and Mp5 reuses `InLoop` three times. The old global label hashmap therefore
+resolved jumps to the final occurrence in the whole file. VM jumps now search
+only inside the currently executed script range (operate/in/out, dialogue
+do-block, character control block, etc.). The shipped data has no duplicate
+label name inside any one such execution range.
+
+Second, `begin_thread` is asynchronous when its body contains a scheduler
+jump. Mp5 relies on this in three places: the post-flauto ambient-speech loop
+that runs until `pergamena_letta`, plus two 300-tick region cooldown loops.
+Executing those bodies synchronously can freeze the player indefinitely after
+taking the flute. The VM now schedules only `begin_thread` blocks with a
+direct `wjmp`/`wjmp_if_*`; finite thread blocks keep the existing
+foreground behavior. Background threads advance at the retail 25 Hz scheduler
+boundary and yield after each wait-jump.
+
+ZCOM **v4** persists the active puzzle-thread start index, current PC and end
+index, then reconnects those descriptors to the freshly parsed
+`PuzzleScript` after load. This prevents a save made during a cooldown or the
+flauto loop from leaving its script counter permanently frozen.
+
+The same audit also verified every shipped `start_dialog` target, room
+transition target and referenced cutscene P3D across Mp1..Mp5: no missing
+dialogue definitions, destination rooms or cutscene model assets were found.
+
 ## Retail engine-global script arrays
 
 A cross-chapter executable/script audit exposed one Mp3-specific dependency
@@ -535,7 +566,7 @@ VM vocabulary.
 
 ## Save/load runtime
 
-Save/load now uses an engine-private **ZCOM v3** payload followed by ScummVM's
+Save/load now uses an engine-private **ZCOM v4** payload followed by ScummVM's
 normal extended-save metadata. The payload intentionally stores mutable game
 state rather than decoded P3D/ANJ/JGF resources.
 
