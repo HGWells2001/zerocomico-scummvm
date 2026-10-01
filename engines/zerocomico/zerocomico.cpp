@@ -746,7 +746,7 @@ Common::Error ZeroComicoEngine::saveGameStream(Common::WriteStream *stream, bool
 
 	static const char kMagic[4] = {'Z', 'C', 'O', 'M'};
 	stream->write(kMagic, sizeof(kMagic));
-	stream->writeUint32LE(3);
+	stream->writeUint32LE(4);
 	stream->writeUint32LE((uint32)payload.size());
 	if (payload.size() != 0)
 		stream->write(payload.getData(), payload.size());
@@ -765,7 +765,7 @@ Common::Error ZeroComicoEngine::loadGameStream(Common::SeekableReadStream *strea
 
 	const uint32 version = stream->readUint32LE();
 	const uint32 payloadSize = stream->readUint32LE();
-	if (stream->err() || version != 3 || payloadSize == 0 ||
+	if (stream->err() || version != 4 || payloadSize == 0 ||
 	    payloadSize > 16U * 1024U * 1024U)
 		return Common::kReadingFailed;
 
@@ -6443,6 +6443,47 @@ void ZeroComicoEngine::synchronizePersistentState(Common::Serializer &s) {
 	if (s.isLoading())
 		_environmentSoundActive = environmentSoundActive != 0;
 	s.syncString(_currentMusicName);
+
+	// All shipped resumable begin_thread loops live in puzzle.isc. Persist
+	// their execution ranges/PC and reconnect them to the freshly parsed
+	// PuzzleScript program when loading.
+	uint32 threadCount = 0;
+	if (s.isSaving()) {
+		for (uint32 i = 0; i < _backgroundScriptThreads.size(); ++i)
+			if (_backgroundScriptThreads[i].program == &_activePuzzle.program())
+				++threadCount;
+	}
+	s.syncAsUint32LE(threadCount);
+	if (s.isLoading())
+		_backgroundScriptThreads.clear();
+
+	if (s.isSaving()) {
+		for (uint32 i = 0; i < _backgroundScriptThreads.size(); ++i) {
+			const BackgroundScriptThread &thread = _backgroundScriptThreads[i];
+			if (thread.program != &_activePuzzle.program())
+				continue;
+			uint32 startIndex = thread.startIndex;
+			uint32 pc = thread.pc;
+			uint32 endIndex = thread.endIndex;
+			s.syncAsUint32LE(startIndex);
+			s.syncAsUint32LE(pc);
+			s.syncAsUint32LE(endIndex);
+		}
+	} else {
+		for (uint32 i = 0; i < threadCount; ++i) {
+			BackgroundScriptThread thread;
+			thread.program = &_activePuzzle.program();
+			s.syncAsUint32LE(thread.startIndex);
+			s.syncAsUint32LE(thread.pc);
+			s.syncAsUint32LE(thread.endIndex);
+			if (thread.startIndex < thread.endIndex &&
+			    thread.pc >= thread.startIndex &&
+			    thread.pc <= thread.endIndex &&
+			    thread.endIndex <= _activePuzzle.program().instructions().size())
+				_backgroundScriptThreads.push_back(thread);
+		}
+		_lastBackgroundScriptTick = _system->getMillis();
+	}
 
 	_scriptVM.synchronize(s);
 	_activePuzzle.synchronizeState(s);
