@@ -50,6 +50,9 @@ static const char *const kMenuButtons[] = {
 
 static const int kMenuButtonCount = 5;
 
+static const uint32 kSaveVersion = 5;
+static const uint32 kMinimumSaveVersion = 4;
+
 // Zero Comico.exe initializes the Subjective-camera fallback eye height to
 // 0.52 metres. With the retail GlobalScaling value of 1, the engine's world
 // conversion (value * 100 * GlobalScaling) produces 52 world units.
@@ -702,7 +705,8 @@ ZeroComicoEngine::ZeroComicoEngine(OSystem *syst, const ADGameDescription *desc)
 	  _masterColorFadeActive(false), _spotHeight(85.0f), _spotMaxDeltaY(30.0f), _spotDistance(350.0f),
 	  _spotMinDistance(25.0f), _spotSmooth(30.0f),
 	  _spotCameraInitialized(false), _dynamicCameraInitialized(false), _scriptKeyMask(0),
-	  _scriptAudioClass(3), _pendingLoadActive(false), _lastBackgroundScriptTick(0) {
+	  _scriptAudioClass(3), _pendingLoadVersion(0), _pendingLoadActive(false),
+	  _lastBackgroundScriptTick(0) {
 	_environmentSoundActive = false;
 	_playerPosition.x = _playerPosition.y = _playerPosition.z = 0.0f;
 	for (int soundClass = 0; soundClass < 6; ++soundClass)
@@ -741,13 +745,13 @@ Common::Error ZeroComicoEngine::saveGameStream(Common::WriteStream *stream, bool
 
 	Common::MemoryWriteStreamDynamic payload(DisposeAfterUse::YES);
 	Common::Serializer serializer(nullptr, &payload);
-	synchronizePersistentState(serializer);
+	synchronizePersistentState(serializer, kSaveVersion);
 	if (serializer.err())
 		return Common::kWritingFailed;
 
 	static const char kMagic[4] = {'Z', 'C', 'O', 'M'};
 	stream->write(kMagic, sizeof(kMagic));
-	stream->writeUint32LE(4);
+	stream->writeUint32LE(kSaveVersion);
 	stream->writeUint32LE((uint32)payload.size());
 	if (payload.size() != 0)
 		stream->write(payload.getData(), payload.size());
@@ -766,8 +770,8 @@ Common::Error ZeroComicoEngine::loadGameStream(Common::SeekableReadStream *strea
 
 	const uint32 version = stream->readUint32LE();
 	const uint32 payloadSize = stream->readUint32LE();
-	if (stream->err() || version != 4 || payloadSize == 0 ||
-	    payloadSize > 16U * 1024U * 1024U)
+	if (stream->err() || version < kMinimumSaveVersion || version > kSaveVersion ||
+	    payloadSize == 0 || payloadSize > 16U * 1024U * 1024U)
 		return Common::kReadingFailed;
 
 	_pendingLoadData.resize(payloadSize);
@@ -789,15 +793,16 @@ Common::Error ZeroComicoEngine::loadGameStream(Common::SeekableReadStream *strea
 		return Common::kReadingFailed;
 	}
 
+	_pendingLoadVersion = version;
 	_pendingLoadActive = true;
 	// Make loads requested by ScummVM's global menu behave like F9: the
 	// interactive loop observes this transition request as soon as control
 	// returns to gameplay and rebuilds the saved main place before applying
 	// the staged payload.
 	_pendingMainPlace = _pendingLoadMainPlace;
-	debug(1, "Zero Comico: staged save restore for %s/%s (%u bytes)",
-	      _pendingLoadMainPlace.c_str(), _pendingLoadRoomName.c_str(),
-	      (uint)_pendingLoadData.size());
+	debug(1, "Zero Comico: staged ZCOM v%u restore for %s/%s (%u bytes)",
+	      (uint)_pendingLoadVersion, _pendingLoadMainPlace.c_str(),
+	      _pendingLoadRoomName.c_str(), (uint)_pendingLoadData.size());
 	return Common::kNoError;
 }
 
@@ -1418,10 +1423,47 @@ bool ZeroComicoEngine::stopLoopCutscene(const Common::String &name) {
 	return true;
 }
 
+bool ZeroComicoEngine::rehydrateOpenCutScene(OpenCutSceneRuntime &runtime) {
+	if (_currentMainPlace.empty() || runtime.assetStem.empty())
+		return false;
+
+	const Common::Path videoDirectory(_currentMainPlace + "/videos");
+	SceneModel scene;
+	if (!scene.loadPair(videoDirectory.appendComponent(runtime.assetStem + ".p3d"),
+	                    videoDirectory.appendComponent(runtime.assetStem + ".anj"))) {
+		warning("Zero Comico: cannot restore open cutscene asset %s",
+		        runtime.assetStem.c_str());
+		return false;
+	}
+
+	float endFrame = 0.0f;
+	bool haveRange = false;
+	for (uint32 clipIndex = 0; clipIndex < scene.clips.size(); ++clipIndex) {
+		const NamedAnimationClip &clip = scene.clips[clipIndex];
+		if (!clip.data.sourceName.equalsIgnoreCase(runtime.assetStem))
+			continue;
+		if (!haveRange || (float)clip.data.endFrame > endFrame)
+			endFrame = (float)clip.data.endFrame;
+		haveRange = true;
+	}
+	if (!haveRange) {
+		warning("Zero Comico: restored open cutscene %s has no animation range",
+		        runtime.assetStem.c_str());
+		return false;
+	}
+
+	if (!scene.poseCutsceneGeometry(runtime.assetStem, endFrame))
+		warning("Zero Comico: restored open cutscene %s final pose failed at %.0f",
+		        runtime.assetStem.c_str(), endFrame);
+
+	runtime.scene = scene;
+	return true;
+}
+
 void ZeroComicoEngine::installOpenCutScenesForRoom(const Common::String &roomName) {
 	for (uint32 i = 0; i < _openCutScenes.size(); ++i) {
 		const OpenCutSceneRuntime &runtime = _openCutScenes[i];
-		if (runtime.roomName.equalsIgnoreCase(roomName))
+		if (runtime.roomName.equalsIgnoreCase(roomName) && !runtime.scene.meshes.empty())
 			_activeScene.mergeFrom(runtime.scene);
 	}
 }
@@ -4579,7 +4621,7 @@ bool ZeroComicoEngine::applyStagedRestore(Common::Path &playerDirectory) {
 
 	Common::MemoryReadStream restoreStream(_pendingLoadData.data(), _pendingLoadData.size());
 	Common::Serializer restoreSerializer(&restoreStream, nullptr);
-	synchronizePersistentState(restoreSerializer);
+	synchronizePersistentState(restoreSerializer, _pendingLoadVersion);
 	if (restoreSerializer.err() ||
 	    !_currentMainPlace.equalsIgnoreCase(expectedMainPlace) ||
 	    !_activeRoomName.equalsIgnoreCase(expectedRoomName)) {
@@ -4647,6 +4689,14 @@ bool ZeroComicoEngine::applyStagedRestore(Common::Path &playerDirectory) {
 		_activeScene.translateHierarchy(_setpControllerNames[i],
 		                                _setpControllerPositions[i]);
 	}
+
+	// play_open_cut saves retain stable room/asset identity and reconstruct the
+	// retail P3D/ANJ final pose just like Setp/CloneEntity restore paths.
+	for (uint32 i = 0; i < _openCutScenes.size(); ++i)
+		if (!rehydrateOpenCutScene(_openCutScenes[i]))
+			warning("Zero Comico: could not rehydrate open cutscene %s",
+			        _openCutScenes[i].assetStem.c_str());
+	installOpenCutScenesForRoom(_activeRoomName);
 
 	// Recreate dynamic CloneEntity objects from their source template. Saved
 	// transforms are applied after cloning so moved/rotated stars and helpers
@@ -4752,6 +4802,7 @@ bool ZeroComicoEngine::applyStagedRestore(Common::Path &playerDirectory) {
 	_pendingLoadData.clear();
 	_pendingLoadMainPlace.clear();
 	_pendingLoadRoomName.clear();
+	_pendingLoadVersion = 0;
 	_pendingLoadActive = false;
 	debug(1, "Zero Comico: applied staged restore in %s/%s",
 	      _currentMainPlace.c_str(), _activeRoomName.c_str());
@@ -6500,7 +6551,7 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 	return !shouldQuit();
 }
 
-void ZeroComicoEngine::synchronizePersistentState(Common::Serializer &s) {
+void ZeroComicoEngine::synchronizePersistentState(Common::Serializer &s, uint32 version) {
 	auto syncStringArray = [&](Common::Array<Common::String> &values) {
 		uint32 count = s.isSaving() ? (uint32)values.size() : 0;
 		s.syncAsUint32LE(count);
@@ -6608,6 +6659,28 @@ void ZeroComicoEngine::synchronizePersistentState(Common::Serializer &s) {
 	// reloaded from disk, while only their names and controller transforms need
 	// to survive a save.
 	syncStringArray(_loadedSetpAssets);
+
+	// ZCOM v5 adds play_open_cut persistence. Only stable retail identity is
+	// serialized; decoded scene geometry is reconstructed from the original
+	// P3D/ANJ pair during the staged restore. ZCOM v4 remains readable.
+	if (version >= 5) {
+		uint32 openCutCount = s.isSaving() ? (uint32)_openCutScenes.size() : 0;
+		s.syncAsUint32LE(openCutCount);
+		if (s.isLoading())
+			_openCutScenes.clear();
+		for (uint32 i = 0; i < openCutCount; ++i) {
+			OpenCutSceneRuntime runtime;
+			if (s.isSaving())
+				runtime = _openCutScenes[i];
+			s.syncString(runtime.roomName);
+			s.syncString(runtime.assetStem);
+			if (s.isLoading())
+				_openCutScenes.push_back(runtime);
+		}
+	} else if (s.isLoading()) {
+		_openCutScenes.clear();
+	}
+
 	uint32 controllerCount = s.isSaving() ? (uint32)_setpControllerNames.size() : 0;
 	s.syncAsUint32LE(controllerCount);
 	if (s.isLoading()) {

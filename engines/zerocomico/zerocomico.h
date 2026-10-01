@@ -163,12 +163,13 @@ private:
 	void showBootstrapScreen();
 	void waitForExit();
 	void updateScriptKeyState(const Common::Event &event);
-	void synchronizePersistentState(Common::Serializer &s);
+	void synchronizePersistentState(Common::Serializer &s, uint32 version);
 	bool applyStagedRestore(Common::Path &playerDirectory);
 	DynamicSceneEntity *findDynamicSceneEntity(const Common::String &name);
 	const DynamicSceneEntity *findDynamicSceneEntity(const Common::String &name) const;
 	bool cloneSceneEntity(const Common::String &sourceName, const Common::String &cloneName);
 	void installDynamicBackgroundForRoom(const Common::String &roomName);
+	bool rehydrateOpenCutScene(OpenCutSceneRuntime &runtime);
 	void installOpenCutScenesForRoom(const Common::String &roomName);
 	bool setSceneEntityTranslation(const Common::String &name, const Vec3f &position);
 	bool setSceneEntityVectorTransform(const Common::String &name, const ShapeMarker &marker);
@@ -315,6 +316,7 @@ private:
 	Common::Array<byte> _pendingLoadData;
 	Common::String _pendingLoadMainPlace;
 	Common::String _pendingLoadRoomName;
+	uint32 _pendingLoadVersion;
 	bool _pendingLoadActive;
 };
 
