@@ -370,15 +370,60 @@ uint32 ScriptVM::skipElseBranch(const ScriptProgram &program, uint32 pc, uint32 
 	return endIndex;
 }
 
-bool ScriptVM::run(const ScriptProgram &program, uint32 startIndex, uint32 endIndex, uint32 maxSteps) {
+uint32 ScriptVM::matchingThreadEnd(const ScriptProgram &program, uint32 pc,
+                                      uint32 endIndex) const {
 	const Common::Array<ScriptInstruction> &instructions = program.instructions();
-	if (startIndex > instructions.size())
-		return false;
+	uint32 nestedThreads = 0;
+	for (uint32 next = pc + 1; next < endIndex; ++next) {
+		const Common::String &threadOp = instructions[next].opcode;
+		if (threadOp.equalsIgnoreCase("begin_thread") ||
+		    threadOp.equalsIgnoreCase("begin_rthread")) {
+			++nestedThreads;
+		} else if (threadOp.equalsIgnoreCase("end_thread")) {
+			if (nestedThreads == 0)
+				return next;
+			--nestedThreads;
+		}
+	}
+	return endIndex;
+}
 
+bool ScriptVM::threadBlockHasSchedulerJump(const ScriptProgram &program,
+                                            uint32 startIndex, uint32 endIndex) const {
+	const Common::Array<ScriptInstruction> &instructions = program.instructions();
+	uint32 nestedThreads = 0;
+	for (uint32 i = startIndex; i < endIndex; ++i) {
+		const Common::String &op = instructions[i].opcode;
+		if (op.equalsIgnoreCase("begin_thread") ||
+		    op.equalsIgnoreCase("begin_rthread")) {
+			++nestedThreads;
+			continue;
+		}
+		if (op.equalsIgnoreCase("end_thread")) {
+			if (nestedThreads > 0)
+				--nestedThreads;
+			continue;
+		}
+		if (nestedThreads != 0)
+			continue;
+		if (op.equalsIgnoreCase("wjmp") ||
+		    op.equalsIgnoreCase("wjmp_if_z") ||
+		    op.equalsIgnoreCase("wjmp_if_nz"))
+			return true;
+	}
+	return false;
+}
+
+bool ScriptVM::runInternal(const ScriptProgram &program, uint32 &pc, uint32 endIndex,
+                           uint32 maxSteps, bool stopAtSchedulerBoundary,
+                           bool &finished) {
+	const Common::Array<ScriptInstruction> &instructions = program.instructions();
+	if (pc > instructions.size())
+		return false;
 	if (endIndex > instructions.size())
 		endIndex = instructions.size();
 
-	uint32 pc = startIndex;
+	finished = false;
 	uint32 steps = 0;
 
 	while (pc < endIndex) {
@@ -439,7 +484,23 @@ bool ScriptVM::run(const ScriptProgram &program, uint32 startIndex, uint32 endIn
 		}
 
 		if (op.equalsIgnoreCase("endif") || op.equalsIgnoreCase("label") ||
-		    op.equalsIgnoreCase("begin_thread") || op.equalsIgnoreCase("end_thread")) {
+		    op.equalsIgnoreCase("end_thread")) {
+			++pc;
+			continue;
+		}
+
+		if (op.equalsIgnoreCase("begin_thread")) {
+			const uint32 blockEnd = matchingThreadEnd(program, pc, endIndex);
+			if (blockEnd >= endIndex) {
+				++pc;
+				continue;
+			}
+			if (threadBlockHasSchedulerJump(program, pc + 1, blockEnd)) {
+				if (!_host || !_host->scheduleScriptThread(program, pc + 1, blockEnd))
+					return false;
+				pc = blockEnd + 1;
+				continue;
+			}
 			++pc;
 			continue;
 		}
@@ -447,12 +508,17 @@ bool ScriptVM::run(const ScriptProgram &program, uint32 startIndex, uint32 endIn
 		if (op.equalsIgnoreCase("jmp") || op.equalsIgnoreCase("wjmp")) {
 			if (instruction.args.empty())
 				return false;
-			if (op.equalsIgnoreCase("wjmp") &&
-			    (!_host || !_host->yieldScriptExecution()))
-				return false;
 			const int target = program.labelIndex(instruction.args[0]);
 			if (target < 0 || (uint32)target >= endIndex)
 				return false;
+			if (op.equalsIgnoreCase("wjmp")) {
+				if (stopAtSchedulerBoundary) {
+					pc = (uint32)target + 1;
+					return true;
+				}
+				if (!_host || !_host->yieldScriptExecution())
+					return false;
+			}
 			pc = (uint32)target + 1;
 			continue;
 		}
@@ -518,16 +584,23 @@ bool ScriptVM::run(const ScriptProgram &program, uint32 startIndex, uint32 endIn
 			if (!resolveValue(instruction.args[0], value))
 				return false;
 
+			const bool isWaitJump =
+				op.equalsIgnoreCase("wjmp_if_z") || op.equalsIgnoreCase("wjmp_if_nz");
 			const bool testZero =
 				op.equalsIgnoreCase("jmp_if_z") || op.equalsIgnoreCase("wjmp_if_z");
 			const bool jump = testZero ? value == 0 : value != 0;
 			if (jump) {
-				if ((op.equalsIgnoreCase("wjmp_if_z") || op.equalsIgnoreCase("wjmp_if_nz")) &&
-				    (!_host || !_host->yieldScriptExecution()))
-					return false;
 				const int target = program.labelIndex(instruction.args[1]);
 				if (target < 0 || (uint32)target >= endIndex)
 					return false;
+				if (isWaitJump) {
+					if (stopAtSchedulerBoundary) {
+						pc = (uint32)target + 1;
+						return true;
+					}
+					if (!_host || !_host->yieldScriptExecution())
+						return false;
+				}
 				pc = (uint32)target + 1;
 			} else {
 				++pc;
@@ -535,26 +608,12 @@ bool ScriptVM::run(const ScriptProgram &program, uint32 startIndex, uint32 endIn
 			continue;
 		}
 
-		// Real-time thread blocks in the retail scripts are background loops.
-		// Running them synchronously would stall room bootstrap forever, so the
-		// main VM skips the block while preserving the foreground script.
+		// Real-time thread blocks are editor/debug background loops. They remain
+		// skipped in the foreground VM; unlike begin_thread they are not needed
+		// by shipped progression logic.
 		if (op.equalsIgnoreCase("begin_rthread")) {
-			uint32 nestedThreads = 0;
-			uint32 next = pc + 1;
-			for (; next < endIndex; ++next) {
-				const Common::String &threadOp = instructions[next].opcode;
-				if (threadOp.equalsIgnoreCase("begin_thread") ||
-				    threadOp.equalsIgnoreCase("begin_rthread")) {
-					++nestedThreads;
-				} else if (threadOp.equalsIgnoreCase("end_thread")) {
-					if (nestedThreads == 0) {
-						++next;
-						break;
-					}
-					--nestedThreads;
-				}
-			}
-			pc = next;
+			const uint32 blockEnd = matchingThreadEnd(program, pc, endIndex);
+			pc = blockEnd < endIndex ? blockEnd + 1 : endIndex;
 			continue;
 		}
 
@@ -564,7 +623,20 @@ bool ScriptVM::run(const ScriptProgram &program, uint32 startIndex, uint32 endIn
 		++pc;
 	}
 
+	finished = true;
 	return true;
+}
+
+bool ScriptVM::run(const ScriptProgram &program, uint32 startIndex, uint32 endIndex, uint32 maxSteps) {
+	uint32 pc = startIndex;
+	bool finished = false;
+	return runInternal(program, pc, endIndex, maxSteps, false, finished) && finished;
+}
+
+bool ScriptVM::runThreadStep(const ScriptProgram &program, uint32 &pc,
+                             uint32 endIndex, bool &finished,
+                             uint32 maxSteps) {
+	return runInternal(program, pc, endIndex, maxSteps, true, finished);
 }
 
 } // namespace ZeroComico
