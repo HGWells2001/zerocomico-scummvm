@@ -3718,9 +3718,35 @@ bool ZeroComicoEngine::renderMenuFrame(int selection) {
 		visible.push_back(meshName);
 	}
 
+	const NamedCamera *menuCameraRecord = _menuScene.findCamera("int_Camera01");
+	if (!menuCameraRecord || menuCameraRecord->data.fov <= 0.0f)
+		return false;
+
+	Common::Array<Common::String> menuLightNames;
+	Common::Array<bool> menuLightEnabled;
+	static const char *const kMenuLightNames[kMenuButtonCount] = {
+		"int_nuov_light",
+		"int_help_light",
+		"int_cred_light",
+		"int_abba_light",
+		"int_cari_light"
+	};
+	for (int i = 0; i < kMenuButtonCount; ++i) {
+		menuLightNames.push_back(kMenuLightNames[i]);
+		menuLightEnabled.push_back(i == selection);
+	}
+
+	RenderCamera menuCamera;
+	menuCamera.position = menuCameraRecord->data.position;
+	menuCamera.target = menuCameraRecord->data.target;
+	menuCamera.focalPixels = menuCameraRecord->data.fov * 800.0f / 36.0f;
+	menuCamera.shadeEnabled = true;
+	menuCamera.lightStateNames = &menuLightNames;
+	menuCamera.lightStateEnabled = &menuLightEnabled;
+
 	SoftwareRenderer renderer;
 	Graphics::ManagedSurface frame;
-	if (!renderer.render(_menuScene, "int_Camera01",
+	if (!renderer.render(_menuScene, menuCamera,
 	                     Common::Path("Mpx/bodies/interfaccia"), visible, frame, 800, 600)) {
 		warning("Zero Comico: could not render the decoded 3D menu scene");
 		return false;
