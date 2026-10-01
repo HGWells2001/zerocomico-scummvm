@@ -50,6 +50,12 @@ struct SamplePlaybackParams {
 	float maxRange;
 };
 
+struct BackgroundScriptThread {
+	const ScriptProgram *program;
+	uint32 pc;
+	uint32 endIndex;
+};
+
 struct CpuCharacterRuntime {
 	Common::String name;
 	Common::String roomName;
@@ -87,10 +93,13 @@ public:
 	bool evaluateScriptCondition(const ScriptInstruction &instruction,
 	                           bool &result) const override;
 	bool yieldScriptExecution() override;
+	bool scheduleScriptThread(const ScriptProgram &program,
+	                          uint32 startIndex, uint32 endIndex) override;
 
 private:
 	bool runStartupScript(const Common::String &mainPlace);
 	bool runMainPlaceRuntime(const ScriptProgram &program);
+	bool runBackgroundScriptThreads();
 	bool runScriptWithAudioClass(const ScriptProgram &program, uint32 startIndex,
 	                             uint32 endIndex, uint32 maxSteps, int audioClass);
 	bool playCutscene(const Common::String &name);
@@ -242,6 +251,8 @@ private:
 	Common::Array<DynamicSceneEntity> _dynamicSceneEntities;
 	Common::Array<CpuCharacterRuntime> _cpuCharacters;
 	Common::Array<Common::String> _deferredBrokenCpuCharacters;
+	Common::Array<BackgroundScriptThread> _backgroundScriptThreads;
+	uint32 _lastBackgroundScriptTick;
 	Common::Array<RenderActor> _activeRenderActors;
 	ScriptVM _scriptVM;
 	bool _interfaceDisabled;
