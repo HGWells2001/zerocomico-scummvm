@@ -1236,10 +1236,18 @@ bool ZeroComicoEngine::playCutscene(const Common::String &name, bool leaveOpen) 
 				_hiddenSceneMeshes.push_back(mesh.name);
 		}
 
+		// SetPlace can temporarily select another room as the destination context
+		// for an open cut without moving the player there. Mp4's generator sequence
+		// does exactly this from Room4_3: SetPlace Room4_7, play_open_cut c478,
+		// then SetPlace Room4_3. Bind persistence to that queued context while
+		// keeping the currently rendered room untouched.
+		const Common::String openCutRoom =
+			_pendingRoomName.empty() ? _activeRoomName : _pendingRoomName;
+
 		bool replaced = false;
 		for (uint32 i = 0; i < _openCutScenes.size(); ++i) {
 			OpenCutSceneRuntime &runtime = _openCutScenes[i];
-			if (!runtime.roomName.equalsIgnoreCase(_activeRoomName) ||
+			if (!runtime.roomName.equalsIgnoreCase(openCutRoom) ||
 			    !runtime.assetStem.equalsIgnoreCase(assetStem))
 				continue;
 			runtime.scene = scene;
@@ -1248,15 +1256,17 @@ bool ZeroComicoEngine::playCutscene(const Common::String &name, bool leaveOpen) 
 		}
 		if (!replaced) {
 			OpenCutSceneRuntime runtime;
-			runtime.roomName = _activeRoomName;
+			runtime.roomName = openCutRoom;
 			runtime.assetStem = assetStem;
 			runtime.scene = scene;
 			_openCutScenes.push_back(runtime);
 		}
 
-		_activeScene.mergeFrom(scene);
-		debug(1, "Zero Comico: kept open cutscene %s in room %s (%u meshes)",
-		      name.c_str(), _activeRoomName.c_str(), (uint)scene.meshes.size());
+		if (openCutRoom.equalsIgnoreCase(_activeRoomName))
+			_activeScene.mergeFrom(scene);
+		debug(1, "Zero Comico: kept open cutscene %s in room %s (%u meshes)%s",
+		      name.c_str(), openCutRoom.c_str(), (uint)scene.meshes.size(),
+		      openCutRoom.equalsIgnoreCase(_activeRoomName) ? "" : " (staged off-room)");
 	}
 
 	return !shouldQuit();
