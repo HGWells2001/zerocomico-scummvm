@@ -36,6 +36,9 @@ public:
 	const ShapeMarker *find(const Common::String &name) const;
 	const ShapePolygon *findPolygon(const Common::String &name) const;
 	bool containsRegion(const Common::String &name, float x, float z) const;
+	bool segmentIntersectsRegion(const Common::String &name,
+	                             float fromX, float fromZ,
+	                             float toX, float toZ) const;
 	const Common::Array<ShapeMarker> &shapes() const { return _shapes; }
 	const Common::Array<ShapePolygon> &polygons() const { return _polygons; }
 

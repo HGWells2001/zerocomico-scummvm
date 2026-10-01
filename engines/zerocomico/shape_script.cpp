@@ -117,6 +117,41 @@ const ShapePolygon *ShapeScript::findPolygon(const Common::String &name) const {
 	return nullptr;
 }
 
+static float cross2d(float ax, float az, float bx, float bz) {
+	return ax * bz - az * bx;
+}
+
+static bool segmentIntersection2d(float fromX, float fromZ, float toX, float toZ,
+                                  float edgeAX, float edgeAZ, float edgeBX, float edgeBZ) {
+	const float rx = toX - fromX;
+	const float rz = toZ - fromZ;
+	const float sx = edgeBX - edgeAX;
+	const float sz = edgeBZ - edgeAZ;
+	const float denominator = cross2d(rx, rz, sx, sz);
+	const float qx = edgeAX - fromX;
+	const float qz = edgeAZ - fromZ;
+
+	if (std::fabs(denominator) <= 1.0e-7f) {
+		// Collinear overlap counts as blocked too. Collision polygons in the
+		// retail scripts are closed gates/walls rather than trigger-only ranges.
+		if (std::fabs(cross2d(qx, qz, rx, rz)) > 0.001f)
+			return false;
+		const float length2 = rx * rx + rz * rz;
+		if (length2 <= 1.0e-12f)
+			return false;
+		const float t0 = (qx * rx + qz * rz) / length2;
+		const float t1 = ((edgeBX - fromX) * rx + (edgeBZ - fromZ) * rz) / length2;
+		const float lo = t0 < t1 ? t0 : t1;
+		const float hi = t0 > t1 ? t0 : t1;
+		return hi >= -1.0e-5f && lo <= 1.0f + 1.0e-5f;
+	}
+
+	const float t = cross2d(qx, qz, sx, sz) / denominator;
+	const float u = cross2d(qx, qz, rx, rz) / denominator;
+	return t >= -1.0e-5f && t <= 1.0f + 1.0e-5f &&
+	       u >= -1.0e-5f && u <= 1.0f + 1.0e-5f;
+}
+
 bool ShapeScript::containsRegion(const Common::String &name, float x, float z) const {
 	const ShapePolygon *polygon = findPolygon(name);
 	if (polygon && polygon->vertices.size() >= 3) {
@@ -156,3 +191,37 @@ bool ShapeScript::containsRegion(const Common::String &name, float x, float z) c
 }
 
 } // namespace ZeroComico
+
+
+bool ShapeScript::segmentIntersectsRegion(const Common::String &name,
+                                          float fromX, float fromZ,
+                                          float toX, float toZ) const {
+	if (containsRegion(name, fromX, fromZ) || containsRegion(name, toX, toZ))
+		return true;
+
+	const ShapePolygon *polygon = findPolygon(name);
+	if (polygon && polygon->vertices.size() >= 3) {
+		for (uint32 i = 0, j = polygon->vertices.size() - 1;
+		     i < polygon->vertices.size(); j = i++) {
+			const Vec3f &a = polygon->vertices[j];
+			const Vec3f &b = polygon->vertices[i];
+			if (segmentIntersection2d(fromX, fromZ, toX, toZ,
+			                          a.x, a.z, b.x, b.z))
+				return true;
+		}
+		return false;
+	}
+
+	const ShapeMarker *range = find(name);
+	if (!range || !range->kind.equalsIgnoreCase("Range"))
+		return false;
+
+	const float minX = range->a.x < range->b.x ? range->a.x : range->b.x;
+	const float maxX = range->a.x > range->b.x ? range->a.x : range->b.x;
+	const float minZ = range->a.z < range->b.z ? range->a.z : range->b.z;
+	const float maxZ = range->a.z > range->b.z ? range->a.z : range->b.z;
+	return segmentIntersection2d(fromX, fromZ, toX, toZ, minX, minZ, maxX, minZ) ||
+	       segmentIntersection2d(fromX, fromZ, toX, toZ, maxX, minZ, maxX, maxZ) ||
+	       segmentIntersection2d(fromX, fromZ, toX, toZ, maxX, maxZ, minX, maxZ) ||
+	       segmentIntersection2d(fromX, fromZ, toX, toZ, minX, maxZ, minX, minZ);
+}

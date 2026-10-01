@@ -1869,6 +1869,117 @@ void ZeroComicoEngine::ensureCpuCharactersForRoom(const Common::String &roomName
 	}
 	installCpuCharactersForRoom(roomName);
 }
+
+bool ZeroComicoEngine::movementSegmentBlocked(float fromX, float fromZ,
+                                               float toX, float toZ) const {
+	for (uint32 objectIndex = 0; objectIndex < _activePuzzle.objects.size(); ++objectIndex) {
+		const PuzzleObject &object = _activePuzzle.objects[objectIndex];
+		if (!object.enabled || !object.collision)
+			continue;
+
+		const Common::String regionName = !object.polygon.empty()
+			? object.polygon : object.rangeShape;
+		if (regionName.empty())
+			continue;
+
+		bool inRoomScope = true;
+		if (!object.roomScope.empty()) {
+			Common::String scope = object.roomScope;
+			scope.trim();
+			while (!scope.empty() && scope[scope.size() - 1] == '*')
+				scope.deleteLastChar();
+			inRoomScope = scope.empty() || startsWithIgnoreCase(_activeRoomPrefix, scope);
+		} else if (!_activeRoomPrefix.empty() &&
+		           (startsWithIgnoreCase(object.name, "r") ||
+		            startsWithIgnoreCase(regionName, "r"))) {
+			inRoomScope = startsWithIgnoreCase(object.name, _activeRoomPrefix) ||
+			              startsWithIgnoreCase(regionName, _activeRoomPrefix);
+		}
+		if (!inRoomScope)
+			continue;
+
+		if (_activeShapes.segmentIntersectsRegion(regionName, fromX, fromZ, toX, toZ)) {
+			debug(2, "Zero Comico: movement segment blocked by retail collision %s (%s)",
+			      object.name.c_str(), regionName.c_str());
+			return true;
+		}
+	}
+	return false;
+}
+
+bool ZeroComicoEngine::shortestCollisionAwarePath(int startNode, int endNode,
+                                                   Common::Array<int> &path) const {
+	path.clear();
+	if (startNode < 0 || endNode < 0 ||
+	    (uint32)startNode >= _activeWalkMap.graph.size() ||
+	    (uint32)endNode >= _activeWalkMap.graph.size())
+		return false;
+
+	if (startNode == endNode) {
+		path.push_back(startNode);
+		return true;
+	}
+
+	Common::Array<float> distance;
+	Common::Array<int> previous;
+	Common::Array<byte> visited;
+	distance.resize(_activeWalkMap.graph.size());
+	previous.resize(_activeWalkMap.graph.size());
+	visited.resize(_activeWalkMap.graph.size());
+	for (uint32 i = 0; i < _activeWalkMap.graph.size(); ++i) {
+		distance[i] = 1.0e30f;
+		previous[i] = -1;
+		visited[i] = 0;
+	}
+	distance[(uint32)startNode] = 0.0f;
+
+	for (uint32 step = 0; step < _activeWalkMap.graph.size(); ++step) {
+		int current = -1;
+		float currentDistance = 1.0e30f;
+		for (uint32 i = 0; i < _activeWalkMap.graph.size(); ++i) {
+			if (!visited[i] && distance[i] < currentDistance) {
+				current = (int)i;
+				currentDistance = distance[i];
+			}
+		}
+		if (current < 0 || current == endNode)
+			break;
+		visited[(uint32)current] = 1;
+
+		const NavNode &node = _activeWalkMap.graph[(uint32)current];
+		for (uint32 arcIndex = 0; arcIndex < node.arcs.size(); ++arcIndex) {
+			const NavArc &arc = node.arcs[arcIndex];
+			if (arc.target < 0 || (uint32)arc.target >= _activeWalkMap.graph.size() ||
+			    arc.weight < 0.0f)
+				continue;
+			const NavNode &target = _activeWalkMap.graph[(uint32)arc.target];
+			if (movementSegmentBlocked(node.pos.x, node.pos.y, target.pos.x, target.pos.y))
+				continue;
+
+			const float candidate = currentDistance + arc.weight;
+			if (candidate < distance[(uint32)arc.target]) {
+				distance[(uint32)arc.target] = candidate;
+				previous[(uint32)arc.target] = current;
+			}
+		}
+	}
+
+	if (previous[(uint32)endNode] < 0)
+		return false;
+
+	Common::Array<int> reverse;
+	for (int node = endNode; node >= 0; node = previous[(uint32)node]) {
+		reverse.push_back(node);
+		if (node == startNode)
+			break;
+	}
+	if (reverse.empty() || reverse.back() != startNode)
+		return false;
+	for (int i = (int)reverse.size() - 1; i >= 0; --i)
+		path.push_back(reverse[(uint32)i]);
+	return true;
+}
+
 bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction) {
 	const Common::String &op = instruction.opcode;
 
@@ -6492,7 +6603,7 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 			const int destinationNode = _activeWalkMap.nearestGraphNode(ground.x, ground.z);
 			Common::Array<int> route;
 			if (destinationNode < 0 ||
-			    !_activeWalkMap.shortestPath(_playerNavNode, destinationNode, route) || route.empty())
+			    !shortestCollisionAwarePath(_playerNavNode, destinationNode, route) || route.empty())
 				continue;
 
 			debug(1, "Zero Comico: click navigation selected node %d through %u path nodes",
@@ -6636,6 +6747,11 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 				const Common::String routeRoomName = _activeRoomName;
 				const NavNode &targetNode = _activeWalkMap.graph[(uint32)route[routeIndex]];
 				Vec3f target = { targetNode.pos.x, 0.0f, targetNode.pos.y };
+				if (movementSegmentBlocked(_playerPosition.x, _playerPosition.z,
+				                           target.x, target.z)) {
+					debug(1, "Zero Comico: route stopped at newly blocked collision segment");
+					break;
+				}
 				float dx = target.x - _playerPosition.x;
 				float dz = target.z - _playerPosition.z;
 				float distance = std::sqrt(dx * dx + dz * dz);

@@ -178,6 +178,10 @@ private:
 	bool giveLifeToCharacter(const Common::String &name);
 	void ensureCpuCharactersForRoom(const Common::String &roomName);
 	void installCpuCharactersForRoom(const Common::String &roomName);
+	bool movementSegmentBlocked(float fromX, float fromZ,
+	                            float toX, float toZ) const;
+	bool shortestCollisionAwarePath(int startNode, int endNode,
+	                                Common::Array<int> &path) const;
 
 	const ADGameDescription *_gameDescription;
 	SceneModel _menuScene;
