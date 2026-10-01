@@ -5520,13 +5520,33 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 	// the Stay pose and playl room-object loops alive at 25 fps.
 	Common::Array<Common::String> examineMeshes;
 	Common::Array<Common::String> operateMeshes;
+
+	// Puzzle entities can belong either to the room background or to a separately
+	// rendered CPU character. The picker already traverses _activeRenderActors,
+	// but older interaction-list construction discarded actor-only entities before
+	// they ever reached it. Mp1's coc_cocco (Room1_4) and ope_operaio (Room1_5)
+	// are progression-critical examples.
+	auto interactionEntityAvailable = [&](const Common::String &entity) -> bool {
+		if (_activeScene.findMesh(entity))
+			return true;
+		for (uint32 cpuIndex = 0; cpuIndex < _cpuCharacters.size(); ++cpuIndex) {
+			const CpuCharacterRuntime &character = _cpuCharacters[cpuIndex];
+			if (!character.alive || !character.positioned ||
+			    !character.roomName.equalsIgnoreCase(_activeRoomName))
+				continue;
+			if (character.scene.findMesh(entity))
+				return true;
+		}
+		return false;
+	};
+
 	for (uint32 objectIndex = 0; objectIndex < _activePuzzle.objects.size(); ++objectIndex) {
 		const PuzzleObject &object = _activePuzzle.objects[objectIndex];
 		if (!object.enabled || object.entity.empty())
 			continue;
 		const Common::String sceneEntity =
 			resolveSceneEntity(_activeScene, object.entity, _activeRoomPrefix);
-		if (!_activeScene.findMesh(sceneEntity) ||
+		if (!interactionEntityAvailable(sceneEntity) ||
 		    containsIgnoreCase(_hiddenSceneMeshes, sceneEntity))
 			continue;
 		if (object.examinable)
@@ -5545,7 +5565,7 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 				continue;
 			const Common::String entity = resolveSceneEntity(
 				_activeScene, object.entity, _activeRoomPrefix);
-			if (!_activeScene.findMesh(entity) ||
+			if (!interactionEntityAvailable(entity) ||
 			    containsIgnoreCase(_hiddenSceneMeshes, entity))
 				continue;
 			if (object.examinable)
