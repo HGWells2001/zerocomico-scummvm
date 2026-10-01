@@ -52,6 +52,8 @@ struct CharacterDefinition {
 	uint32 initializeEnd;
 	uint32 controlStart;
 	uint32 controlEnd;
+	uint32 hidingStart;
+	uint32 hidingEnd;
 	Common::Array<CharacterSample> samples;
 	Common::Array<CharacterAnimSet> animSets;
 };

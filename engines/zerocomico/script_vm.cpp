@@ -20,6 +20,7 @@ static bool isConditionalOpcode(const Common::String &op) {
 	       op.equalsIgnoreCase("ifobjininv") ||
 	       op.equalsIgnoreCase("ifcobjstate") ||
 	       op.equalsIgnoreCase("ifcplace") ||
+	       op.equalsIgnoreCase("ifplace") ||
 	       op.equalsIgnoreCase("if_Char_InDialog") ||
 	       op.equalsIgnoreCase("if_Is_OpenInterface") ||
 	       op.equalsIgnoreCase("ifallobjnoselected") ||
@@ -282,6 +283,7 @@ bool ScriptVM::evaluateComparison(const ScriptInstruction &instruction, bool &re
 	    instruction.opcode.equalsIgnoreCase("ifobjininv") ||
 	    instruction.opcode.equalsIgnoreCase("ifcobjstate") ||
 	    instruction.opcode.equalsIgnoreCase("ifcplace") ||
+	    instruction.opcode.equalsIgnoreCase("ifplace") ||
 	    instruction.opcode.equalsIgnoreCase("if_Char_InDialog") ||
 	    instruction.opcode.equalsIgnoreCase("if_Is_OpenInterface") ||
 	    instruction.opcode.equalsIgnoreCase("ifallobjnoselected") ||

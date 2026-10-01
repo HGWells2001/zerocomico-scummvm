@@ -77,6 +77,7 @@ bool CharacterScript::parse() {
 		character.breakLifeOnInitialize = false;
 		character.initializeStart = character.initializeEnd = 0xffffffffU;
 		character.controlStart = character.controlEnd = 0xffffffffU;
+		character.hidingStart = character.hidingEnd = 0xffffffffU;
 
 		for (uint32 j = i + 1; j < end; ++j) {
 			const ScriptInstruction &inst = instructions[j];
@@ -183,6 +184,18 @@ bool CharacterScript::parse() {
 					if (instructions[k].opcode.equalsIgnoreCase("end") &&
 					    instructions[k].depth <= inst.depth) {
 						character.controlEnd = k;
+						break;
+					}
+				}
+				continue;
+			}
+			if (inst.opcode.equalsIgnoreCase("HidingCode") &&
+			    character.hidingStart == 0xffffffffU) {
+				character.hidingStart = j + 1;
+				for (uint32 k = character.hidingStart; k < end; ++k) {
+					if (instructions[k].opcode.equalsIgnoreCase("end") &&
+					    instructions[k].depth <= inst.depth) {
+						character.hidingEnd = k;
 						break;
 					}
 				}

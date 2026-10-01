@@ -3373,6 +3373,13 @@ bool ZeroComicoEngine::evaluateScriptCondition(const ScriptInstruction &instruct
 		return true;
 	}
 
+	if (instruction.opcode.equalsIgnoreCase("ifplace")) {
+		if (instruction.args.empty())
+			return false;
+		result = _activeRoomName.equalsIgnoreCase(instruction.args[0]);
+		return true;
+	}
+
 	if (instruction.opcode.equalsIgnoreCase("if_Char_InDialog")) {
 		// Dialogue playback is synchronous in this runtime, so autonomous
 		// ControlCode ticks cannot run while a dialogue owns the screen.
@@ -5810,8 +5817,41 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 					selectedIndex = (selectedIndex + 1) % (int)_inventoryObjects.size();
 					_selectedInventoryObject = _inventoryObjects[(uint32)selectedIndex];
 					debug(1, "Zero Comico: inventory selected %s", _selectedInventoryObject.c_str());
-					renderGameplayFrame(renderCamera, sceneDirectory, playerDirectory,
-					                    "Stay", 0.0f, frame);
+
+					const CharacterDefinition *playerDefinition =
+						_playerCharacterScript.findCharacter(_playerCharacterScript.playerName);
+					if (playerDefinition &&
+					    playerDefinition->hidingStart != 0xffffffffU &&
+					    playerDefinition->hidingEnd != 0xffffffffU &&
+					    playerDefinition->hidingStart < playerDefinition->hidingEnd) {
+						_scriptDialogueContextActive = true;
+						_scriptDialogueCamera = renderCamera;
+						_scriptDialogueSceneDirectory = sceneDirectory;
+						_scriptDialoguePlayerDirectory = playerDirectory;
+						_scriptDialogueFrame = &frame;
+						const bool hidingOk = runScriptWithAudioClass(
+							_playerCharacterScript.program(),
+							playerDefinition->hidingStart, playerDefinition->hidingEnd,
+							2048, 3);
+						_scriptDialogueContextActive = false;
+						_scriptDialogueFrame = nullptr;
+						if (!hidingOk)
+							warning("Zero Comico: MainPlayer HidingCode stopped on an unsupported opcode");
+
+						if (!_pendingMainPlace.empty()) {
+							done = true;
+							break;
+						}
+						if (!_pendingRoomName.empty() && !applyPendingRoomTransition()) {
+							done = true;
+							break;
+						}
+						rebuildInteractionMeshes();
+					}
+
+					if (!done && !shouldQuit())
+						renderGameplayFrame(renderCamera, sceneDirectory, playerDirectory,
+						                    "Stay", 0.0f, frame);
 				}
 				continue;
 			}
