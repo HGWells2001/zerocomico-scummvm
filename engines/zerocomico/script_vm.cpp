@@ -547,6 +547,12 @@ bool ScriptVM::runInternal(const ScriptProgram &program, uint32 rangeStart,
 				}
 				if (!_host || !_host->yieldScriptExecution())
 					return false;
+
+				// wjmp is a retail scheduler boundary, not part of one unbroken
+				// instruction quantum. Interactive Mp2 puzzles intentionally stay
+				// inside these loops until the player acts; carrying the caller's
+				// maxSteps budget across yields aborts them after only a few seconds.
+				steps = 0;
 			}
 			pc = (uint32)target + 1;
 			continue;
@@ -629,6 +635,7 @@ bool ScriptVM::runInternal(const ScriptProgram &program, uint32 rangeStart,
 					}
 					if (!_host || !_host->yieldScriptExecution())
 						return false;
+					steps = 0;
 				}
 				pc = (uint32)target + 1;
 			} else {
