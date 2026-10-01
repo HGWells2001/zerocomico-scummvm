@@ -694,7 +694,7 @@ ZeroComicoEngine::ZeroComicoEngine(OSystem *syst, const ADGameDescription *desc)
 	  _pendingTakeInventoryAdded(false), _scriptVM(this),
 	  _interfaceDisabled(false), _3dEnabled(true), _portalsEnabled(true),
 	  _cameraMode(0), _cameraModeLocked(false), _playerNoCameraReset(false),
-	  _depthCueEnabled(false), _depthCueStart(0.0f), _depthCueEnd(0.0f),
+	  _depthCueEnabled(false), _shadeEnabled(false), _depthCueStart(0.0f), _depthCueEnd(0.0f),
 	  _globalMasterVolume(100.0f), _sampleDefaultFarVolume(0.0f), _sampleDefaultNearVolume(100.0f),
 	  _sampleDefaultMinRange(0.0f), _sampleDefaultMaxRange(500.0f),
 	  _masterColorFadeSteps(0.0f), _masterColorFadeStartMillis(0),
@@ -3181,8 +3181,12 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 			return true;
 		}
 
-		// The remaining retail e3d_Parse form "shade" belongs to the lighting
-		// path and is kept separate from user-effect state.
+		if (command[0].equalsIgnoreCase("shade")) {
+			_shadeEnabled = true;
+			debug(1, "Zero Comico: retail room shading enabled");
+			return true;
+		}
+
 		return true;
 	}
 
@@ -4543,6 +4547,7 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 	_cameraModeLocked = false;
 	_playerNoCameraReset = false;
 	_depthCueEnabled = false;
+	_shadeEnabled = false;
 	_depthCueStart = 0.0f;
 	_depthCueEnd = 0.0f;
 	for (int component = 0; component < 4; ++component) {
@@ -4635,6 +4640,21 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 		warning("Zero Comico: cannot decode main-place room definitions %s", roomScript.toString().c_str());
 		return false;
 	}
+
+	auto runRoomCode = [&](const RoomDefinition &roomDefinition) -> bool {
+		_shadeEnabled = false;
+		if (roomDefinition.codeStart == 0xffffffffU ||
+		    roomDefinition.codeEnd == 0xffffffffU ||
+		    roomDefinition.codeStart >= roomDefinition.codeEnd)
+			return true;
+		if (!runScriptWithAudioClass(roomProgram, roomDefinition.codeStart,
+		                             roomDefinition.codeEnd, 512, 3)) {
+			warning("Zero Comico: room code for %s stopped early",
+			        roomDefinition.name.c_str());
+			return false;
+		}
+		return true;
+	};
 
 	// Initialize the retail main-place variables before entering the room. Mp1's
 	// startup block is intentionally side-effect free beyond scalar declarations,
@@ -4899,6 +4919,8 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 		renderCamera.focalPixels = embedded->data.fov * 800.0f / 36.0f;
 	}
 
+	if (!runRoomCode(*room))
+		return false;
 	startRoomMusic(room->music, room->musicVolume);
 
 	if (restoringStagedSave && !applyStagedRestore(playerDirectory))
@@ -5367,6 +5389,8 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 		_spotCameraInitialized = false;
 		_dynamicCameraInitialized = false;
 		_defaultRoomCameraName = room->camera;
+		if (!runRoomCode(*room))
+			return false;
 		startRoomMusic(room->music, room->musicVolume);
 		cameraName = room->camera;
 

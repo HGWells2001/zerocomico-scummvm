@@ -263,6 +263,7 @@ private:
 	bool _cameraModeLocked;
 	bool _playerNoCameraReset;
 	bool _depthCueEnabled;
+	bool _shadeEnabled;
 	float _depthCueStart;
 	float _depthCueEnd;
 	float _masterColor[4];
