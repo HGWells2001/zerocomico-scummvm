@@ -516,29 +516,38 @@ risk. Dialogue work that remains is behavioral validation of nested choices,
 camera transitions and later-chapter branches, rather than missing foreground
 VM vocabulary.
 
-## Save/load groundwork
+## Save/load runtime
 
-The engine still does **not** advertise runtime save/load to ScummVM yet. The
-critical persistence layer is now separated from scene assets first, so a
-future save will not embed decoded P3D/ANJ/JGF data.
+Save/load now uses an engine-private **ZCOM v3** payload followed by ScummVM's
+normal extended-save metadata. The payload intentionally stores mutable game
+state rather than decoded P3D/ANJ/JGF resources.
 
-Three mutable layers have explicit serializers:
+Persistent state covers:
 
-- `ScriptVM`: scalar variables, arrays and RNG seed;
-- `PuzzleScript` / `DialogScript`: object flags, choice enable state and
-  `ModifySentence` text mutations, keyed by retail object/dialog names;
-- engine runtime state: current main place/room, player position and facing,
-  active AnimSet, inventory/combine state, camera/interface switches, hidden
-  meshes, environment/light/user-effect state and the current music/environment
-  identifiers.
+- `ScriptVM` scalar variables, arrays and RNG seed;
+- puzzle object flags, dialogue choice enable state and `ModifySentence`
+  mutations;
+- main place/room, active walk BSP, player position/facing and AnimSet;
+- inventory/combine state, camera/interface switches, hidden meshes,
+  light/user-effect state and environment audio state;
+- Setp asset names/controller transforms, CPU character runtime state and
+  dynamic CloneEntity descriptors.
 
-The remaining blocker before exposing `saveGameStream/loadGameStream` is
-architectural rather than data-format related: `runMainPlacePreview()`
-currently combines asset loading, main-place initialization and the interactive
-loop in one function. Loading a save must first reconstruct the target
-main-place/room assets and only then apply the serialized mutable state. The
-next save/load step is therefore to split that initialization from the loop,
-not to deserialize over whatever room happens to be active.
+Loading is explicitly two-phase. `loadGameStream()` validates and stages the
+payload, reading only the target main place/room first. The normal retail asset
+load then rebuilds that exact room, player data, P3D/ANJ, BSP, puzzle/dialogue
+definitions and camera data. Only after those static resources exist is the
+snapshot applied. Player AnimSet, CPU bodies, Setp assets and dynamic clones are
+then rehydrated from their retail source files, and the saved walk map and
+environment loop are restored. The main-place `runtime:` block is skipped on
+restore so intro/cutscene/one-shot initialization does not replay.
+
+The retail **CARICA** menu item now opens ScummVM's load chooser. During the
+interactive gameplay loop, **F5** opens the save chooser and **F9** opens the
+load chooser; an F9 load exits the current room loop cleanly and rebuilds the
+saved main place before applying state. Runtime save/load still needs
+end-to-end playthrough validation across later chapters before it should be
+treated as production-complete.
 
 ## Retail depth cue
 
