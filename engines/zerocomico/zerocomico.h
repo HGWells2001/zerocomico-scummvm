@@ -170,6 +170,7 @@ private:
 	Common::String _activeRoomPrefix;
 	Common::Array<Common::String> _activeRoomMaps;
 	Common::Array<Common::String> _activeRoomCameraMaps;
+	Common::String _activeWalkMapName;
 	Common::String _pendingSaySpeaker;
 	Common::String _pendingSayText;
 	Common::String _pendingDialogName;

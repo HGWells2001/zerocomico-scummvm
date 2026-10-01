@@ -1917,6 +1917,7 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 		// SetMap changes only the character-navigation map. The room-declared
 		// camera map remains active until a room transition replaces it.
 		_activeWalkMap = replacement;
+		_activeWalkMapName = requestedMap;
 		_playerNavNode = _activeWalkMap.graph.empty()
 			? -1 : _activeWalkMap.nearestGraphNode(_playerPosition.x, _playerPosition.z);
 		debug(1, "Zero Comico: switched walk map to %s at node %d",
@@ -4426,6 +4427,18 @@ bool ZeroComicoEngine::applyStagedRestore(Common::Path &playerDirectory) {
 	}
 
 	installCpuCharactersForRoom(_activeRoomName);
+
+	if (!_activeWalkMapName.empty()) {
+		BspMap restoredWalkMap;
+		const Common::Path restoredMapPath =
+			Common::Path(_currentMainPlace + "/gameplay").appendComponent(_activeWalkMapName);
+		if (restoredWalkMap.load(restoredMapPath))
+			_activeWalkMap = restoredWalkMap;
+		else
+			warning("Zero Comico: cannot restore walk map %s",
+			        _activeWalkMapName.c_str());
+	}
+
 	_playerNavNode = _activeWalkMap.graph.empty()
 		? -1 : _activeWalkMap.nearestGraphNode(_playerPosition.x, _playerPosition.z);
 
@@ -4458,6 +4471,7 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 	_activeRoomPrefix.clear();
 	_activeRoomMaps.clear();
 	_activeRoomCameraMaps.clear();
+	_activeWalkMapName.clear();
 	_activeAutoCameraTrigger.clear();
 	_scriptKeyMask = 0;
 	_scriptAudioClass = 3;
@@ -4761,6 +4775,8 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 		const Common::Path mapPath = Common::Path(level + "/gameplay").appendComponent(room->maps[0]);
 		if (!_activeWalkMap.load(mapPath))
 			warning("Zero Comico: cannot load walk map %s", mapPath.toString().c_str());
+		else
+			_activeWalkMapName = room->maps[0];
 	}
 	if (!room->cameraMaps.empty()) {
 		const Common::Path cameraMapPath = Common::Path(level + "/gameplay").appendComponent(room->cameraMaps[0]);
@@ -5258,6 +5274,8 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 			if (!_activeWalkMap.load(nextMap))
 				warning("Zero Comico: cannot load destination walk map %s",
 				        nextMap.toString().c_str());
+			else
+				_activeWalkMapName = destinationMap;
 		}
 		_pendingRoomMapRoomName.clear();
 		_pendingRoomMapName.clear();
@@ -6137,6 +6155,7 @@ void ZeroComicoEngine::synchronizePersistentState(Common::Serializer &s) {
 	s.syncString(_currentMainPlace);
 	s.syncString(_activeRoomName);
 	s.syncString(_activeRoomPrefix);
+	s.syncString(_activeWalkMapName);
 	s.syncString(_playerAnimSetName);
 
 	s.syncAsFloatLE(_playerPosition.x);
