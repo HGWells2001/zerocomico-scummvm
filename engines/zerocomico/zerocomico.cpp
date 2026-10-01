@@ -5922,6 +5922,85 @@ void ZeroComicoEngine::synchronizePersistentState(Common::Serializer &s) {
 		s.syncAsFloatLE(_masterColor[component]);
 
 	syncStringArray(_hiddenSceneMeshes);
+
+	// Persistent Setp state is lightweight: the retail assets themselves are
+	// reloaded from disk, while only their names and controller transforms need
+	// to survive a save.
+	syncStringArray(_loadedSetpAssets);
+	uint32 controllerCount = s.isSaving() ? (uint32)_setpControllerNames.size() : 0;
+	s.syncAsUint32LE(controllerCount);
+	if (s.isLoading()) {
+		_setpControllerNames.clear();
+		_setpControllerPositions.clear();
+	}
+	for (uint32 i = 0; i < controllerCount; ++i) {
+		Common::String name;
+		Vec3f position = {0.0f, 0.0f, 0.0f};
+		if (s.isSaving()) {
+			name = _setpControllerNames[i];
+			if (i < _setpControllerPositions.size())
+				position = _setpControllerPositions[i];
+		}
+		s.syncString(name);
+		s.syncAsFloatLE(position.x);
+		s.syncAsFloatLE(position.y);
+		s.syncAsFloatLE(position.z);
+		if (s.isLoading()) {
+			_setpControllerNames.push_back(name);
+			_setpControllerPositions.push_back(position);
+		}
+	}
+
+	// CPU character runtime data is not part of ScriptVM. Save it by retail
+	// character name so parser ordering can change without invalidating saves.
+	uint32 cpuCount = s.isSaving() ? (uint32)_cpuCharacters.size() : 0;
+	s.syncAsUint32LE(cpuCount);
+	if (s.isLoading())
+		_cpuCharacters.clear();
+	for (uint32 i = 0; i < cpuCount; ++i) {
+		CpuCharacterRuntime runtime;
+		if (s.isSaving())
+			runtime = _cpuCharacters[i];
+
+		s.syncString(runtime.name);
+		s.syncString(runtime.roomName);
+		s.syncString(runtime.bodyRoot);
+		s.syncString(runtime.initialEntity);
+		s.syncString(runtime.initialVector);
+		s.syncAsFloatLE(runtime.position.x);
+		s.syncAsFloatLE(runtime.position.y);
+		s.syncAsFloatLE(runtime.position.z);
+		s.syncAsFloatLE(runtime.facing.x);
+		s.syncAsFloatLE(runtime.facing.y);
+		s.syncAsFloatLE(runtime.facing.z);
+
+		byte alive = runtime.alive ? 1 : 0;
+		byte lifeBroken = runtime.lifeBroken ? 1 : 0;
+		byte positioned = runtime.positioned ? 1 : 0;
+		byte haveFacing = runtime.haveFacing ? 1 : 0;
+		s.syncAsByte(alive);
+		s.syncAsByte(lifeBroken);
+		s.syncAsByte(positioned);
+		s.syncAsByte(haveFacing);
+		s.syncAsSint32LE(runtime.waitState);
+
+		if (s.isLoading()) {
+			runtime.alive = alive != 0;
+			runtime.lifeBroken = lifeBroken != 0;
+			runtime.positioned = positioned != 0;
+			runtime.haveFacing = haveFacing != 0;
+			runtime.idleAnimationStartMillis = _system->getMillis();
+			runtime.lastEventSource.clear();
+			runtime.lastEventFrame = -1;
+			runtime.haveEventFrame = false;
+
+			// Scene/assetDirectory are deliberately reconstructed after load from
+			// char.isc rather than serialized as decoded binary resources.
+			_cpuCharacters.push_back(runtime);
+		}
+	}
+
+	syncStringArray(_deferredBrokenCpuCharacters);
 	syncStringArray(_environmentStateRooms);
 	syncStringArray(_environmentStateNames);
 	syncBoolArray(_environmentStateEnabled);
