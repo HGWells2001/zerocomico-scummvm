@@ -14,6 +14,7 @@
 #include "common/events.h"
 #include "common/file.h"
 #include "common/serializer.h"
+#include "common/memstream.h"
 #include "common/system.h"
 #include "engines/advancedDetector.h"
 #include "engines/util.h"
@@ -32,6 +33,7 @@
 
 #include <cmath>
 #include <cstdlib>
+#include <cstring>
 
 namespace ZeroComico {
 
@@ -699,7 +701,7 @@ ZeroComicoEngine::ZeroComicoEngine(OSystem *syst, const ADGameDescription *desc)
 	  _masterColorFadeActive(false), _spotHeight(85.0f), _spotMaxDeltaY(30.0f), _spotDistance(350.0f),
 	  _spotMinDistance(25.0f), _spotSmooth(30.0f),
 	  _spotCameraInitialized(false), _dynamicCameraInitialized(false), _scriptKeyMask(0),
-	  _scriptAudioClass(3) {
+	  _scriptAudioClass(3), _pendingLoadActive(false) {
 	_playerPosition.x = _playerPosition.y = _playerPosition.z = 0.0f;
 	for (int soundClass = 0; soundClass < 6; ++soundClass)
 		_soundClassVolumes[soundClass] = 100.0f;
@@ -715,6 +717,68 @@ ZeroComicoEngine::ZeroComicoEngine(OSystem *syst, const ADGameDescription *desc)
 
 bool ZeroComicoEngine::hasFeature(EngineFeature f) const {
 	return f == kSupportsReturnToLauncher;
+}
+
+Common::Error ZeroComicoEngine::saveGameStream(Common::WriteStream *stream, bool isAutosave) {
+	(void)isAutosave;
+	if (!stream || _currentMainPlace.empty() || _activeRoomName.empty())
+		return Common::kWritingFailed;
+
+	Common::MemoryWriteStreamDynamic payload(DisposeAfterUse::YES);
+	Common::Serializer serializer(nullptr, &payload);
+	synchronizePersistentState(serializer);
+	if (serializer.err())
+		return Common::kWritingFailed;
+
+	static const char kMagic[4] = {'Z', 'C', 'O', 'M'};
+	stream->write(kMagic, sizeof(kMagic));
+	stream->writeUint32LE(1);
+	stream->writeUint32LE((uint32)payload.size());
+	if (payload.size() != 0)
+		stream->write(payload.getData(), payload.size());
+
+	return stream->err() ? Common::kWritingFailed : Common::kNoError;
+}
+
+Common::Error ZeroComicoEngine::loadGameStream(Common::SeekableReadStream *stream) {
+	if (!stream)
+		return Common::kReadingFailed;
+
+	char magic[4] = {0, 0, 0, 0};
+	if (stream->read(magic, sizeof(magic)) != sizeof(magic) ||
+	    memcmp(magic, "ZCOM", 4) != 0)
+		return Common::kReadingFailed;
+
+	const uint32 version = stream->readUint32LE();
+	const uint32 payloadSize = stream->readUint32LE();
+	if (stream->err() || version != 1 || payloadSize == 0 ||
+	    payloadSize > 16U * 1024U * 1024U)
+		return Common::kReadingFailed;
+
+	_pendingLoadData.resize(payloadSize);
+	if (stream->read(_pendingLoadData.data(), payloadSize) != payloadSize) {
+		_pendingLoadData.clear();
+		return Common::kReadingFailed;
+	}
+
+	Common::MemoryReadStream probe(_pendingLoadData.data(), _pendingLoadData.size());
+	Common::Serializer header(&probe, nullptr);
+	_pendingLoadMainPlace.clear();
+	_pendingLoadRoomName.clear();
+	header.syncString(_pendingLoadMainPlace);
+	header.syncString(_pendingLoadRoomName);
+	if (header.err() || _pendingLoadMainPlace.empty() || _pendingLoadRoomName.empty()) {
+		_pendingLoadData.clear();
+		_pendingLoadMainPlace.clear();
+		_pendingLoadRoomName.clear();
+		return Common::kReadingFailed;
+	}
+
+	_pendingLoadActive = true;
+	debug(1, "Zero Comico: staged save restore for %s/%s (%u bytes)",
+	      _pendingLoadMainPlace.c_str(), _pendingLoadRoomName.c_str(),
+	      (uint)_pendingLoadData.size());
+	return Common::kNoError;
 }
 
 Common::Error ZeroComicoEngine::run() {

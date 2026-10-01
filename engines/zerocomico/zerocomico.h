@@ -77,6 +77,8 @@ public:
 
 	Common::Error run() override;
 	bool hasFeature(EngineFeature f) const override;
+	Common::Error saveGameStream(Common::WriteStream *stream, bool isAutosave = false) override;
+	Common::Error loadGameStream(Common::SeekableReadStream *stream) override;
 
 	bool executeScriptOpcode(const ScriptInstruction &instruction) override;
 	bool evaluateScriptCondition(const ScriptInstruction &instruction,
@@ -262,6 +264,10 @@ private:
 	Vec3f _dynamicCameraPosition;
 	uint32 _scriptKeyMask;
 	int _scriptAudioClass;
+	Common::Array<byte> _pendingLoadData;
+	Common::String _pendingLoadMainPlace;
+	Common::String _pendingLoadRoomName;
+	bool _pendingLoadActive;
 };
 
 } // namespace ZeroComico
