@@ -195,6 +195,7 @@ private:
 	Audio::SoundHandle _musicHandle;
 	Common::String _environmentSoundName;
 	Audio::SoundHandle _environmentSoundHandle;
+	bool _environmentSoundActive;
 	Common::Array<Common::String> _environmentStateRooms;
 	Common::Array<Common::String> _environmentStateNames;
 	Common::Array<bool> _environmentStateEnabled;

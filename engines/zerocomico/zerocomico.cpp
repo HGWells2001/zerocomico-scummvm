@@ -701,7 +701,7 @@ ZeroComicoEngine::ZeroComicoEngine(OSystem *syst, const ADGameDescription *desc)
 	  _masterColorFadeActive(false), _spotHeight(85.0f), _spotMaxDeltaY(30.0f), _spotDistance(350.0f),
 	  _spotMinDistance(25.0f), _spotSmooth(30.0f),
 	  _spotCameraInitialized(false), _dynamicCameraInitialized(false), _scriptKeyMask(0),
-	  _scriptAudioClass(3), _pendingLoadActive(false) {
+	  _scriptAudioClass(3), _pendingLoadActive(false), _environmentSoundActive(false) {
 	_playerPosition.x = _playerPosition.y = _playerPosition.z = 0.0f;
 	for (int soundClass = 0; soundClass < 6; ++soundClass)
 		_soundClassVolumes[soundClass] = 100.0f;
@@ -743,7 +743,7 @@ Common::Error ZeroComicoEngine::saveGameStream(Common::WriteStream *stream, bool
 
 	static const char kMagic[4] = {'Z', 'C', 'O', 'M'};
 	stream->write(kMagic, sizeof(kMagic));
-	stream->writeUint32LE(2);
+	stream->writeUint32LE(3);
 	stream->writeUint32LE((uint32)payload.size());
 	if (payload.size() != 0)
 		stream->write(payload.getData(), payload.size());
@@ -762,7 +762,7 @@ Common::Error ZeroComicoEngine::loadGameStream(Common::SeekableReadStream *strea
 
 	const uint32 version = stream->readUint32LE();
 	const uint32 payloadSize = stream->readUint32LE();
-	if (stream->err() || version != 2 || payloadSize == 0 ||
+	if (stream->err() || version != 3 || payloadSize == 0 ||
 	    payloadSize > 16U * 1024U * 1024U)
 		return Common::kReadingFailed;
 
@@ -3601,6 +3601,7 @@ void ZeroComicoEngine::setEnvironmentSound(const Common::String &fileName, bool 
 	    fileName.equalsIgnoreCase("off") || fileName == "0") {
 		if (_mixer->isSoundHandleActive(_environmentSoundHandle))
 			_mixer->stopHandle(_environmentSoundHandle);
+		_environmentSoundActive = false;
 		if (!fileName.empty() && !fileName.equalsIgnoreCase("none") &&
 		    !fileName.equalsIgnoreCase("off") && fileName != "0")
 			_environmentSoundName = fileName;
@@ -3615,13 +3616,16 @@ void ZeroComicoEngine::setEnvironmentSound(const Common::String &fileName, bool 
 		_mixer->stopHandle(_environmentSoundHandle);
 
 	_environmentSoundName = fileName;
-	if (!playNamedMp3Looped(_mixer, Audio::Mixer::kSFXSoundType,
-	                       _environmentSoundName, _environmentSoundHandle,
-	                       retailChannelVolume(5, 100.0f, _environmentSoundName)))
+	_environmentSoundActive = playNamedMp3Looped(
+		_mixer, Audio::Mixer::kSFXSoundType,
+		_environmentSoundName, _environmentSoundHandle,
+		retailChannelVolume(5, 100.0f, _environmentSoundName));
+	if (!_environmentSoundActive)
 		warning("Zero Comico: cannot start environment sound %s",
 		        _environmentSoundName.c_str());
 #else
 	_environmentSoundName = enabled ? fileName : Common::String();
+	_environmentSoundActive = enabled && !fileName.empty();
 #endif
 }
 
@@ -4442,6 +4446,12 @@ bool ZeroComicoEngine::applyStagedRestore(Common::Path &playerDirectory) {
 	_playerNavNode = _activeWalkMap.graph.empty()
 		? -1 : _activeWalkMap.nearestGraphNode(_playerPosition.x, _playerPosition.z);
 
+	const Common::String restoredEnvironmentSound = _environmentSoundName;
+	const bool restoredEnvironmentActive = _environmentSoundActive;
+	_environmentSoundName.clear();
+	_environmentSoundActive = false;
+	setEnvironmentSound(restoredEnvironmentSound, restoredEnvironmentActive);
+
 	_pendingLoadData.clear();
 	_pendingLoadMainPlace.clear();
 	_pendingLoadRoomName.clear();
@@ -4514,6 +4524,10 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 	_combineInventorySecond.clear();
 	_inventoryObjects.clear();
 	_hiddenSceneMeshes.clear();
+	if (_mixer->isSoundHandleActive(_environmentSoundHandle))
+		_mixer->stopHandle(_environmentSoundHandle);
+	_environmentSoundName.clear();
+	_environmentSoundActive = false;
 	_environmentStateRooms.clear();
 	_environmentStateNames.clear();
 	_environmentStateEnabled.clear();
@@ -6358,6 +6372,10 @@ void ZeroComicoEngine::synchronizePersistentState(Common::Serializer &s) {
 	}
 
 	s.syncString(_environmentSoundName);
+	byte environmentSoundActive = _environmentSoundActive ? 1 : 0;
+	s.syncAsByte(environmentSoundActive);
+	if (s.isLoading())
+		_environmentSoundActive = environmentSoundActive != 0;
 	s.syncString(_currentMusicName);
 
 	_scriptVM.synchronize(s);
