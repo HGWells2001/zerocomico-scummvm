@@ -184,6 +184,7 @@ private:
 	SceneModel _activeScene;
 	SceneModel _playerScene;
 	SceneModel _loopCutScene;
+	SceneModel _scriptPlaceScene;
 	SequenceScript _playerSequences;
 	Common::Path _playerAssetDirectory;
 	Common::String _playerAnimSetName;
@@ -204,6 +205,7 @@ private:
 	bool _playerHatVisible;
 	int _playerNavNode;
 	Common::String _currentMainPlace;
+	Common::String _scriptPlaceName;
 	Common::String _activeRoomName;
 	Common::String _activeRoomPrefix;
 	Common::Array<Common::String> _activeRoomMaps;

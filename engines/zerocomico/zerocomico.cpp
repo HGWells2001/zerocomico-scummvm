@@ -2110,13 +2110,48 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 		if (instruction.args.empty())
 			return false;
 
+		const Common::String &requestedPlace = instruction.args[0];
+
+		// Shipped scripts can use SetPlace for a temporary, non-gameplay scene.
+		// Mp5's symbol puzzle enters the auxiliary "flauto" place while the
+		// physical player remains in Room5_3. It has its own P3D/ANJ and camera,
+		// but no BSP/portal gameplay room. Keep it as a transient render context
+		// rather than queuing a physical room transition.
+		if (_scriptDialogueContextActive && !startsWithIgnoreCase(requestedPlace, "room") &&
+		    !_currentMainPlace.empty()) {
+			SceneModel auxiliary;
+			const Common::Path auxiliaryDirectory(_currentMainPlace + "/backgrd");
+			if (auxiliary.loadPair(
+					auxiliaryDirectory.appendComponent(requestedPlace + ".p3d"),
+					auxiliaryDirectory.appendComponent(requestedPlace + ".anj"))) {
+				for (uint32 i = 0; i < _loadedSetpScenes.size(); ++i)
+					auxiliary.mergeFrom(_loadedSetpScenes[i]);
+				_scriptPlaceScene = auxiliary;
+				_scriptPlaceName = requestedPlace;
+				_pendingRoomName.clear();
+				_pendingRoomCutscene.clear();
+				_pendingRoomMapRoomName.clear();
+				_pendingRoomMapName.clear();
+				debug(1, "Zero Comico: entered auxiliary script place %s",
+				      _scriptPlaceName.c_str());
+				return true;
+			}
+		}
+
+		if (!_scriptPlaceName.empty() && requestedPlace.equalsIgnoreCase(_activeRoomName)) {
+			debug(1, "Zero Comico: leaving auxiliary script place %s",
+			      _scriptPlaceName.c_str());
+			_scriptPlaceScene.clear();
+			_scriptPlaceName.clear();
+		}
+
 		// Setting the already active place is an in-place state assertion in the
 		// shipped scripts, not a request to reload its P3D/BSP data. Mp2 does this
 		// twice during bootstrap, including after permuting the 25 tube meshes. A
 		// deferred same-room reload would later replace those live transforms with
 		// the pristine Setp snapshot and desynchronize the physical puzzle from its
 		// Tubi_IN array.
-		if (instruction.args[0].equalsIgnoreCase(_activeRoomName)) {
+		if (requestedPlace.equalsIgnoreCase(_activeRoomName)) {
 			_pendingRoomName.clear();
 			_pendingRoomCutscene.clear();
 			_pendingRoomMapRoomName.clear();
@@ -2136,7 +2171,7 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 			return true;
 		}
 
-		_pendingRoomName = instruction.args[0];
+		_pendingRoomName = requestedPlace;
 		_pendingRoomCutscene.clear();
 		_pendingRoomMapRoomName.clear();
 		_pendingRoomMapName.clear();
@@ -2280,13 +2315,26 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 
 		const Common::String entityName = indexedSceneEntityName(instruction.args[0], (int)index);
 		NamedMesh *mesh = _activeScene.findMesh(entityName);
+		NamedMesh *auxiliaryMesh = _scriptPlaceName.empty()
+			? nullptr : _scriptPlaceScene.findMesh(entityName);
 		const DynamicSceneEntity *dynamic = findDynamicSceneEntity(entityName);
-		if (!mesh && !dynamic)
+		if (!mesh && !dynamic && !auxiliaryMesh)
 			return false;
-		Vec3f position = mesh ? mesh->data.transform.translation
-		                    : dynamic->mesh.data.transform.translation;
-		position.z = z;
-		return setSceneEntityTranslation(entityName, position);
+
+		bool changed = false;
+		if (mesh || dynamic) {
+			Vec3f position = mesh ? mesh->data.transform.translation
+			                    : dynamic->mesh.data.transform.translation;
+			position.z = z;
+			changed = setSceneEntityTranslation(entityName, position) || changed;
+		}
+		if (auxiliaryMesh) {
+			Vec3f position = auxiliaryMesh->data.transform.translation;
+			position.z = z;
+			translateRigidMesh(*auxiliaryMesh, position);
+			changed = true;
+		}
+		return changed;
 	}
 
 	if (op.equalsIgnoreCase("hide_by_index")) {
@@ -2299,7 +2347,8 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 			return false;
 
 		const Common::String entityName = indexedSceneEntityName(instruction.args[0], (int)index);
-		if (!_activeScene.findMesh(entityName))
+		if (!_activeScene.findMesh(entityName) &&
+		    (_scriptPlaceName.empty() || !_scriptPlaceScene.findMesh(entityName)))
 			return false;
 		if (hidden != 0) {
 			if (!containsIgnoreCase(_hiddenSceneMeshes, entityName))
@@ -2432,6 +2481,37 @@ bool ZeroComicoEngine::executeScriptOpcode(const ScriptInstruction &instruction)
 	if (op.equalsIgnoreCase("SetFocus") || op.equalsIgnoreCase("SetCamera")) {
 		if (instruction.args.empty())
 			return false;
+
+		if (_scriptDialogueContextActive && !_scriptPlaceName.empty()) {
+			const Common::String &requestedCamera = instruction.args[0];
+			const ScriptCamera *scriptCamera = _activeCameraScript.findCamera(requestedCamera);
+			if (scriptCamera) {
+				const float radians = scriptCamera->horizontalFovDegrees *
+					3.14159265358979323846f / 180.0f;
+				const float halfTan = std::tan(radians * 0.5f);
+				if (halfTan > 0.0001f) {
+					_scriptDialogueCamera.position = scriptCamera->source;
+					_scriptDialogueCamera.target = scriptCamera->target;
+					_scriptDialogueCamera.focalPixels = 400.0f / halfTan;
+					_scriptDialogueCamera.rollRadians = 0.0f;
+					debug(1, "Zero Comico: auxiliary script camera %s",
+					      requestedCamera.c_str());
+					return true;
+				}
+			}
+
+			const NamedCamera *embedded = _scriptPlaceScene.findCamera(requestedCamera);
+			if (embedded && embedded->data.fov > 0.0f) {
+				_scriptDialogueCamera.position = embedded->data.position;
+				_scriptDialogueCamera.target = embedded->data.target;
+				_scriptDialogueCamera.focalPixels = embedded->data.fov * 800.0f / 36.0f;
+				_scriptDialogueCamera.rollRadians = 0.0f;
+				debug(1, "Zero Comico: auxiliary embedded camera %s",
+				      requestedCamera.c_str());
+				return true;
+			}
+		}
+
 		_pendingCameraName = instruction.args[0];
 		debug(1, "Zero Comico: script requested camera %s",
 		      _pendingCameraName.c_str());
@@ -3591,6 +3671,27 @@ bool ZeroComicoEngine::yieldScriptExecution() {
 		    event.type == Common::EVENT_RETURN_TO_LAUNCHER) {
 			quitGame();
 			return false;
+		}
+	}
+
+	// Interactive auxiliary places (Mp5's flauto symbol board) are driven by
+	// wjmp. Present the scene at each scheduler boundary so keyboard changes to
+	// the Setp button meshes are visible while the script owns the foreground VM.
+	if (!_scriptPlaceName.empty() && _scriptDialogueContextActive &&
+	    _scriptDialogueFrame) {
+		Common::Array<Common::String> visibleMeshes;
+		for (uint32 i = 0; i < _scriptPlaceScene.meshes.size(); ++i) {
+			const NamedMesh &mesh = _scriptPlaceScene.meshes[i];
+			if (!mesh.data.isFlesh() && !containsIgnoreCase(_hiddenSceneMeshes, mesh.name))
+				visibleMeshes.push_back(mesh.name);
+		}
+		if (_gameplayRenderer.render(_scriptPlaceScene, _scriptDialogueCamera,
+		                             _scriptDialogueSceneDirectory, visibleMeshes,
+		                             *_scriptDialogueFrame, 800, 600)) {
+			_system->copyRectToScreen(_scriptDialogueFrame->getPixels(),
+			                          _scriptDialogueFrame->pitch, 0, 0,
+			                          _scriptDialogueFrame->w, _scriptDialogueFrame->h);
+			_system->updateScreen();
 		}
 	}
 
@@ -4979,6 +5080,8 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 	_sceneOneShotSources.clear();
 	_sceneOneShotStartMillis.clear();
 	_loopCutScene.clear();
+	_scriptPlaceScene.clear();
+	_scriptPlaceName.clear();
 	_loopCutName.clear();
 	_loopCutAssetStem.clear();
 	_loopCutStartFrame = 0.0f;
