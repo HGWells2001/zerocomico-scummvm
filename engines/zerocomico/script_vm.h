@@ -62,8 +62,8 @@ public:
 
 	// Execute one asynchronous thread until it reaches a retail scheduler
 	// boundary (wjmp/wjmp_if_*), finishes, or errors. pc is preserved.
-	bool runThreadStep(const ScriptProgram &program, uint32 &pc,
-	                   uint32 endIndex, bool &finished,
+	bool runThreadStep(const ScriptProgram &program, uint32 startIndex,
+	                   uint32 &pc, uint32 endIndex, bool &finished,
 	                   uint32 maxSteps = 256);
 
 	bool getVariable(const Common::String &name, int32 &value) const;
@@ -88,9 +88,11 @@ private:
 
 	uint32 skipFalseBranch(const ScriptProgram &program, uint32 pc, uint32 endIndex) const;
 	uint32 skipElseBranch(const ScriptProgram &program, uint32 pc, uint32 endIndex) const;
-	bool runInternal(const ScriptProgram &program, uint32 &pc, uint32 endIndex,
-	                 uint32 maxSteps, bool stopAtSchedulerBoundary,
-	                 bool &finished);
+	bool runInternal(const ScriptProgram &program, uint32 rangeStart,
+	                 uint32 &pc, uint32 endIndex, uint32 maxSteps,
+	                 bool stopAtSchedulerBoundary, bool &finished);
+	int labelIndexInRange(const ScriptProgram &program, const Common::String &name,
+	                     uint32 startIndex, uint32 endIndex) const;
 	bool threadBlockHasSchedulerJump(const ScriptProgram &program,
 	                                 uint32 startIndex, uint32 endIndex) const;
 	uint32 matchingThreadEnd(const ScriptProgram &program, uint32 pc,
