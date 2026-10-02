@@ -224,7 +224,11 @@ static uint32 clipTriangleToNearPlane(const NearClipVertex input[3],
                                       const RenderCamera &camera,
                                       const Vec3f &forward,
                                       NearClipVertex output[4]) {
-	const float nearDepth = 0.001f;
+	// Retail scene coordinates are roughly centimetre-scale (100 units per metre).
+	// Clipping at the old projection epsilon (0.001) creates intersection vertices
+	// effectively on the lens and turns camera-crossing faces into screen-filling
+	// triangles. Keep a small but physical one-unit near plane instead.
+	const float nearDepth = 1.0f;
 	NearClipVertex polygonA[4];
 	NearClipVertex polygonB[4];
 	for (uint32 i = 0; i < 3; ++i)
