@@ -1550,6 +1550,11 @@ static void translateRigidMesh(NamedMesh &mesh, const Vec3f &position) {
 		mesh.data.vertices[i].y += delta.y;
 		mesh.data.vertices[i].z += delta.z;
 	}
+	for (uint32 i = 0; i < mesh.posedVertices.size(); ++i) {
+		mesh.posedVertices[i].x += delta.x;
+		mesh.posedVertices[i].y += delta.y;
+		mesh.posedVertices[i].z += delta.z;
+	}
 	mesh.data.transform.translation = position;
 }
 
@@ -5375,6 +5380,8 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 		warning("Zero Comico: cannot decode start-room scene %s", roomStem.c_str());
 		return false;
 	}
+	if (!_activeScene.poseRigidSource(roomStem))
+		warning("Zero Comico: start-room %s has no absolute rigid ANJ poses", roomStem.c_str());
 
 	const Common::Path characterPath(level + "/gameplay/char.isc");
 	Common::String playerAssetStem("Giovanni");
@@ -6014,6 +6021,9 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 			        room->name.c_str());
 			return false;
 		}
+		if (!_activeScene.poseRigidSource(nextStem))
+			warning("Zero Comico: destination room %s has no absolute rigid ANJ poses",
+			        nextStem.c_str());
 		for (uint32 setpIndex = 0; setpIndex < _loadedSetpScenes.size(); ++setpIndex)
 			_activeScene.mergeFrom(_loadedSetpScenes[setpIndex]);
 		installOpenCutScenesForRoom(room->name);

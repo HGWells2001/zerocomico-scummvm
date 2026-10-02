@@ -105,6 +105,11 @@ public:
 	void visibleMeshesForSource(const Common::String &sourceName, float frame,
 	                           Common::Array<Common::String> &visible) const;
 
+	// Applies the absolute F007 transforms for all independent rigid meshes
+	// belonging to one asset source (for example room1_1). P3D mesh vertices are
+	// loader-local; the paired ANJ supplies their retail world placement.
+	bool poseRigidSource(const Common::String &sourceName);
+
 	// Poses one non-skinned room mesh from a named F007 source without
 	// disturbing other independently looping objects in the scene.
 	bool poseRigidAnimation(const Common::String &targetName,

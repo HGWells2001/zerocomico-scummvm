@@ -612,20 +612,16 @@ bool SceneModel::poseCutsceneGeometry(const Common::String &sourceName, float fr
 		if (!clip)
 			continue;
 
-		PoseMatrix bindMatrix;
 		PoseMatrix poseMatrix;
-		PoseMatrix inverseBind;
-		if (!sampleLocalMatrix(clip->data, namedMesh.name, (float)clip->data.startFrame, bindMatrix) ||
-		    !sampleLocalMatrix(clip->data, namedMesh.name, frame, poseMatrix) ||
-		    !invertAffine(bindMatrix, inverseBind))
+		if (!sampleLocalMatrix(clip->data, namedMesh.name, frame, poseMatrix))
 			continue;
 
-		const PoseMatrix delta = multiplyMatrix(poseMatrix, inverseBind);
+		// As in gameplay rooms, direct rigid cutscene tracks carry the absolute
+		// transform. Preserve character hierarchy delta skinning above, but do not
+		// erase the world placement of independent props/background geometry.
 		namedMesh.posedVertices.resize(mesh.vertices.size());
-		for (uint32 i = 0; i < mesh.vertices.size(); ++i) {
-			const Vec3f bindPoint = transformBindVertex(mesh.vertices[i], mesh.transform);
-			namedMesh.posedVertices[i] = transformPoint(delta, bindPoint);
-		}
+		for (uint32 i = 0; i < mesh.vertices.size(); ++i)
+			namedMesh.posedVertices[i] = transformPoint(poseMatrix, mesh.vertices[i]);
 	}
 
 	return true;
@@ -676,6 +672,36 @@ void SceneModel::visibleMeshesForSource(const Common::String &sourceName, float 
 }
 
 
+bool SceneModel::poseRigidSource(const Common::String &sourceName) {
+	bool posedAny = false;
+	for (uint32 meshIndex = 0; meshIndex < meshes.size(); ++meshIndex) {
+		NamedMesh &namedMesh = meshes[meshIndex];
+		MeshData &mesh = namedMesh.data;
+		if (mesh.isFlesh() || mesh.isSkinnedParent() || mesh.vertices.empty())
+			continue;
+
+		const NamedAnimationClip *clip = findClipBySource(namedMesh.name, sourceName);
+		if (!clip)
+			continue;
+
+		PoseMatrix poseMatrix;
+		if (!sampleLocalMatrix(clip->data, namedMesh.name,
+		                       (float)clip->data.startFrame, poseMatrix))
+			continue;
+
+		// The P3D loader has already converted file coordinates to the object's
+		// local vertex representation (filePosition + translation - pivot). The
+		// paired F007 track is the absolute object transform. Applying the P3D
+		// transform again here collapses room objects back toward the origin.
+		namedMesh.posedVertices.resize(mesh.vertices.size());
+		for (uint32 i = 0; i < mesh.vertices.size(); ++i)
+			namedMesh.posedVertices[i] = transformPoint(poseMatrix, mesh.vertices[i]);
+		posedAny = true;
+	}
+	return posedAny;
+}
+
+
 bool SceneModel::poseRigidAnimation(const Common::String &targetName,
                                     const Common::String &sourceName,
                                     float frame) {
@@ -686,21 +712,17 @@ bool SceneModel::poseRigidAnimation(const Common::String &targetName,
 		if (!clip)
 			return false;
 
-		PoseMatrix bindMatrix;
 		PoseMatrix poseMatrix;
-		PoseMatrix inverseBind;
-		if (!sampleLocalMatrix(clip->data, targetName, (float)clip->data.startFrame, bindMatrix) ||
-		    !sampleLocalMatrix(clip->data, targetName, frame, poseMatrix) ||
-		    !invertAffine(bindMatrix, inverseBind))
+		if (!sampleLocalMatrix(clip->data, targetName, frame, poseMatrix))
 			return false;
 
-		const PoseMatrix delta = multiplyMatrix(poseMatrix, inverseBind);
+		// Independent rigid F007 tracks are absolute object transforms. Using a
+		// pose*inverse(bind) delta discards the static world translation at frame
+		// zero and piles room meshes around the origin.
 		targetMesh->posedVertices.resize(targetMesh->data.vertices.size());
-		for (uint32 i = 0; i < targetMesh->data.vertices.size(); ++i) {
-			const Vec3f bindPoint = transformBindVertex(targetMesh->data.vertices[i],
-			                                           targetMesh->data.transform);
-			targetMesh->posedVertices[i] = transformPoint(delta, bindPoint);
-		}
+		for (uint32 i = 0; i < targetMesh->data.vertices.size(); ++i)
+			targetMesh->posedVertices[i] = transformPoint(
+				poseMatrix, targetMesh->data.vertices[i]);
 		return true;
 	}
 
