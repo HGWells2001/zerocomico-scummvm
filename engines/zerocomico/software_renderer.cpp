@@ -598,11 +598,29 @@ static void drawTriangle(Graphics::ManagedSurface &target, Common::Array<float> 
 				r = (byte)(r * keep + 0.5f);
 			}
 
+			// JGF pixels are BGRA and retail textures do use their alpha channel.
+			// The old rasterizer copied RGB unconditionally, turning fully transparent
+			// texels into opaque black/grey polygons and letting them occlude the room.
+			// Treat alpha 0 as a hole and blend partial alpha over the current target.
+			if (a == 0)
+				continue;
+
 			byte *dst = static_cast<byte *>(target.getBasePtr(x, y));
+			if (a < 255) {
+				const uint32 invA = 255U - (uint32)a;
+				dst[0] = (byte)(((uint32)b * a + (uint32)dst[0] * invA + 127U) / 255U);
+				dst[1] = (byte)(((uint32)g * a + (uint32)dst[1] * invA + 127U) / 255U);
+				dst[2] = (byte)(((uint32)r * a + (uint32)dst[2] * invA + 127U) / 255U);
+				dst[3] = 255;
+				// Do not make a translucent texel a solid depth occluder. Opaque
+				// geometry rendered later can still occupy this pixel.
+				continue;
+			}
+
 			dst[0] = b;
 			dst[1] = g;
 			dst[2] = r;
-			dst[3] = a;
+			dst[3] = 255;
 			zBuffer[zIndex] = depth;
 		}
 	}
