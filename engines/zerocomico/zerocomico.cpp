@@ -5530,38 +5530,48 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 	RenderCamera renderCamera;
 	bool haveRenderCamera = false;
 
-	// Gameplay rooms do not use the editor camera embedded in room*.p3d.
-	// room.isc points at an alias whose source/target/FOV live in Camera.scr.
-	// Using that script camera fixes the start-room viewpoint instead of
-	// falling back to the unrelated exported editor camera.
+	// Keep Camera.scr loaded for SetFocus/automatic camera regions, but use the
+	// P3D camera as the room's initial placed camera. Retail Room1_1 is a useful
+	// ground-truth check: R11_Start projects completely outside 800x600 with the
+	// raw Camera.scr source/target, while the embedded P3D camera frames it
+	// correctly. This also avoids feeding a mismatched coordinate convention
+	// into the renderer before the first automatic camera transition.
 	_activeCameraScript = CameraScript();
 	const Common::Path cameraScriptPath(level + "/gameplay/Camera.scr");
-	if (_activeCameraScript.load(cameraScriptPath)) {
-		const ScriptCamera *scriptCamera = _activeCameraScript.findCamera(cameraName);
+	_activeCameraScript.load(cameraScriptPath);
+
+	const NamedCamera *embedded = _activeScene.findCamera(cameraName);
+	if (!embedded && !_activeScene.cameras.empty())
+		embedded = &_activeScene.cameras[0];
+	if (embedded && embedded->data.fov > 0.0f) {
+		cameraName = embedded->name;
+		renderCamera.position = embedded->data.position;
+		renderCamera.target = embedded->data.target;
+		renderCamera.focalPixels = embedded->data.fov * 800.0f / 36.0f;
+		renderCamera.rollRadians = 0.0f;
+		haveRenderCamera = true;
+	}
+
+	if (!haveRenderCamera) {
+		const ScriptCamera *scriptCamera = _activeCameraScript.findCamera(room->camera);
 		if (scriptCamera) {
-			const float radians = scriptCamera->horizontalFovDegrees * 3.14159265358979323846f / 180.0f;
+			const float radians = scriptCamera->horizontalFovDegrees *
+				3.14159265358979323846f / 180.0f;
 			const float halfTan = std::tan(radians * 0.5f);
 			if (halfTan > 0.0001f) {
+				cameraName = room->camera;
 				renderCamera.position = scriptCamera->source;
 				renderCamera.target = scriptCamera->target;
 				renderCamera.focalPixels = 400.0f / halfTan;
+				renderCamera.rollRadians = 0.0f;
 				haveRenderCamera = true;
 			}
 		}
 	}
 
 	if (!haveRenderCamera) {
-		const NamedCamera *embedded = _activeScene.findCamera(cameraName);
-		if (!embedded && !_activeScene.cameras.empty())
-			embedded = &_activeScene.cameras[0];
-		if (!embedded || embedded->data.fov <= 0.0f) {
-			warning("Zero Comico: start-room scene has no usable camera");
-			return false;
-		}
-		cameraName = embedded->name;
-		renderCamera.position = embedded->data.position;
-		renderCamera.target = embedded->data.target;
-		renderCamera.focalPixels = embedded->data.fov * 800.0f / 36.0f;
+		warning("Zero Comico: start-room scene has no usable camera");
+		return false;
 	}
 
 	if (!runRoomCode(*room))
@@ -6067,30 +6077,31 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 		cameraName = room->camera;
 
 		bool nextCameraReady = false;
-		const ScriptCamera *nextScriptCamera = _activeCameraScript.findCamera(cameraName);
-		if (nextScriptCamera) {
-			const float radians = nextScriptCamera->horizontalFovDegrees *
-				3.14159265358979323846f / 180.0f;
-			const float halfTan = std::tan(radians * 0.5f);
-			if (halfTan > 0.0001f) {
-				renderCamera.position = nextScriptCamera->source;
-				renderCamera.target = nextScriptCamera->target;
-				renderCamera.focalPixels = 400.0f / halfTan;
-				renderCamera.rollRadians = 0.0f;
-				nextCameraReady = true;
-			}
+		const NamedCamera *nextEmbedded = _activeScene.findCamera(cameraName);
+		if (!nextEmbedded && !_activeScene.cameras.empty())
+			nextEmbedded = &_activeScene.cameras[0];
+		if (nextEmbedded && nextEmbedded->data.fov > 0.0f) {
+			cameraName = nextEmbedded->name;
+			renderCamera.position = nextEmbedded->data.position;
+			renderCamera.target = nextEmbedded->data.target;
+			renderCamera.focalPixels = nextEmbedded->data.fov * 800.0f / 36.0f;
+			renderCamera.rollRadians = 0.0f;
+			nextCameraReady = true;
 		}
 		if (!nextCameraReady) {
-			const NamedCamera *embedded = _activeScene.findCamera(cameraName);
-			if (!embedded && !_activeScene.cameras.empty())
-				embedded = &_activeScene.cameras[0];
-			if (embedded && embedded->data.fov > 0.0f) {
-				cameraName = embedded->name;
-				renderCamera.position = embedded->data.position;
-				renderCamera.target = embedded->data.target;
-				renderCamera.focalPixels = embedded->data.fov * 800.0f / 36.0f;
-				renderCamera.rollRadians = 0.0f;
-				nextCameraReady = true;
+			const ScriptCamera *nextScriptCamera = _activeCameraScript.findCamera(room->camera);
+			if (nextScriptCamera) {
+				const float radians = nextScriptCamera->horizontalFovDegrees *
+					3.14159265358979323846f / 180.0f;
+				const float halfTan = std::tan(radians * 0.5f);
+				if (halfTan > 0.0001f) {
+					cameraName = room->camera;
+					renderCamera.position = nextScriptCamera->source;
+					renderCamera.target = nextScriptCamera->target;
+					renderCamera.focalPixels = 400.0f / halfTan;
+					renderCamera.rollRadians = 0.0f;
+					nextCameraReady = true;
+				}
 			}
 		}
 		if (!nextCameraReady) {
