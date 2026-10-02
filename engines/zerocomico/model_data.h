@@ -29,6 +29,12 @@ struct ObjectTransform {
 	Vec3f scale;
 };
 
+enum MaterialBlendMode {
+	kMaterialBlendOpaque = 0,
+	kMaterialBlendAlpha = 1,
+	kMaterialBlendAdditive = 2
+};
+
 struct MaterialData {
 	uint16 mode;
 	uint16 flags;
@@ -40,6 +46,7 @@ struct MaterialData {
 	Common::String textureName;
 	Vec3f textureParams;
 	bool hasTexture;
+	MaterialBlendMode blendMode;
 	int32 userEffectState;
 	uint32 userEffectElapsedMs;
 };

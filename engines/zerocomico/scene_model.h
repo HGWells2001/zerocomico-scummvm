@@ -56,6 +56,7 @@ public:
 
 	bool loadGeometry(const Common::Path &p3dPath);
 	bool loadAnimation(const Common::Path &anjPath);
+	bool applyMaterialScript(const Common::Path &matPath);
 	bool loadPair(const Common::Path &p3dPath, const Common::Path &anjPath);
 
 	const NamedMaterial *findMaterial(const Common::String &name) const;

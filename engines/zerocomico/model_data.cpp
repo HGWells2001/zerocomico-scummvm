@@ -128,6 +128,7 @@ bool ModelDataDecoder::decodeMaterial(const ModelArchive &archive, const ModelRe
 		return false;
 
 	out.hasTexture = (out.flags & 0x0002) != 0;
+	out.blendMode = kMaterialBlendOpaque;
 	out.textureName.clear();
 	out.textureParams.x = out.textureParams.y = out.textureParams.z = 0.0f;
 	out.userEffectState = 0;

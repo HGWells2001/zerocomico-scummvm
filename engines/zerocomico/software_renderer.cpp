@@ -599,13 +599,38 @@ static void drawTriangle(Graphics::ManagedSurface &target, Common::Array<float> 
 			}
 
 			// JGF pixels are BGRA and retail textures do use their alpha channel.
-			// The old rasterizer copied RGB unconditionally, turning fully transparent
-			// texels into opaque black/grey polygons and letting them occlude the room.
-			// Treat alpha 0 as a hole and blend partial alpha over the current target.
+			// Sidecar .mat files additionally select alpha or additive blending. These
+			// transparent passes depth-test against opaque geometry but do not write
+			// depth, matching their use for smoke, glass, flashes and light cones.
 			if (a == 0)
 				continue;
 
 			byte *dst = static_cast<byte *>(target.getBasePtr(x, y));
+			const MaterialBlendMode blendMode = material
+				? material->blendMode : kMaterialBlendOpaque;
+			if (blendMode == kMaterialBlendAdditive) {
+				const uint32 scaledB = ((uint32)b * (uint32)a + 127U) / 255U;
+				const uint32 scaledG = ((uint32)g * (uint32)a + 127U) / 255U;
+				const uint32 scaledR = ((uint32)r * (uint32)a + 127U) / 255U;
+				const uint32 outB = (uint32)dst[0] + scaledB;
+				const uint32 outG = (uint32)dst[1] + scaledG;
+				const uint32 outR = (uint32)dst[2] + scaledR;
+				dst[0] = (byte)(outB > 255U ? 255U : outB);
+				dst[1] = (byte)(outG > 255U ? 255U : outG);
+				dst[2] = (byte)(outR > 255U ? 255U : outR);
+				dst[3] = 255;
+				continue;
+			}
+
+			if (blendMode == kMaterialBlendAlpha) {
+				const uint32 invA = 255U - (uint32)a;
+				dst[0] = (byte)(((uint32)b * a + (uint32)dst[0] * invA + 127U) / 255U);
+				dst[1] = (byte)(((uint32)g * a + (uint32)dst[1] * invA + 127U) / 255U);
+				dst[2] = (byte)(((uint32)r * a + (uint32)dst[2] * invA + 127U) / 255U);
+				dst[3] = 255;
+				continue;
+			}
+
 			if (a < 255) {
 				const uint32 invA = 255U - (uint32)a;
 				dst[0] = (byte)(((uint32)b * a + (uint32)dst[0] * invA + 127U) / 255U);

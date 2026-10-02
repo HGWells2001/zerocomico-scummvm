@@ -5,6 +5,7 @@
 #include "zerocomico/scene_model.h"
 
 #include "zerocomico/model.h"
+#include "zerocomico/resource.h"
 
 #include <cmath>
 
@@ -202,6 +203,69 @@ static bool buildGlobalMatrix(const AnimationClip &clip, const HierarchyData &hi
 	return true;
 }
 
+
+static void pushMaterialToken(Common::Array<Common::String> &tokens,
+                              Common::String &current) {
+	if (current.empty())
+		return;
+	tokens.push_back(current);
+	current.clear();
+}
+
+static void tokenizeMaterialScript(const Common::Array<byte> &decoded,
+                                   Common::Array<Common::String> &tokens) {
+	tokens.clear();
+	Common::String current;
+	bool lineComment = false;
+	bool quoted = false;
+
+	for (uint32 i = 0; i < decoded.size(); ++i) {
+		const char c = (char)decoded[i];
+		if (lineComment) {
+			if (c == '\n' || c == '\r')
+				lineComment = false;
+			continue;
+		}
+
+		if (!quoted && c == '/' && i + 1 < decoded.size() && decoded[i + 1] == '/') {
+			pushMaterialToken(tokens, current);
+			lineComment = true;
+			++i;
+			continue;
+		}
+
+		if (c == '"') {
+			if (quoted) {
+				pushMaterialToken(tokens, current);
+				quoted = false;
+			} else {
+				pushMaterialToken(tokens, current);
+				quoted = true;
+			}
+			continue;
+		}
+
+		if (quoted) {
+			current += c;
+			continue;
+		}
+
+		if (c == '{' || c == '}') {
+			pushMaterialToken(tokens, current);
+			tokens.push_back(Common::String(c));
+			continue;
+		}
+
+		if (c == ' ' || c == '\t' || c == '\r' || c == '\n') {
+			pushMaterialToken(tokens, current);
+			continue;
+		}
+
+		current += c;
+	}
+	pushMaterialToken(tokens, current);
+}
+
 } // namespace
 
 void SceneModel::clear() {
@@ -305,6 +369,101 @@ bool SceneModel::loadAnimation(const Common::Path &anjPath) {
 	return true;
 }
 
+bool SceneModel::applyMaterialScript(const Common::Path &matPath) {
+	Common::Array<byte> decoded;
+	if (!ResourceReader::decodeJfxFile(matPath, decoded))
+		return false;
+
+	Common::Array<Common::String> tokens;
+	tokenizeMaterialScript(decoded, tokens);
+	Common::String prefix;
+	bool appliedAny = false;
+
+	for (uint32 i = 0; i < tokens.size();) {
+		if (tokens[i].equalsIgnoreCase("prefix") && i + 1 < tokens.size()) {
+			prefix = tokens[i + 1];
+			i += 2;
+			continue;
+		}
+
+		if (!tokens[i].equalsIgnoreCase("Material") || i + 1 >= tokens.size()) {
+			++i;
+			continue;
+		}
+
+		const Common::String shortName = tokens[i + 1];
+		i += 2;
+		while (i < tokens.size() && tokens[i] != "{")
+			++i;
+		if (i >= tokens.size())
+			break;
+		++i;
+
+		uint32 depth = 1;
+		Common::String textureName;
+		MaterialBlendMode blendMode = kMaterialBlendOpaque;
+		bool haveBlendMode = false;
+
+		while (i < tokens.size() && depth > 0) {
+			if (tokens[i] == "{") {
+				++depth;
+				++i;
+				continue;
+			}
+			if (tokens[i] == "}") {
+				--depth;
+				++i;
+				continue;
+			}
+
+			if (depth == 1 && tokens[i].equalsIgnoreCase("texture") &&
+			    i + 1 < tokens.size() && tokens[i + 1] != "{" && tokens[i + 1] != "}") {
+				textureName = tokens[i + 1];
+				i += 2;
+				continue;
+			}
+
+			if (depth == 1 && tokens[i].equalsIgnoreCase("transparency")) {
+				uint32 j = i + 1;
+				if (j < tokens.size() && tokens[j] == "{")
+					++j;
+				if (j < tokens.size()) {
+					if (tokens[j].equalsIgnoreCase("additive")) {
+						blendMode = kMaterialBlendAdditive;
+						haveBlendMode = true;
+					} else if (tokens[j].equalsIgnoreCase("alphablending")) {
+						blendMode = kMaterialBlendAlpha;
+						haveBlendMode = true;
+					}
+				}
+				++i;
+				continue;
+			}
+
+			++i;
+		}
+
+		const Common::String fullName = prefix + shortName;
+		for (uint32 materialIndex = 0; materialIndex < materials.size(); ++materialIndex) {
+			NamedMaterial &material = materials[materialIndex];
+			if (!material.name.equalsIgnoreCase(fullName))
+				continue;
+
+			if (haveBlendMode)
+				material.data.blendMode = blendMode;
+			if (!textureName.empty() && !textureName.equalsIgnoreCase("none")) {
+				material.data.textureName = textureName;
+				material.data.hasTexture = true;
+			}
+			appliedAny = true;
+			break;
+		}
+	}
+
+	return appliedAny;
+}
+
+
 bool SceneModel::loadPair(const Common::Path &p3dPath, const Common::Path &anjPath) {
 	clear();
 	if (!loadGeometry(p3dPath))
@@ -313,6 +472,14 @@ bool SceneModel::loadPair(const Common::Path &p3dPath, const Common::Path &anjPa
 		clear();
 		return false;
 	}
+
+	// Retail P3D records do not carry the complete render state. Paired .mat
+	// scripts override textures and, critically, declare alpha/additive blending
+	// for effects such as C111's FASAR/light cones.
+	Common::String materialPath = p3dPath.toString();
+	if (materialPath.size() >= 4)
+		materialPath = materialPath.substr(0, materialPath.size() - 4) + ".mat";
+	applyMaterialScript(Common::Path(materialPath));
 	return true;
 }
 
