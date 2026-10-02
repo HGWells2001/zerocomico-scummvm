@@ -28,6 +28,16 @@ static const ADGameDescription gameDescriptions[] = {
 		ADGF_UNSTABLE | ADGF_DROPPLATFORM | ADGF_DROPLANGUAGE,
 		GUIO1(GUIO_NOMIDI)
 	},
+	{
+		"zerocomico",
+		"Italian retail (alternate executable)",
+		AD_ENTRY2s("Zero Comico.exe", "298d0c2111428606dddd61bf7c93cf99", 1658880,
+		           "Config.gsc", "6ebce334d2118fdf554345ce7fe6067e", 74),
+		Common::IT_ITA,
+		Common::kPlatformWindows,
+		ADGF_UNSTABLE | ADGF_DROPPLATFORM | ADGF_DROPLANGUAGE,
+		GUIO1(GUIO_NOMIDI)
+	},
 
 	AD_TABLE_END_MARKER
 };
