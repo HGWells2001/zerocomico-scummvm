@@ -681,12 +681,32 @@ bool SceneModel::poseRigidSource(const Common::String &sourceName) {
 			continue;
 
 		const NamedAnimationClip *clip = findClipBySource(namedMesh.name, sourceName);
-		if (!clip)
-			continue;
-
 		PoseMatrix poseMatrix;
-		if (!sampleLocalMatrix(clip->data, namedMesh.name,
-		                       (float)clip->data.startFrame, poseMatrix))
+		bool havePose = false;
+		if (clip) {
+			havePose = sampleLocalMatrix(clip->data, namedMesh.name,
+			                             (float)clip->data.startFrame, poseMatrix);
+		} else {
+			// A rigid child may live inside a parent F007 clip rather than having a
+			// record named after itself. Room1_1's r11_SPORTEL is the retail example:
+			// it is parented to r11_astronave and must inherit that root transform.
+			for (uint32 hierarchyIndex = 0;
+			     hierarchyIndex < hierarchies.size() && !havePose; ++hierarchyIndex) {
+				const NamedHierarchy &namedHierarchy = hierarchies[hierarchyIndex];
+				if (!hierarchyContains(namedHierarchy.data, namedHierarchy.name,
+				                       namedMesh.name))
+					continue;
+				const NamedAnimationClip *rootClip =
+					findClipBySource(namedHierarchy.name, sourceName);
+				if (!rootClip)
+					continue;
+				havePose = buildGlobalMatrix(rootClip->data, namedHierarchy.data,
+				                             namedHierarchy.name, namedMesh.name,
+				                             (float)rootClip->data.startFrame, false,
+				                             poseMatrix);
+			}
+		}
+		if (!havePose)
 			continue;
 
 		// The P3D loader has already converted file coordinates to the object's
