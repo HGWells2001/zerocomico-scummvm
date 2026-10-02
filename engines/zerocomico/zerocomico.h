@@ -212,6 +212,7 @@ private:
 	Common::String _scriptPlaceName;
 	Common::String _activeRoomName;
 	Common::String _activeRoomPrefix;
+	Common::String _activeBackgroundPattern;
 	Common::Array<Common::String> _activeRoomMaps;
 	Common::Array<Common::String> _activeRoomCameraMaps;
 	Common::String _activeWalkMapName;
