@@ -130,6 +130,48 @@ static bool startsWithIgnoreCase(const Common::String &value,
 	       value.substr(0, prefix.size()).equalsIgnoreCase(prefix);
 }
 
+static bool wildcardTokenMatchesIgnoreCase(const Common::String &value,
+                                           const Common::String &pattern) {
+	const uint32 star = pattern.find('*');
+	if (star == Common::String::npos)
+		return value.equalsIgnoreCase(pattern);
+
+	const Common::String prefix = pattern.substr(0, star);
+	const Common::String suffix = pattern.substr(star + 1);
+	if (!prefix.empty() && !startsWithIgnoreCase(value, prefix))
+		return false;
+	if (!suffix.empty()) {
+		if (suffix.size() > value.size())
+			return false;
+		if (!value.substr(value.size() - suffix.size()).equalsIgnoreCase(suffix))
+			return false;
+	}
+	return value.size() >= prefix.size() + suffix.size();
+}
+
+static bool matchesBackgroundPattern(const Common::String &name,
+                                     const Common::String &patternList) {
+	if (patternList.empty())
+		return true;
+
+	uint32 start = 0;
+	while (start < patternList.size()) {
+		while (start < patternList.size() &&
+		       (patternList[start] == ' ' || patternList[start] == '\t'))
+			++start;
+		if (start >= patternList.size())
+			break;
+		uint32 end = start;
+		while (end < patternList.size() &&
+		       patternList[end] != ' ' && patternList[end] != '\t')
+			++end;
+		if (wildcardTokenMatchesIgnoreCase(name, patternList.substr(start, end - start)))
+			return true;
+		start = end;
+	}
+	return false;
+}
+
 static Common::String indexedSceneEntityName(const Common::String &prefix, int index) {
 	return Common::String::format("%s%02d", prefix.c_str(), index);
 }
@@ -4362,10 +4404,18 @@ bool ZeroComicoEngine::renderGameplayFrame(const RenderCamera &camera,
 	}
 
 	Common::Array<Common::String> visibleMeshes;
-	if (!_hiddenSceneMeshes.empty()) {
+	// room.isc carries the retail render mask (for example Room1_1 uses
+	// "spr_* r11_*"). An empty renderer mask means "draw everything", so
+	// ignoring this field exposes helper/controller meshes that were never meant
+	// to reach the framebuffer. Always materialize the room mask when present,
+	// then apply script-driven hide_subobj state on top.
+	if (!_activeBackgroundPattern.empty() || !_hiddenSceneMeshes.empty()) {
 		for (uint32 meshIndex = 0; meshIndex < _activeScene.meshes.size(); ++meshIndex) {
 			const NamedMesh &mesh = _activeScene.meshes[meshIndex];
 			if (mesh.data.isFlesh() || containsIgnoreCase(_hiddenSceneMeshes, mesh.name))
+				continue;
+			if (!_activeBackgroundPattern.empty() &&
+			    !matchesBackgroundPattern(mesh.name, _activeBackgroundPattern))
 				continue;
 			visibleMeshes.push_back(mesh.name);
 		}
@@ -5110,6 +5160,7 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 	_currentMainPlace = level;
 	_activeRoomName.clear();
 	_activeRoomPrefix.clear();
+	_activeBackgroundPattern.clear();
 	_activeRoomMaps.clear();
 	_activeRoomCameraMaps.clear();
 	_activeWalkMapName.clear();
@@ -5285,6 +5336,7 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 
 	_activeRoomName = room->name;
 	_activeRoomPrefix = room->prefix;
+	_activeBackgroundPattern = room->backgroundPattern;
 	_activeRoomMaps = room->maps;
 	_activeRoomCameraMaps = room->cameraMaps;
 
@@ -5936,6 +5988,7 @@ bool ZeroComicoEngine::runMainPlacePreview(const Common::String &mainPlace) {
 		room = nextRoom;
 		_activeRoomName = room->name;
 		_activeRoomPrefix = room->prefix;
+		_activeBackgroundPattern = room->backgroundPattern;
 		for (uint32 objectIndex = 0; objectIndex < _activePuzzle.objects.size(); ++objectIndex)
 			_activePuzzle.objects[objectIndex].inside = false;
 		_activeRoomMaps = room->maps;
