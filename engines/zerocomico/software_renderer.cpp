@@ -484,9 +484,19 @@ static Vec3f evaluateFaceLighting(const SceneModel &lightingScene,
 	if (!contributed) {
 		accumulated.x = accumulated.y = accumulated.z = 1.0f;
 	} else {
+		// Retail "shade" is not pure black-to-diffuse multiplication: the room
+		// materials retain an ambient/base contribution. Our first-pass light
+		// reconstruction treated every positively lit face as pure diffuse, so a
+		// very small decoded contribution collapsed textured walls and floors to
+		// near-black. Preserve a conservative ambient floor until the full JapoTek
+		// material/light equation is decoded.
+		const float ambientFloor = 0.30f;
 		accumulated.x = clamp01(accumulated.x);
 		accumulated.y = clamp01(accumulated.y);
 		accumulated.z = clamp01(accumulated.z);
+		if (accumulated.x < ambientFloor) accumulated.x = ambientFloor;
+		if (accumulated.y < ambientFloor) accumulated.y = ambientFloor;
+		if (accumulated.z < ambientFloor) accumulated.z = ambientFloor;
 	}
 	return accumulated;
 }
