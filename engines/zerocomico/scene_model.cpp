@@ -499,13 +499,20 @@ bool SceneModel::poseCutsceneGeometry(const Common::String &sourceName, float fr
 	for (uint32 meshIndex = 0; meshIndex < meshes.size(); ++meshIndex)
 		meshes[meshIndex].posedVertices.clear();
 
-	// Character hierarchies carry their own animated root in cutscenes. Build
-	// each hierarchy from frame zero/source start to the requested frame, so
-	// both bone deformation and root translation/rotation are preserved.
+	// Character hierarchies carry an absolute animated root in cutscenes.
+	// Skin/deform below that root in actor-local space, then apply the root
+	// transform once to place the complete actor in cutscene world space.
+	// The previous pose*inverse(bind) path included the root in both matrices,
+	// cancelling the absolute placement at the first frame and piling actors at
+	// the origin.
 	for (uint32 hierarchyIndex = 0; hierarchyIndex < hierarchies.size(); ++hierarchyIndex) {
 		const NamedHierarchy &namedHierarchy = hierarchies[hierarchyIndex];
 		const NamedAnimationClip *clip = findClipBySource(namedHierarchy.name, sourceName);
 		if (!clip)
+			continue;
+
+		PoseMatrix rootWorld;
+		if (!sampleLocalMatrix(clip->data, namedHierarchy.name, frame, rootWorld))
 			continue;
 
 		const HierarchyData &hierarchy = namedHierarchy.data;
@@ -537,9 +544,9 @@ bool SceneModel::poseCutsceneGeometry(const Common::String &sourceName, float fr
 				PoseMatrix poseGlobal;
 				PoseMatrix inverseBind;
 				if (!buildGlobalMatrix(clip->data, hierarchy, namedHierarchy.name, namedFlesh.name,
-				                       (float)clip->data.startFrame, false, bindGlobal) ||
+				                       (float)clip->data.startFrame, true, bindGlobal) ||
 				    !buildGlobalMatrix(clip->data, hierarchy, namedHierarchy.name, namedFlesh.name,
-				                       frame, false, poseGlobal) ||
+				                       frame, true, poseGlobal) ||
 				    !invertAffine(bindGlobal, inverseBind))
 					return false;
 
@@ -567,9 +574,12 @@ bool SceneModel::poseCutsceneGeometry(const Common::String &sourceName, float fr
 				if (weights[i] <= 0.000001f)
 					return false;
 				const float invWeight = 1.0f / weights[i];
-				meshes[parentIndex].posedVertices[i].x = posed[i].x * invWeight;
-				meshes[parentIndex].posedVertices[i].y = posed[i].y * invWeight;
-				meshes[parentIndex].posedVertices[i].z = posed[i].z * invWeight;
+				Vec3f actorLocal = {
+					posed[i].x * invWeight,
+					posed[i].y * invWeight,
+					posed[i].z * invWeight
+				};
+				meshes[parentIndex].posedVertices[i] = transformPoint(rootWorld, actorLocal);
 			}
 		}
 
@@ -584,9 +594,9 @@ bool SceneModel::poseCutsceneGeometry(const Common::String &sourceName, float fr
 			PoseMatrix poseGlobal;
 			PoseMatrix inverseBind;
 			if (!buildGlobalMatrix(clip->data, hierarchy, namedHierarchy.name, namedMesh.name,
-			                       (float)clip->data.startFrame, false, bindGlobal) ||
+			                       (float)clip->data.startFrame, true, bindGlobal) ||
 			    !buildGlobalMatrix(clip->data, hierarchy, namedHierarchy.name, namedMesh.name,
-			                       frame, false, poseGlobal) ||
+			                       frame, true, poseGlobal) ||
 			    !invertAffine(bindGlobal, inverseBind))
 				continue;
 
@@ -594,7 +604,8 @@ bool SceneModel::poseCutsceneGeometry(const Common::String &sourceName, float fr
 			namedMesh.posedVertices.resize(mesh.vertices.size());
 			for (uint32 i = 0; i < mesh.vertices.size(); ++i) {
 				const Vec3f bindPoint = transformBindVertex(mesh.vertices[i], mesh.transform);
-				namedMesh.posedVertices[i] = transformPoint(delta, bindPoint);
+				const Vec3f actorLocal = transformPoint(delta, bindPoint);
+				namedMesh.posedVertices[i] = transformPoint(rootWorld, actorLocal);
 			}
 		}
 	}
