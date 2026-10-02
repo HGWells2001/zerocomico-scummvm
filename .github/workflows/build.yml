@@ -30,3 +30,87 @@ jobs:
       - name: Build
         working-directory: scummvm
         run: make -j2
+
+  windows-package:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout Zero Comico engine
+        uses: actions/checkout@v4
+
+      - name: Setup MSYS2 UCRT64
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            git
+            make
+            pkgconf
+            zip
+            mingw-w64-ucrt-x86_64-toolchain
+            mingw-w64-ucrt-x86_64-SDL2
+            mingw-w64-ucrt-x86_64-zlib
+            mingw-w64-ucrt-x86_64-libpng
+            mingw-w64-ucrt-x86_64-libjpeg-turbo
+            mingw-w64-ucrt-x86_64-freetype
+            mingw-w64-ucrt-x86_64-libogg
+            mingw-w64-ucrt-x86_64-libvorbis
+            mingw-w64-ucrt-x86_64-libmad
+            mingw-w64-ucrt-x86_64-flac
+
+      - name: Checkout ScummVM
+        shell: msys2 {0}
+        run: git clone --depth 1 https://github.com/scummvm/scummvm.git scummvm
+
+      - name: Overlay Zero Comico engine
+        shell: msys2 {0}
+        run: cp -a engines/zerocomico scummvm/engines/
+
+      - name: Configure Windows build
+        shell: msys2 {0}
+        working-directory: scummvm
+        run: ./configure --disable-all-engines --enable-engine=zerocomico --enable-release
+
+      - name: Build Windows ScummVM
+        shell: msys2 {0}
+        working-directory: scummvm
+        run: make -j2
+
+      - name: Assemble portable package
+        shell: msys2 {0}
+        run: |
+          rm -rf dist
+          mkdir -p dist
+          cp scummvm/scummvm.exe dist/
+          cp packaging/windows/README_INSTALL.txt dist/
+          cp packaging/windows/Configura-Zero-Comico.cmd dist/
+          cp packaging/windows/AVVIA-ZERO-COMICO.cmd dist/
+          ldd scummvm/scummvm.exe | awk '/\/ucrt64\/bin\// {print $3}' | while read -r dll; do
+            [ -f "$dll" ] && cp -n "$dll" dist/
+          done
+          printf "Zero Comico ScummVM custom build\nEngine commit: %s\nScummVM source: current master at build time\n" "$GITHUB_SHA" > dist/BUILD-INFO.txt
+          cd dist
+          zip -9 -r ../ZeroComico-ScummVM-Windows-x64-portable.zip .
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup --no-progress -y
+
+      - name: Build Windows installer
+        shell: pwsh
+        run: |
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DSourceDir="$env:GITHUB_WORKSPACE\dist" /DOutputDir="$env:GITHUB_WORKSPACE\installer-out" "$env:GITHUB_WORKSPACE\packaging\windows\ZeroComico.iss"
+
+      - name: Upload portable package
+        uses: actions/upload-artifact@v4
+        with:
+          name: ZeroComico-ScummVM-Windows-x64-portable
+          path: ZeroComico-ScummVM-Windows-x64-portable.zip
+          if-no-files-found: error
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: ZeroComico-ScummVM-Windows-x64-Setup
+          path: installer-out/ZeroComico-ScummVM-Setup.exe
+          if-no-files-found: error
