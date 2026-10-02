@@ -199,6 +199,63 @@ static bool projectVertex(const Vec3f &world, const RenderCamera &camera,
 	return true;
 }
 
+
+struct NearClipVertex {
+	Vec3f world;
+	Vec2f uv;
+};
+
+static NearClipVertex interpolateNearClipVertex(const NearClipVertex &a,
+                                                 const NearClipVertex &b,
+                                                 float t) {
+	NearClipVertex out;
+	out.world.x = a.world.x + (b.world.x - a.world.x) * t;
+	out.world.y = a.world.y + (b.world.y - a.world.y) * t;
+	out.world.z = a.world.z + (b.world.z - a.world.z) * t;
+	out.uv.x = a.uv.x + (b.uv.x - a.uv.x) * t;
+	out.uv.y = a.uv.y + (b.uv.y - a.uv.y) * t;
+	return out;
+}
+
+// Clip one triangle against the camera near plane instead of dropping the
+// complete face when only one vertex is behind the camera. Large indoor room
+// triangles frequently straddle this plane.
+static uint32 clipTriangleToNearPlane(const NearClipVertex input[3],
+                                      const RenderCamera &camera,
+                                      const Vec3f &forward,
+                                      NearClipVertex output[4]) {
+	const float nearDepth = 0.001f;
+	NearClipVertex polygonA[4];
+	NearClipVertex polygonB[4];
+	for (uint32 i = 0; i < 3; ++i)
+		polygonA[i] = input[i];
+	uint32 count = 3;
+
+	uint32 outCount = 0;
+	for (uint32 i = 0; i < count; ++i) {
+		const NearClipVertex &current = polygonA[i];
+		const NearClipVertex &previous = polygonA[(i + count - 1) % count];
+		const float currentDepth = dot3(sub3(current.world, camera.position), forward);
+		const float previousDepth = dot3(sub3(previous.world, camera.position), forward);
+		const bool currentInside = currentDepth > nearDepth;
+		const bool previousInside = previousDepth > nearDepth;
+
+		if (currentInside != previousInside) {
+			const float denominator = currentDepth - previousDepth;
+			if (std::fabs(denominator) > 1.0e-12f) {
+				const float t = (nearDepth - previousDepth) / denominator;
+				polygonB[outCount++] = interpolateNearClipVertex(previous, current, t);
+			}
+		}
+		if (currentInside)
+			polygonB[outCount++] = current;
+	}
+
+	for (uint32 i = 0; i < outCount; ++i)
+		output[i] = polygonB[i];
+	return outCount;
+}
+
 static void freeAnimatedFrames(AnimatedTextureCacheEntry &entry) {
 	for (uint32 i = 0; i < entry.frames.size(); ++i) {
 		if (entry.frames[i]) {
@@ -572,9 +629,8 @@ static void renderFaceRange(const SceneModel &scene, const SceneModel &lightingS
 		if (corner + 2 >= mesh.indices.size())
 			break;
 
-		ProjectedVertex projected[3];
-		Vec3f worldVertices[3];
-		Vec2f uv[3];
+		const bool haveUv = mesh.hasTexcoords() && corner + 2 < mesh.texcoords.size();
+		NearClipVertex input[3];
 		bool valid = true;
 		for (uint32 i = 0; i < 3; ++i) {
 			const uint32 vertexIndex = mesh.indices[corner + i];
@@ -593,33 +649,48 @@ static void renderFaceRange(const SceneModel &scene, const SceneModel &lightingS
 			} else {
 				meshWorld = transformVertex(mesh.vertices[vertexIndex], mesh.transform);
 			}
-			const Vec3f world = applyInstanceTransform(meshWorld, instanceTransform);
-			worldVertices[i] = world;
-			if (!projectVertex(world, camera, right, up, forward, focalPixels,
-			                   target.w, target.h, projected[i])) {
-				valid = false;
-				break;
+			input[i].world = applyInstanceTransform(meshWorld, instanceTransform);
+			if (haveUv) {
+				input[i].uv = mesh.texcoords[corner + i];
+			} else {
+				input[i].uv.x = 0.0f;
+				input[i].uv.y = 0.0f;
 			}
 		}
 		if (!valid)
 			continue;
 
-		const bool haveUv = mesh.hasTexcoords() && corner + 2 < mesh.texcoords.size();
-		if (haveUv) {
-			uv[0] = mesh.texcoords[corner + 0];
-			uv[1] = mesh.texcoords[corner + 1];
-			uv[2] = mesh.texcoords[corner + 2];
-		} else {
-			for (int i = 0; i < 3; ++i) {
-				uv[i].x = 0.0f;
-				uv[i].y = 0.0f;
-			}
-		}
+		NearClipVertex clipped[4];
+		const uint32 clippedCount = clipTriangleToNearPlane(input, camera, forward, clipped);
+		if (clippedCount < 3)
+			continue;
 
-		Vec3f shade = {1.0f, 1.0f, 1.0f};
-		if (camera.shadeEnabled)
-			shade = evaluateFaceLighting(lightingScene, meshName, worldVertices, camera);
-		drawTriangle(target, zBuffer, projected, uv, haveUv, texturePtr, material, camera, shade);
+		// A triangle clipped by one plane is either a triangle or a quad.
+		// Triangulate the clipped polygon as a fan while preserving UVs.
+		for (uint32 triangle = 1; triangle + 1 < clippedCount; ++triangle) {
+			const uint32 fanIndices[3] = { 0, triangle, triangle + 1 };
+			ProjectedVertex projected[3];
+			Vec3f worldVertices[3];
+			Vec2f uv[3];
+			bool projectedValid = true;
+			for (uint32 i = 0; i < 3; ++i) {
+				const NearClipVertex &vertex = clipped[fanIndices[i]];
+				worldVertices[i] = vertex.world;
+				uv[i] = vertex.uv;
+				if (!projectVertex(vertex.world, camera, right, up, forward, focalPixels,
+				                   target.w, target.h, projected[i])) {
+					projectedValid = false;
+					break;
+				}
+			}
+			if (!projectedValid)
+				continue;
+
+			Vec3f shade = {1.0f, 1.0f, 1.0f};
+			if (camera.shadeEnabled)
+				shade = evaluateFaceLighting(lightingScene, meshName, worldVertices, camera);
+			drawTriangle(target, zBuffer, projected, uv, haveUv, texturePtr, material, camera, shade);
+		}
 	}
 }
 
